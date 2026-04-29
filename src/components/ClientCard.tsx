@@ -2,6 +2,7 @@
 
 import { useState, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import { formatTimeDisplay } from '@/lib/timeUtils';
 import { Client, Location, ScheduleAction, TeamSchedule } from '@/lib/types';
@@ -17,15 +18,16 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const [addressVersion, setAddressVersion] = useState(0);
   const [editingStartTime, setEditingStartTime] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
+  const placesLib = useMapsLibrary('places');
 
   const resolveAddress = useCallback(async (text: string): Promise<Location | null> => {
-    if (!window.google?.maps) return null;
-    const svc = new google.maps.places.AutocompleteService();
+    if (!placesLib) return null;
+    const svc = new placesLib.AutocompleteService();
     return new Promise((resolve) => {
       svc.getPlacePredictions({ input: text, componentRestrictions: { country: 'au' }, types: ['address'] }, (preds, status) => {
         if (status !== google.maps.places.PlacesServiceStatus.OK || !preds?.length) { resolve(null); return; }
         const div = document.createElement('div');
-        const ps = new google.maps.places.PlacesService(div);
+        const ps = new placesLib.PlacesService(div);
         ps.getDetails({ placeId: preds[0].place_id, fields: ['formatted_address', 'geometry', 'place_id', 'name'] }, (place, s) => {
           if (s === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
             resolve({ address: place.formatted_address || place.name || preds[0].description, lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), placeId: place.place_id });
@@ -33,7 +35,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         });
       });
     });
-  }, []);
+  }, [placesLib]);
 
   const handleConfirmAddress = async () => {
     const text = addressText.trim(); if (!text) return;

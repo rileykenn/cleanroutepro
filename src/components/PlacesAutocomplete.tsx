@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
+import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { Location } from '@/lib/types';
 
 interface PlacesAutocompleteProps {
@@ -14,12 +15,13 @@ interface PlacesAutocompleteProps {
 export default function PlacesAutocomplete({ onPlaceSelect, onTextChange, defaultValue = '', placeholder = 'Search address...', className = '' }: PlacesAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const placesLib = useMapsLibrary('places');
 
   useEffect(() => {
-    if (!inputRef.current || !window.google?.maps?.places) return;
+    if (!inputRef.current || !placesLib) return;
     if (autocompleteRef.current) return;
 
-    autocompleteRef.current = new google.maps.places.Autocomplete(inputRef.current, {
+    autocompleteRef.current = new placesLib.Autocomplete(inputRef.current, {
       componentRestrictions: { country: 'au' },
       types: ['address'],
       fields: ['formatted_address', 'geometry', 'place_id', 'name'],
@@ -36,7 +38,7 @@ export default function PlacesAutocomplete({ onPlaceSelect, onTextChange, defaul
         });
       }
     });
-  }, [onPlaceSelect]);
+  }, [placesLib, onPlaceSelect]);
 
   return (
     <input

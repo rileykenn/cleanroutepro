@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { TeamSchedule } from '@/lib/types';
 
 interface RouteMapProps { team: TeamSchedule; }
@@ -12,22 +13,29 @@ export default function RouteMap({ team }: RouteMapProps) {
   const polylineRef = useRef<google.maps.DirectionsRenderer | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
+  // These hooks ensure the libraries are loaded before we use google.maps.*
+  const mapsLib = useMapsLibrary('maps');
+  const routesLib = useMapsLibrary('routes');
+
   useEffect(() => {
-    if (!mapRef.current || !window.google?.maps || mapInstance.current) return;
+    if (!mapRef.current || !mapsLib || mapInstance.current) return;
     mapInstance.current = new google.maps.Map(mapRef.current, {
       center: { lat: -33.8688, lng: 151.2093 },
       zoom: 10, disableDefaultUI: true, zoomControl: true,
       styles: [{ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }],
     });
     setMapReady(true);
-  }, []);
+  }, [mapsLib]);
 
-  useEffect(() => {
-    if (!mapReady || !mapInstance.current) return;
-    // Clear previous
+  const clearMarkers = useCallback(() => {
     markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
     if (polylineRef.current) { polylineRef.current.setMap(null); polylineRef.current = null; }
+  }, []);
+
+  useEffect(() => {
+    if (!mapReady || !mapInstance.current || !mapsLib || !routesLib) return;
+    clearMarkers();
 
     if (!team.baseAddress || team.clients.length === 0) {
       if (team.baseAddress) mapInstance.current.setCenter({ lat: team.baseAddress.lat, lng: team.baseAddress.lng });
@@ -76,7 +84,7 @@ export default function RouteMap({ team }: RouteMapProps) {
     bounds.extend({ lat: team.baseAddress.lat, lng: team.baseAddress.lng });
     team.clients.forEach((c) => bounds.extend({ lat: c.location.lat, lng: c.location.lng }));
     mapInstance.current.fitBounds(bounds, 60);
-  }, [mapReady, team.baseAddress, team.clients, team.color.primary]);
+  }, [mapReady, mapsLib, routesLib, team.baseAddress, team.clients, team.color.primary, clearMarkers]);
 
   return <div ref={mapRef} className="w-full h-full rounded-xl" style={{ minHeight: 300 }} />;
 }

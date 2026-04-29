@@ -2,7 +2,7 @@
 
 import { useReducer, useEffect, useCallback, useRef, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { APIProvider } from '@vis.gl/react-google-maps';
+import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useTeams } from '@/lib/hooks/useTeams';
 import { useClients } from '@/lib/hooks/useClients';
@@ -30,6 +30,14 @@ export default function SchedulePage() {
   const activeTeam = state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0];
   const { initialClients, loading: jobsLoading, saveClients } = useScheduleJobs(activeTeam?.id || null, selectedDate, orgId);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
+  // Wait for the routes library to load before creating DirectionsService
+  const routesLib = useMapsLibrary('routes');
+  useEffect(() => {
+    if (routesLib && !directionsServiceRef.current) {
+      directionsServiceRef.current = new routesLib.DirectionsService();
+    }
+  }, [routesLib]);
 
   // Sync DB teams to state
   useEffect(() => {
@@ -195,11 +203,7 @@ export default function SchedulePage() {
           <div className="hidden lg:flex flex-col flex-1 min-h-0 p-6 pl-0 gap-4">
             <div className="flex-1 card overflow-hidden min-h-[300px]">
               {activeTeam && (
-                <div className="h-full" ref={(el) => {
-                  if (el && !directionsServiceRef.current && window.google?.maps) {
-                    directionsServiceRef.current = new google.maps.DirectionsService();
-                  }
-                }}>
+                <div className="h-full">
                   <RouteMap team={activeTeam} />
                 </div>
               )}
@@ -208,12 +212,6 @@ export default function SchedulePage() {
           </div>
         </div>
       </div>
-      {/* Init DirectionsService */}
-      <div className="hidden" ref={(el) => {
-        if (el && !directionsServiceRef.current && window.google?.maps) {
-          directionsServiceRef.current = new google.maps.DirectionsService();
-        }
-      }} />
     </APIProvider>
   );
 }

@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CleanRoute Pro Scope of Work</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      color: #1a1a2e;
+      background: #ffffff;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 48px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 2px solid #4F46E5;
+    }
+
+    .header-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #4F46E5;
+      background: #EEF2FF;
+      padding: 6px 16px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: #6B7280;
+      font-size: 14px;
+    }
+
+    /* Section */
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+      margin-top: 40px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    h2 .section-num {
+      display: inline-block;
+      background: #4F46E5;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      width: 24px;
+      height: 24px;
+      line-height: 24px;
+      text-align: center;
+      border-radius: 6px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #374151;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p,
+    li {
+      color: #374151;
+    }
+
+    p {
+      margin-bottom: 12px;
+    }
+
+    ul,
+    ol {
+      padding-left: 20px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Feature table */
+    .feature-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px;
+      font-size: 14px;
+    }
+
+    .feature-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      font-weight: 600;
+      color: #111827;
+      font-size: 13px;
+    }
+
+    .feature-table td {
+      padding: 10px 14px;
+      border: 1px solid #E5E7EB;
+      vertical-align: top;
+    }
+
+    .feature-table tr:nth-child(even) td {
+      background: #FAFBFC;
+    }
+
+    .check {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    /* Pricing box */
+    .pricing-box {
+      background: #F9FAFB;
+      border: 2px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 28px;
+      margin: 20px 0;
+    }
+
+    .pricing-box .total {
+      font-size: 32px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+
+    .pricing-box .total-label {
+      font-size: 14px;
+      color: #6B7280;
+      margin-bottom: 16px;
+    }
+
+    .pricing-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-top: 1px solid #E5E7EB;
+      font-size: 14px;
+    }
+
+    .pricing-row .label {
+      color: #374151;
+    }
+
+    .pricing-row .amount {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    /* Exclusion */
+    .exclusion-box {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: #991B1B;
+    }
+
+    /* Signature */
+    .sig-section {
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 2px solid #111827;
+    }
+
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      margin-top: 24px;
+    }
+
+    .sig-block {
+      margin-bottom: 20px;
+    }
+
+    .sig-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .sig-field {
+      height: 48px;
+      border: 2px dashed #D1D5DB;
+      border-radius: 8px;
+      background: #F9FAFB;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #9CA3AF;
+      letter-spacing: 0.5px;
+    }
+
+    .sig-name {
+      font-size: 14px;
+      color: #111827;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid #E5E7EB;
+      text-align: center;
+      font-size: 12px;
+      color: #9CA3AF;
+    }
+
+    /* ========================================
+       PRINT STYLES: Explicit page layout
+       ======================================== */
+    @media print {
+      body {
+        font-size: 12px;
+        line-height: 1.6;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        padding: 0;
+        max-width: 100%;
+      }
+
+      /* --- Page margin: 0 removes browser header/footer (URL, date, title) --- */
+      @page {
+        margin: 15mm;
+      }
+
+      @page {
+        margin-top: 10mm;
+        margin-bottom: 10mm;
+      }
+
+      /* --- Orphan / widow --- */
+      p,
+      li {
+        orphans: 3;
+        widows: 3;
+      }
+
+      /* --- Never strand a heading alone at end of page --- */
+      h2,
+      h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+
+      /* --- Allow tables to split, but keep individual rows intact --- */
+      .feature-table {
+        break-inside: auto;
+        page-break-inside: auto;
+      }
+
+      .feature-table thead {
+        display: table-header-group;
+      }
+
+      .feature-table tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* --- Keep small content blocks intact --- */
+      .pricing-box,
+      .exclusion-box {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* --- Explicit print page groupings --- */
+      .print-page {
+        break-after: page;
+        page-break-after: always;
+      }
+
+      /* Last print-page should NOT force a trailing blank page */
+      .print-page:last-child,
+      .print-page.no-break-after {
+        break-after: auto;
+        page-break-after: auto;
+      }
+
+      /* --- Keep sub-section (h3 + table) together when small --- */
+      .print-group {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* --- Signature section --- */
+      .sig-section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .sig-grid {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* --- Footer --- */
+      .footer {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      /* --- Tighten spacing for print --- */
+      .header {
+        margin-bottom: 28px;
+        padding-bottom: 18px;
+      }
+
+      h2 {
+        margin-top: 24px;
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+
+      h3 {
+        margin-top: 14px;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .feature-table {
+        margin: 8px 0 16px;
+        font-size: 12px;
+      }
+
+      .feature-table th {
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+
+      .feature-table td {
+        padding: 6px 10px;
+      }
+
+      p {
+        margin-bottom: 8px;
+      }
+
+      li {
+        margin-bottom: 4px;
+      }
+
+      .pricing-box {
+        padding: 20px;
+        margin: 12px 0;
+      }
+
+      .pricing-box .total {
+        font-size: 26px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <!-- ============ PRINT PAGE 1: Header + Overview + Features 2.1 ============ -->
+    <div class="print-page">
+      <!-- Header -->
+      <div class="header">
+        <div class="header-badge">Scope of Work</div>
+        <h1>CleanRoute Pro<br><span style="font-size: 20px; font-weight: 500; color: #6B7280;">Scope of Work</span></h1>
+        <p>Prepared by Riley Tech Studio for Sarah O'Connell &amp; The Cleaning Co Shellharbour</p>
+        <p style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">Document Date: 24 April 2026</p>
+      </div>
+
+      <!-- 1. Overview -->
+      <h2><span class="section-num">1</span>Project Overview</h2>
+      <p>
+        CleanRoute Pro is a custom-built route scheduling and optimisation platform designed specifically for cleaning
+        companies. The application automates travel time and distance calculations between jobs using live Google Maps
+        data, replacing the manual process of individually plugging addresses into Google Maps for each team, each day.
+      </p>
+      <p>
+        This scope covers the complete build: a production-ready SaaS platform with multi-tenant architecture, user
+        authentication, subscription billing via Stripe, a saved client database, schedule templates for recurring
+        4-week rotations, staff rostering, and all features demonstrated in the beta preview.
+      </p>
+
+      <!-- 2. Features -->
+      <h2><span class="section-num">2</span>Features Included</h2>
+
+      <h3>2.1 Route Scheduling &amp; Calculation</h3>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Base Address</td>
+            <td>Set a starting and return point for each team with Google Places autocomplete. Base address is fully editable at any time</td>
+          </tr>
+          <tr>
+            <td>Client Scheduling</td>
+            <td>Add clients with address, name, and configurable job duration. Supports manual input of total job hours
+              including decimal values (e.g. 2.25, 1.5)</td>
+          </tr>
+          <tr>
+            <td>Per-Job Staff Count</td>
+            <td>Assign a staff count to each job (1, 2, or 3+). Job duration is automatically split based on staff
+              assigned (e.g. 4.5 hours with 3 staff = 1.5 hours each)</td>
+          </tr>
+          <tr>
+            <td>Live Travel Calculation</td>
+            <td>Real-time travel time and distance between every stop via Google Maps Directions API</td>
+          </tr>
+          <tr>
+            <td>Traffic-Aware Timing</td>
+            <td>Travel estimates are dynamically calculated based on the scheduled departure time for each leg of the route, reflecting actual time-of-day traffic conditions (e.g. 7:52am departure reflects morning traffic, 9:30am reflects mid-morning conditions)</td>
+          </tr>
+          <tr>
+            <td>Auto-Timed Schedule</td>
+            <td>Start and end times for each client calculated automatically based on travel + job duration</td>
+          </tr>
+          <tr>
+            <td>Editable Client Start Time</td>
+            <td>Lock a specific start time on any individual client (e.g. "Mrs Smith at 9:00am"). The rest of the day's schedule recalculates around the fixed time</td>
+          </tr>
+          <tr>
+            <td>Route Optimisation</td>
+            <td>One-click button to reorder clients for the most efficient driving route (Google-powered)</td>
+          </tr>
+          <tr>
+            <td>Lock Job Position</td>
+            <td>Lock individual jobs in place so they are excluded from route optimisation. Ideal for clients with fixed
+              time slots</td>
+          </tr>
+          <tr>
+            <td>Reorder Jobs</td>
+            <td>Move clients up and down in the schedule with one click; entire schedule recalculates instantly</td>
+          </tr>
+          <tr>
+            <td>Swap / Replace Client</td>
+            <td>Change the address on an existing client card; schedule recalculates automatically</td>
+          </tr>
+          <tr>
+            <td>Cancel Client</td>
+            <td>Remove a client from the schedule; all travel and times update instantly</td>
+          </tr>
+          <tr>
+            <td>Lunch / Breaks</td>
+            <td>Insert configurable breaks between clients; factored into schedule timing</td>
+          </tr>
+          <tr>
+            <td>Interactive Map</td>
+            <td>Live map showing colour-coded routes, numbered markers, and full route polylines</td>
+          </tr>
+          <tr>
+            <td>API Call Optimisation</td>
+            <td>Smart caching of previously calculated routes, batching of API requests, and avoidance of redundant recalculations to minimise Google Maps API usage and costs</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============ PRINT PAGE 2: Features 2.2 – 2.5 ============ -->
+    <div class="print-page">
+      <div class="print-group">
+        <h3>2.2 Multi-Team Support</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Team Tabs</td>
+              <td>Unlimited colour-coded teams, each with independent schedules, base addresses, and settings. Add as many teams as your business requires</td>
+            </tr>
+            <tr>
+              <td>Per-Team Settings</td>
+              <td>Configurable hourly rate, day start time, and vehicle fuel settings per team</td>
+            </tr>
+            <tr>
+              <td>Team Breakdown</td>
+              <td>Clear visibility of which staff are assigned to each team and total headcount per team</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.3 Financials &amp; Reporting</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Daily Summary</td>
+              <td>KPI dashboard: total clients, job time, travel time, distance, total work hours</td>
+            </tr>
+            <tr>
+              <td>Wage Calculation</td>
+              <td>Automatic wage output based on configurable hourly rate × total work time. Displayed in both standard
+                format (2h 15m) and decimal format (2.25 hours) for payroll compatibility</td>
+            </tr>
+            <tr>
+              <td>Fuel Cost Calculator</td>
+              <td>Calculate fuel costs based on total distance, vehicle efficiency (L/100km), and fuel price ($/L)</td>
+            </tr>
+            <tr>
+              <td>Per-KM Allowance</td>
+              <td>Configurable per-kilometre rate (e.g. $0.99/km) as an alternative cost calculation alongside the fuel
+                calculator</td>
+            </tr>
+            <tr>
+              <td>CSV Export</td>
+              <td>Export the day's full schedule as a downloadable CSV file. Includes departure time, travel duration,
+                arrival time, job start time, job end time, staff assignments, team headcount, and daily summary</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.4 Client Database</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Saved Client List</td>
+              <td>Add clients once and save them permanently. Includes name, address, email, phone number, default job duration, and notes
+              </td>
+            </tr>
+            <tr>
+              <td>Quick Search &amp; Add</td>
+              <td>Search saved clients by name and add them to the schedule with one click</td>
+            </tr>
+            <tr>
+              <td>Edit / Remove Clients</td>
+              <td>Update client details or remove from the database at any time</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.5 Schedule Templates</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Save Weekly Templates</td>
+              <td>Save a complete week's schedule as a reusable template (e.g. B1, A2, B3, A4)</td>
+            </tr>
+            <tr>
+              <td>Load &amp; Edit</td>
+              <td>Load a saved template when that week rolls around; make edits (swaps, cancellations) as needed</td>
+            </tr>
+            <tr>
+              <td>4-Week Rotation</td>
+              <td>Supports full 4-week recurring schedule blocks with labelled templates</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ PRINT PAGE 3: Features 2.6 – 2.8 + Exclusions + Tech Stack + Timeline ============ -->
+    <div class="print-page">
+      <div class="print-group">
+        <h3>2.6 Account, Access &amp; Multi-Tenant</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>User Authentication</td>
+              <td>Secure login with email and password via Supabase Auth</td>
+            </tr>
+            <tr>
+              <td>Multi-Tenant Architecture</td>
+              <td>Each business (customer) gets fully isolated data. Schedules, clients, and settings are completely
+                separated</td>
+            </tr>
+            <tr>
+              <td>Admin &amp; Staff Roles</td>
+              <td>Admin accounts manage schedules and settings; staff accounts can view their assigned routes and team
+                schedules</td>
+            </tr>
+            <tr>
+              <td>Cloud-Hosted Data</td>
+              <td>All schedule, client, and template data saved to a secure cloud database (Supabase) with row-level
+                security</td>
+            </tr>
+            <tr>
+              <td>Access from Any Device</td>
+              <td>Fully responsive. Works on desktop, tablet, and mobile browsers</td>
+            </tr>
+            <tr>
+              <td>Google Maps Navigation</td>
+              <td>Staff can tap any job in their team's route to open turn-by-turn navigation directly in Google Maps on their mobile device</td>
+            </tr>
+            <tr>
+              <td>Admin Panel</td>
+              <td>Platform-level admin dashboard to view and manage all tenant accounts, monitor subscription status, and oversee platform usage</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.7 Subscription Billing (Stripe)</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Stripe Integration</td>
+              <td>Full payment processing via Stripe for subscription billing</td>
+            </tr>
+            <tr>
+              <td>Subscription Tiers</td>
+              <td>Configurable pricing plans (e.g. Basic, Pro, Enterprise) for businesses subscribing to the platform
+              </td>
+            </tr>
+            <tr>
+              <td>Billing Management</td>
+              <td>Customers can manage their subscription, update payment methods, and view invoices via Stripe Customer
+                Portal</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.8 Staff Rostering</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Staff Directory</td>
+              <td>Manage a list of team members with names, contact details, and roles</td>
+            </tr>
+            <tr>
+              <td>Team Assignment</td>
+              <td>Assign staff members to teams on a per-day basis. Staff rosters can change day to day</td>
+            </tr>
+            <tr>
+              <td>Availability</td>
+              <td>Mark staff as available or unavailable for specific days</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.9 Onboarding</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Guided Setup Flow</td>
+              <td>Step-by-step onboarding wizard for new users covering account creation, business details, and initial configuration</td>
+            </tr>
+            <tr>
+              <td>First Team &amp; Client Setup</td>
+              <td>Guided prompts to create their first team, set a base address, and add their first clients to the database</td>
+            </tr>
+            <tr>
+              <td>Welcome Overview</td>
+              <td>Introductory walkthrough highlighting key features and navigation to help new users get started quickly</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="print-group">
+        <h3>2.10 Checklists</h3>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Feature</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Master Checklist Templates</td>
+              <td>Create reusable checklist templates with customisable items (e.g. kitchen, bathrooms, windows). Templates can be edited, duplicated, or deleted at any time</td>
+            </tr>
+            <tr>
+              <td>Per-Client Customisation</td>
+              <td>Assign a master template to a client and customise it for their specific requirements. Add, remove, or modify checklist items per client</td>
+            </tr>
+            <tr>
+              <td>Saved to Client Profile</td>
+              <td>Each client's customised checklist is saved permanently to their profile in the client database and loads automatically when the client is scheduled</td>
+            </tr>
+            <tr>
+              <td>Staff Checklist View</td>
+              <td>Staff can view and tick off checklist items on their mobile device when they arrive at a job</td>
+            </tr>
+            <tr>
+              <td>Completion Tracking</td>
+              <td>Track whether a checklist was completed for each visit, providing visibility for admins on job quality and task completion</td>
+            </tr>
+            <tr>
+              <td>Email Checklist to Client</td>
+              <td>Once staff complete a checklist, a summary can be automatically emailed directly to the client as a completed job report</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 3. Exclusions -->
+      <h2><span class="section-num">3</span>Out of Scope</h2>
+      <p>The following is <strong>not included</strong> in this build. This can be quoted separately as a future
+        enhancement if required:</p>
+      <div class="exclusion-box">
+        <ul style="margin-bottom: 0; padding-left: 18px;">
+          <li>Native mobile app (iOS/Android). The web app is fully accessible on mobile browsers</li>
+          <li>Calendar view (week/month). Recommended as a Phase 2 enhancement once the core platform is live</li>
+          <li>Xero timesheet integration. Can be scoped and quoted as a standalone add-on after the initial build</li>
+        </ul>
+      </div>
+
+      <!-- 4. Technology -->
+      <div class="print-group">
+        <h2><span class="section-num">4</span>Technology Stack</h2>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Technology</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Frontend</td>
+              <td>Next.js (React), TypeScript, Tailwind CSS</td>
+            </tr>
+            <tr>
+              <td>Maps &amp; Routing</td>
+              <td>Google Maps JavaScript API, Places API, Directions API</td>
+            </tr>
+            <tr>
+              <td>Backend &amp; Database</td>
+              <td>Supabase (PostgreSQL, Auth, Row-Level Security)</td>
+            </tr>
+            <tr>
+              <td>Hosting</td>
+              <td>Vercel (production deployment with SSL)</td>
+            </tr>
+            <tr>
+              <td>Animations</td>
+              <td>Framer Motion</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 5. Timeline -->
+      <div class="print-group">
+        <h2><span class="section-num">5</span>Timeline</h2>
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Milestone</th>
+              <th>Deliverable</th>
+              <th>Timeframe</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Milestone 1</td>
+              <td>Working standalone route calculator with live Google Maps data, client database with search &amp; add,
+                multi-team support, and daily summary</td>
+              <td>Week 1 to 2</td>
+            </tr>
+            <tr>
+              <td>Milestone 2</td>
+              <td>Supabase setup, user auth, multi-tenant architecture, schedule templates (save, load, 4-week
+                rotation), staff rostering &amp; team assignment</td>
+              <td>Week 2 to 3</td>
+            </tr>
+            <tr>
+              <td>Milestone 3</td>
+              <td>Stripe subscription billing, testing, polish, and mobile responsiveness</td>
+              <td>Week 3 to 4</td>
+            </tr>
+            <tr>
+              <td>Milestone 4</td>
+              <td>Full documentation, production deployment, and handoff</td>
+              <td>Week 4 to 5</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="font-size: 13px; color: #6B7280;">
+          <em>Estimated total delivery: 4 to 5 weeks from sign-off. Timeline may shift slightly based on feedback
+            cycles.</em>
+        </p>
+      </div>
+    </div>
+
+    <!-- ============ PRINT PAGE 5: Deliverables + Investment ============ -->
+    <div class="print-page">
+      <!-- 6. Deliverables -->
+      <h2><span class="section-num">6</span>Deliverables</h2>
+      <p>Upon completion and final payment, the following will be delivered to the client:</p>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Deliverable</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Full Source Code</td>
+            <td>Complete codebase with full ownership and intellectual property rights transferred to the client</td>
+          </tr>
+          <tr>
+            <td>Technical Documentation</td>
+            <td>Comprehensive documentation covering architecture, setup, configuration, and deployment so any developer
+              can pick up the project</td>
+          </tr>
+          <tr>
+            <td>Production Deployment</td>
+            <td>Live production environment deployed on Vercel with SSL, ready for immediate use</td>
+          </tr>
+          <tr>
+            <td>Staging Environment</td>
+            <td>Preview/staging link available throughout development for review and feedback</td>
+          </tr>
+          <tr>
+            <td>Database &amp; Auth Setup</td>
+            <td>Fully configured Supabase instance with database schema, user authentication, and row-level security
+            </td>
+          </tr>
+          <tr>
+            <td>Stripe Integration</td>
+            <td>Configured Stripe account connection with subscription tiers and billing management ready to go</td>
+          </tr>
+          <tr>
+            <td>Handoff &amp; Consultation</td>
+            <td>Guided walkthrough of all systems, accounts, and credentials during the handoff process</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 7. Pricing -->
+      <h2><span class="section-num">7</span>Investment</h2>
+      <div class="pricing-box">
+        <div class="total">$6,500 <span style="font-size: 16px; font-weight: 500; color: #6B7280;">AUD</span></div>
+        <div class="total-label">Complete SaaS Platform | One-Off Build</div>
+        <div class="pricing-row">
+          <span class="label">Deposit (40% — due on sign-off to commence work)</span>
+          <span class="amount">$2,600</span>
+        </div>
+        <div class="pricing-row">
+          <span class="label">Milestone payment (30% — due at working staging version)</span>
+          <span class="amount">$1,950</span>
+        </div>
+        <div class="pricing-row">
+          <span class="label">Final payment (30% — due on completion &amp; delivery)</span>
+          <span class="amount">$1,950</span>
+        </div>
+      </div>
+      <p style="font-size: 14px; color: #374151;">
+        <strong>What's included:</strong> All development, design, deployment, and full technical documentation. Full
+        source code ownership and all intellectual property rights transfer to the client upon final payment.
+      </p>
+    </div>
+
+    <!-- ============ PRINT PAGE 6: Ongoing Costs + Terms ============ -->
+    <div class="print-page">
+      <!-- 8. Ongoing Costs -->
+      <h2><span class="section-num">8</span>Ongoing Costs (Client Responsibility)</h2>
+      <p>
+        The following services are required to run the platform. Riley Tech Studio will walk you through everything
+        needed during handoff.
+      </p>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Estimated Cost</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Google Maps API</td>
+            <td>~$0 to $50/month</td>
+            <td>Google provides $200/month free credit. Typical usage will stay within the free tier</td>
+          </tr>
+          <tr>
+            <td>Supabase (Database)</td>
+            <td>$0/month</td>
+            <td>Free tier more than sufficient for a single-business use case</td>
+          </tr>
+          <tr>
+            <td>Vercel (Hosting)</td>
+            <td>$0 to $20/month</td>
+            <td>Free tier covers most usage; Pro plan available if needed</td>
+          </tr>
+          <tr>
+            <td>Domain (optional)</td>
+            <td>~$15 to $20/year</td>
+            <td>Custom domain (e.g. cleanroute.com.au) if desired</td>
+          </tr>
+          <tr>
+            <td>Database Backups</td>
+            <td>Included</td>
+            <td>Supabase provides automatic daily backups with point-in-time recovery. Backup retention and frequency depend on the selected Supabase plan</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 9. Terms -->
+      <h2><span class="section-num">9</span>Terms &amp; Conditions</h2>
+      <ol>
+        <li><strong>Intellectual Property:</strong> Upon receipt of final payment, full source code ownership and all
+          intellectual property rights transfer to the client.</li>
+        <li><strong>Scope Changes:</strong> Any major overhauls or new features outside the scope defined in this
+          document will be quoted separately before being commenced.</li>
+        <li><strong>Communication:</strong> Progress updates will be provided weekly via email. A staging preview link
+          will be available throughout development.</li>
+        <li><strong>Documentation &amp; Handoff:</strong> Full technical documentation will be provided so any developer
+          can pick up and continue the project. Ongoing support and consultation is included during the build phase and
+          handoff process.</li>
+        <li><strong>Confidentiality:</strong> All business data, client lists, and scheduling information remain
+          confidential and will not be shared with any third party.</li>
+        <li><strong>Completion &amp; Sign-Off:</strong> The project is considered complete when all features defined
+          in this scope have been delivered, the staging environment has been reviewed and approved by the client,
+          the production environment has been deployed and verified, and the handoff walkthrough has been conducted.
+          A formal sign-off will be requested upon completion.</li>
+        <li><strong>Post-Launch Support:</strong> 30 days of post-launch support is included from the date of
+          production deployment. This covers bug fixes for issues within the scope of this build and minor
+          adjustments. Expected response time is within 24 to 48 hours on business days. Feature additions or
+          major changes beyond this scope will be quoted separately. Ongoing support beyond 30 days can be arranged
+          under a separate maintenance agreement.</li>
+      </ol>
+    </div>
+
+    <!-- ============ PRINT PAGE 7: Signature + Footer ============ -->
+    <div class="print-page no-break-after">
+      <div class="sig-section">
+        <h2 style="border-bottom: none; margin-top: 0;"><span class="section-num">10</span>Acceptance</h2>
+        <p>By signing below, both parties agree to the scope, timeline, and investment outlined in this document.</p>
+
+        <div class="sig-grid">
+          <div>
+            <p style="font-weight: 700; font-size: 16px; margin-bottom: 16px; color: #111827;">Client</p>
+            <div class="sig-name">Sarah O'Connell</div>
+            <div class="sig-block">
+              <div class="sig-label">Signature</div>
+              <div class="sig-field"></div>
+            </div>
+            <div class="sig-block">
+              <div class="sig-label">Date</div>
+              <div class="sig-field"></div>
+            </div>
+          </div>
+          <div>
+            <p style="font-weight: 700; font-size: 16px; margin-bottom: 16px; color: #111827;">Developer</p>
+            <div class="sig-name">Riley Kennedy | Riley Tech Studio</div>
+            <div class="sig-block">
+              <div class="sig-label">Signature</div>
+              <div class="sig-field"></div>
+            </div>
+            <div class="sig-block">
+              <div class="sig-label">Date</div>
+              <div class="sig-field"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p>CleanRoute Pro Scope of Work v4.0 | Riley Tech Studio | ABN: 82 944 887 387</p>
+        <p>Document generated 24 April 2026. This quote is valid for 14 days from the date of issue.</p>
+      </div>
+    </div>
+
+  </div>
+</body>
+
+</html>

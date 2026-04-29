@@ -4,7 +4,7 @@ import { useState, useEffect, createContext, useContext, useCallback, useMemo, u
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 
-interface UserProfile {
+export interface UserProfile {
   id: string;
   org_id: string;
   full_name: string;
@@ -30,20 +30,19 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {}, refreshProfile: async () => {},
 });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children, serverProfile }: { children: React.ReactNode; serverProfile?: UserProfile | null }) {
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const profileLoadedFor = useRef<string | null>(null);
+  // Initialize with server profile — this is the key fix for page refresh
+  const [profile, setProfile] = useState<UserProfile | null>(serverProfile ?? null);
+  const [loading, setLoading] = useState(!serverProfile); // Not loading if we have server data
+  const profileLoadedFor = useRef<string | null>(serverProfile?.id ?? null);
 
   const loadProfile = useCallback(async (userId: string) => {
-    // Prevent duplicate loads for the same user
     if (profileLoadedFor.current === userId) return;
     profileLoadedFor.current = userId;
 
     try {
-      // Load profile and org as separate queries to keep it simple
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, org_id, full_name, email, role, is_platform_admin, onboarding_completed')
@@ -81,16 +80,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   useEffect(() => {
-    // Use ONLY onAuthStateChange — it fires INITIAL_SESSION on mount.
-    // This avoids the Navigator Lock race condition caused by
-    // calling getUser() and onAuthStateChange simultaneously.
+    // Listen for auth state changes (sign in, sign out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: string, session: { user: User } | null) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
         if (currentUser) {
-          await loadProfile(currentUser.id);
+          // Only load profile from client if we don't already have server data
+          if (!profileLoadedFor.current) {
+            await loadProfile(currentUser.id);
+          }
         } else {
           setProfile(null);
           profileLoadedFor.current = null;

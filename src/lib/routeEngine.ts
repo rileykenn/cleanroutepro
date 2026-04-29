@@ -13,10 +13,12 @@ export async function calculateTravel(
   if (cached) return cached;
 
   return new Promise((resolve) => {
+    // Only include traffic data if departure time is in the future
+    const useTraffic = departureTime && departureTime.getTime() > Date.now();
     const request: google.maps.DirectionsRequest = {
       origin, destination,
       travelMode: google.maps.TravelMode.DRIVING,
-      ...(departureTime ? { drivingOptions: { departureTime, trafficModel: google.maps.TrafficModel.BEST_GUESS } } : {}),
+      ...(useTraffic ? { drivingOptions: { departureTime: departureTime!, trafficModel: google.maps.TrafficModel.BEST_GUESS } } : {}),
     };
     directionsService.route(request, (result, status) => {
       if (status === google.maps.DirectionsStatus.OK && result) {

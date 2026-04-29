@@ -20,7 +20,7 @@ import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 
 export default function SchedulePage() {
   const { profile } = useAuth();
-  const { teams: dbTeams, orgId, loading: teamsLoading, addTeam, removeTeam, updateTeam } = useTeams();
+  const { teams: dbTeams, orgId, loading: teamsLoading, addTeam, removeTeam, updateTeam } = useTeams(profile?.org_id ?? null);
   const { clients: savedClients, searchClients } = useClients(orgId);
   const [state, dispatch] = useReducer(scheduleReducer, createInitialState());
   const [selectedDate, setSelectedDate] = useState(getTodayISO());

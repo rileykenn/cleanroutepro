@@ -10,22 +10,16 @@ interface DbTeam {
   day_start_time: string; hourly_rate: number; fuel_efficiency: number; fuel_price: number; per_km_rate: number; sort_order: number;
 }
 
-export function useTeams() {
+export function useTeams(authOrgId: string | null) {
   const supabase = useMemo(() => createClient(), []);
   const [teams, setTeams] = useState<TeamSchedule[]>([]);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Sync orgId from auth context
   useEffect(() => {
-    const loadOrg = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', user.id).single();
-        if (profile) setOrgId(profile.org_id);
-      }
-    };
-    loadOrg();
-  }, [supabase]);
+    if (authOrgId) setOrgId(authOrgId);
+  }, [authOrgId]);
 
   const dbToTeam = useCallback((row: DbTeam): TeamSchedule => ({
     id: row.id, name: row.name,

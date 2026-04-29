@@ -1,48 +1,113 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { TeamSchedule, ScheduleAction } from '@/lib/types';
+import { TEAM_COLORS, ScheduleAction, AppState } from '@/lib/types';
 
 interface TeamTabsProps {
-  teams: TeamSchedule[];
-  activeTeamId: string;
+  state: AppState;
   dispatch: React.Dispatch<ScheduleAction>;
-  onAddTeam: () => void;
-  onRemoveTeam: (teamId: string) => void;
+  onSelectTeam: (teamId: string) => void;
+  onAddTeam?: () => void;
+  onRemoveTeam?: (teamId: string) => void;
 }
 
-export default function TeamTabs({ teams, activeTeamId, dispatch, onAddTeam, onRemoveTeam }: TeamTabsProps) {
+export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onRemoveTeam }: TeamTabsProps) {
+  const { teams, activeTeamId } = state;
+
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-      {teams.map((team) => {
+    <div className="flex items-center gap-2 px-1">
+      {teams.map((team, index) => {
         const isActive = team.id === activeTeamId;
+        // Total staff headcount for this team (sum of staffCount across all clients)
+        const totalStaff = team.clients.reduce((sum, c) => Math.max(sum, c.staffCount || 1), 0);
+        const uniqueStaffCount = team.clients.length > 0 ? totalStaff : 0;
         return (
-          <motion.button key={team.id} whileTap={{ scale: 0.97 }}
-            onClick={() => dispatch({ type: 'SET_ACTIVE_TEAM', teamId: team.id })}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap border ${
-              isActive
-                ? 'bg-white shadow-sm border-border'
-                : 'bg-transparent border-transparent text-text-secondary hover:bg-surface-hover hover:text-text-primary'
-            }`}
-            style={isActive ? { borderLeft: `3px solid ${team.color.primary}` } : {}}>
-            <div className="team-dot" style={{ backgroundColor: team.color.primary }} />
-            {team.name}
-            {teams.length > 1 && isActive && (
-              <button onClick={(e) => { e.stopPropagation(); onRemoveTeam(team.id); }}
-                className="ml-1 p-0.5 rounded hover:bg-danger-light hover:text-danger text-text-tertiary transition-colors"
-                title="Remove team">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
+          <motion.div
+            key={team.id}
+            onClick={() => onSelectTeam(team.id)}
+            className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
+            style={{
+              backgroundColor: isActive ? team.color.light : 'transparent',
+              color: isActive ? team.color.text : '#6B7280',
+              border: isActive ? `1px solid ${team.color.border}` : '1px solid transparent',
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div
+              className="team-dot"
+              style={{ backgroundColor: team.color.primary }}
+            />
+            <span>Team {index + 1}</span>
+            {team.clients.length > 0 && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded-full font-bold"
+                style={{
+                  backgroundColor: isActive ? team.color.primary : '#E5E7EB',
+                  color: isActive ? 'white' : '#6B7280',
+                }}
+              >
+                {team.clients.length}
+              </span>
             )}
-          </motion.button>
+
+            {/* Staff headcount indicator */}
+            {uniqueStaffCount > 0 && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                style={{
+                  backgroundColor: isActive ? `${team.color.primary}20` : '#F3F4F6',
+                  color: isActive ? team.color.text : '#9CA3AF',
+                }}
+                title={`Max ${uniqueStaffCount} staff on a single job`}
+              >
+                👤 {uniqueStaffCount}
+              </span>
+            )}
+
+            {/* Remove team button */}
+            {teams.length > 1 && isActive && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onRemoveTeam) onRemoveTeam(team.id);
+                  else dispatch({ type: 'REMOVE_TEAM', teamId: team.id });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.stopPropagation();
+                    if (onRemoveTeam) onRemoveTeam(team.id);
+                    else dispatch({ type: 'REMOVE_TEAM', teamId: team.id });
+                  }
+                }}
+                className="ml-1 p-0.5 rounded hover:bg-white/60 text-current opacity-50 hover:opacity-100 transition-opacity"
+                title="Remove team"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </span>
+            )}
+          </motion.div>
         );
       })}
-      <button onClick={onAddTeam}
-        className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium text-text-tertiary hover:text-primary hover:bg-primary-light transition-all whitespace-nowrap"
-        title="Add team">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+
+      {/* Add team button — unlimited teams per scope */}
+      <motion.button
+        onClick={() => { if (onAddTeam) onAddTeam(); else dispatch({ type: 'ADD_TEAM' }); }}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-text-tertiary
+                 hover:text-text-secondary hover:bg-surface-hover transition-all cursor-pointer"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
         Add Team
-      </button>
+      </motion.button>
     </div>
   );
 }

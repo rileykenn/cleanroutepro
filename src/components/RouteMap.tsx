@@ -1,90 +1,167 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { useMapsLibrary } from '@vis.gl/react-google-maps';
+import { useEffect, useState, useCallback } from 'react';
+import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { TeamSchedule } from '@/lib/types';
 
-interface RouteMapProps { team: TeamSchedule; }
+interface RouteMapProps {
+  team: TeamSchedule;
+}
 
 export default function RouteMap({ team }: RouteMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const polylineRef = useRef<google.maps.DirectionsRenderer | null>(null);
-  const [mapReady, setMapReady] = useState(false);
+  const map = useMap();
+  const routesLibrary = useMapsLibrary('routes');
+  const [renderer, setRenderer] = useState<google.maps.DirectionsRenderer | null>(null);
+  const [service, setService] = useState<google.maps.DirectionsService | null>(null);
 
-  // These hooks ensure the libraries are loaded before we use google.maps.*
-  const mapsLib = useMapsLibrary('maps');
-  const routesLib = useMapsLibrary('routes');
-
+  // Initialize services
   useEffect(() => {
-    if (!mapRef.current || !mapsLib || mapInstance.current) return;
-    mapInstance.current = new google.maps.Map(mapRef.current, {
-      center: { lat: -33.8688, lng: 151.2093 },
-      zoom: 10, disableDefaultUI: true, zoomControl: true,
-      styles: [{ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }],
+    if (!routesLibrary || !map) return;
+
+    const directionsRenderer = new routesLibrary.DirectionsRenderer({
+      map,
+      suppressMarkers: true, // We'll use custom markers
+      polylineOptions: {
+        strokeColor: team.color.primary,
+        strokeWeight: 4,
+        strokeOpacity: 0.8,
+      },
     });
-    setMapReady(true);
-  }, [mapsLib]);
 
-  const clearMarkers = useCallback(() => {
-    markersRef.current.forEach((m) => m.setMap(null));
-    markersRef.current = [];
-    if (polylineRef.current) { polylineRef.current.setMap(null); polylineRef.current = null; }
-  }, []);
+    const directionsService = new routesLibrary.DirectionsService();
 
+    setRenderer(directionsRenderer);
+    setService(directionsService);
+
+    return () => {
+      directionsRenderer.setMap(null);
+    };
+  }, [routesLibrary, map, team.color.primary]);
+
+  // Update route polyline color when team changes
   useEffect(() => {
-    if (!mapReady || !mapInstance.current || !mapsLib || !routesLib) return;
-    clearMarkers();
+    if (!renderer) return;
+    renderer.setOptions({
+      polylineOptions: {
+        strokeColor: team.color.primary,
+        strokeWeight: 4,
+        strokeOpacity: 0.8,
+      },
+    });
+  }, [renderer, team.color.primary]);
 
-    if (!team.baseAddress || team.clients.length === 0) {
-      if (team.baseAddress) mapInstance.current.setCenter({ lat: team.baseAddress.lat, lng: team.baseAddress.lng });
+  // Calculate and render the route
+  const renderRoute = useCallback(() => {
+    if (!service || !renderer || !map || !team.baseAddress || team.clients.length === 0) {
+      renderer?.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
       return;
     }
 
+    const origin = { lat: team.baseAddress.lat, lng: team.baseAddress.lng };
+    const destination = { lat: team.baseAddress.lat, lng: team.baseAddress.lng };
+    const waypoints: google.maps.DirectionsWaypoint[] = team.clients.map((c) => ({
+      location: { lat: c.location.lat, lng: c.location.lng },
+      stopover: true,
+    }));
+
+    service.route(
+      {
+        origin,
+        destination,
+        waypoints,
+        travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false, // Keep user's specified order
+      },
+      (result, status) => {
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          renderer.setDirections(result);
+        }
+      }
+    );
+  }, [service, renderer, map, team.baseAddress, team.clients]);
+
+  useEffect(() => {
+    renderRoute();
+  }, [renderRoute]);
+
+  // Custom markers
+  useEffect(() => {
+    if (!map) return;
+
+    const markers: google.maps.Marker[] = [];
+
     // Base marker
-    const baseMarker = new google.maps.Marker({
-      position: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
-      map: mapInstance.current, title: 'Base',
-      icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: team.color.primary, fillOpacity: 1, strokeColor: 'white', strokeWeight: 2, scale: 10 },
-      label: { text: '🏠', fontSize: '14px' },
-    });
-    markersRef.current.push(baseMarker);
+    if (team.baseAddress) {
+      const baseMarker = new google.maps.Marker({
+        position: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
+        map,
+        label: {
+          text: '🏠',
+          fontSize: '20px',
+        },
+        title: 'Base Address',
+        zIndex: 1000,
+      });
+      markers.push(baseMarker);
+    }
 
     // Client markers
-    team.clients.forEach((client, i) => {
+    team.clients.forEach((client, index) => {
       const marker = new google.maps.Marker({
         position: { lat: client.location.lat, lng: client.location.lng },
-        map: mapInstance.current!, title: client.name,
-        label: { text: String(i + 1), color: 'white', fontWeight: 'bold', fontSize: '12px' },
-        icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: team.color.primary, fillOpacity: 1, strokeColor: 'white', strokeWeight: 2, scale: 14 },
+        map,
+        label: {
+          text: String(index + 1),
+          color: 'white',
+          fontWeight: 'bold',
+          fontSize: '13px',
+        },
+        title: client.name,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 16,
+          fillColor: team.color.primary,
+          fillOpacity: 1,
+          strokeColor: 'white',
+          strokeWeight: 3,
+        },
+        zIndex: 999 - index,
       });
-      markersRef.current.push(marker);
-    });
 
-    // Directions
-    const directionsService = new google.maps.DirectionsService();
-    const directionsRenderer = new google.maps.DirectionsRenderer({
-      map: mapInstance.current, suppressMarkers: true,
-      polylineOptions: { strokeColor: team.color.primary, strokeWeight: 4, strokeOpacity: 0.7 },
-    });
-    polylineRef.current = directionsRenderer;
+      // Info window
+      const infoWindow = new google.maps.InfoWindow({
+        content: `
+          <div style="font-family: Inter, system-ui, sans-serif; padding: 4px 0;">
+            <div style="font-weight: 600; font-size: 14px; color: #111827; margin-bottom: 4px;">${client.name}</div>
+            <div style="font-size: 13px; color: #6B7280; margin-bottom: 4px;">${client.location.address}</div>
+            <div style="font-size: 13px; color: ${team.color.primary}; font-weight: 500;">
+              ${client.startTime || ''} – ${client.endTime || ''} · ${client.jobDurationMinutes} min
+            </div>
+          </div>
+        `,
+      });
 
-    const waypoints = team.clients.map((c) => ({ location: { lat: c.location.lat, lng: c.location.lng }, stopover: true }));
-    directionsService.route({
-      origin: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
-      destination: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
-      waypoints, travelMode: google.maps.TravelMode.DRIVING,
-    }, (result, status) => {
-      if (status === google.maps.DirectionsStatus.OK && result) directionsRenderer.setDirections(result);
+      marker.addListener('click', () => {
+        infoWindow.open(map, marker);
+      });
+
+      markers.push(marker);
     });
 
     // Fit bounds
-    const bounds = new google.maps.LatLngBounds();
-    bounds.extend({ lat: team.baseAddress.lat, lng: team.baseAddress.lng });
-    team.clients.forEach((c) => bounds.extend({ lat: c.location.lat, lng: c.location.lng }));
-    mapInstance.current.fitBounds(bounds, 60);
-  }, [mapReady, mapsLib, routesLib, team.baseAddress, team.clients, team.color.primary, clearMarkers]);
+    if (markers.length > 0) {
+      const bounds = new google.maps.LatLngBounds();
+      markers.forEach((m) => {
+        const pos = m.getPosition();
+        if (pos) bounds.extend(pos);
+      });
+      map.fitBounds(bounds, { top: 60, right: 40, bottom: 40, left: 40 });
+    }
 
-  return <div ref={mapRef} className="w-full h-full rounded-xl" style={{ minHeight: 300 }} />;
+    return () => {
+      markers.forEach((m) => m.setMap(null));
+    };
+  }, [map, team.baseAddress, team.clients, team.color.primary]);
+
+  return null;
 }

@@ -1,217 +1,559 @@
 'use client';
 
-import { useReducer, useEffect, useCallback, useRef, useMemo, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
-import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { useAuth } from '@/lib/hooks/useAuth';
-import { useTeams } from '@/lib/hooks/useTeams';
-import { useClients } from '@/lib/hooks/useClients';
-import { useScheduleJobs } from '@/lib/hooks/useScheduleJobs';
+import { useReducer, useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { APIProvider, Map as GoogleMap, useMapsLibrary } from '@vis.gl/react-google-maps';
+import { AnimatePresence, motion } from 'framer-motion';
+
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
-import { calculateScheduleTimes, calculateAllTravel, calculateDaySummary } from '@/lib/routeEngine';
-import { getTodayISO, formatDateDisplay } from '@/lib/timeUtils';
+import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary } from '@/lib/routeEngine';
+import { formatDateDisplay, generateId, getTodayISO } from '@/lib/timeUtils';
+import { TravelSegment, Client, TeamSchedule, TEAM_COLORS } from '@/lib/types';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { createClient } from '@/lib/supabase/client';
+
 import TeamTabs from '@/components/TeamTabs';
 import ClientCard from '@/components/ClientCard';
 import AddClientButton from '@/components/AddClientButton';
 import TravelSegmentComponent from '@/components/TravelSegment';
-import DailySummaryPanel from '@/components/DailySummary';
+import DailySummaryCard from '@/components/DailySummary';
 import RouteMap from '@/components/RouteMap';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 
+const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+
 export default function SchedulePage() {
+  const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
+  const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
+  const [mobileShowMap, setMobileShowMap] = useState(false);
+  const [dbLoaded, setDbLoaded] = useState(false);
+
   const { profile } = useAuth();
-  const { teams: dbTeams, orgId, loading: teamsLoading, addTeam, removeTeam, updateTeam } = useTeams(profile?.org_id ?? null);
-  const { clients: savedClients, searchClients } = useClients(orgId);
-  const [state, dispatch] = useReducer(scheduleReducer, createInitialState());
-  const [selectedDate, setSelectedDate] = useState(getTodayISO());
-  const [isCalculating, setIsCalculating] = useState(false);
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-  const calcTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeTeam = state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0];
-  const { initialClients, loading: jobsLoading, saveClients } = useScheduleJobs(activeTeam?.id || null, selectedDate, orgId);
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+  const supabase = useMemo(() => createClient(), []);
+  const orgId = profile?.org_id || null;
 
-  // Wait for the routes library to load before creating DirectionsService
-  const routesLib = useMapsLibrary('routes');
-  useEffect(() => {
-    if (routesLib && !directionsServiceRef.current) {
-      directionsServiceRef.current = new routesLib.DirectionsService();
+  // ─── DB Persistence: Load teams + jobs on mount ───
+  const loadFromDb = useCallback(async () => {
+    if (!orgId) return;
+    const today = getTodayISO();
+
+    // Load teams
+    const { data: dbTeams } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order');
+
+    if (!dbTeams || dbTeams.length === 0) {
+      setDbLoaded(true);
+      return;
     }
-  }, [routesLib]);
 
-  // Sync DB teams to state
-  useEffect(() => {
-    if (dbTeams.length > 0 && !teamsLoading) {
-      dispatch({ type: 'LOAD_STATE', teams: dbTeams, activeTeamId: dbTeams[0].id, selectedDate });
+    const teams: TeamSchedule[] = dbTeams.map((row: Record<string, unknown>, idx: number) => ({
+      id: row.id as string,
+      name: row.name as string,
+      color: TEAM_COLORS[(row.color_index as number) % TEAM_COLORS.length],
+      baseAddress: row.base_address ? {
+        address: row.base_address as string,
+        lat: (row.base_lat as number) || 0,
+        lng: (row.base_lng as number) || 0,
+        placeId: (row.base_place_id as string) || undefined,
+      } : null,
+      clients: [],
+      travelSegments: new Map<string, TravelSegment>(),
+      dayStartTime: (row.day_start_time as string) || '08:00',
+      breaks: [],
+      hourlyRate: Number(row.hourly_rate) || 38,
+      fuelEfficiency: Number(row.fuel_efficiency) || 10,
+      fuelPrice: Number(row.fuel_price) || 1.85,
+      perKmRate: Number(row.per_km_rate) || 0,
+    }));
+
+    // Load schedule jobs for each team for today
+    for (const team of teams) {
+      const { data: schedule } = await supabase
+        .from('schedules')
+        .select('id')
+        .eq('team_id', team.id)
+        .eq('schedule_date', today)
+        .single();
+
+      if (schedule) {
+        const { data: jobs } = await supabase
+          .from('schedule_jobs')
+          .select('*')
+          .eq('schedule_id', schedule.id)
+          .order('position');
+
+        if (jobs) {
+          team.clients = jobs
+            .filter((j: Record<string, unknown>) => !j.is_break)
+            .map((j: Record<string, unknown>): Client => ({
+              id: j.id as string,
+              name: (j.name as string) || '',
+              location: {
+                address: (j.address as string) || '',
+                lat: (j.lat as number) || 0,
+                lng: (j.lng as number) || 0,
+                placeId: (j.place_id as string) || undefined,
+              },
+              jobDurationMinutes: Number(j.duration_minutes) || 90,
+              staffCount: (j.staff_count as number) || 1,
+              isLocked: (j.is_locked as boolean) || false,
+              startTime: (j.start_time as string) || undefined,
+              endTime: (j.end_time as string) || undefined,
+              notes: (j.notes as string) || undefined,
+              savedClientId: (j.client_id as string) || undefined,
+            }));
+        }
+      }
     }
-  }, [dbTeams, teamsLoading, selectedDate]);
 
-  // Sync loaded jobs to active team
-  useEffect(() => {
-    if (!jobsLoading && activeTeam && initialClients.length > 0) {
-      dispatch({ type: 'SET_CLIENTS_ORDER', teamId: activeTeam.id, clients: initialClients });
-    }
-  }, [jobsLoading, initialClients, activeTeam?.id]);
-
-  // Auto-save when clients change
-  const prevClientsRef = useRef<string>('');
-  useEffect(() => {
-    if (!activeTeam) return;
-    const key = JSON.stringify(activeTeam.clients.map(c => ({ id: c.id, name: c.name, addr: c.location.address, dur: c.jobDurationMinutes, staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime })));
-    if (key !== prevClientsRef.current && prevClientsRef.current !== '') {
-      saveClients(activeTeam.clients);
-    }
-    prevClientsRef.current = key;
-  }, [activeTeam?.clients, saveClients]);
-
-  // Calculate times when travel or clients change
-  useEffect(() => {
-    if (!activeTeam) return;
-    const updated = calculateScheduleTimes(activeTeam);
-    if (JSON.stringify(updated.map(c=>c.startTime)) !== JSON.stringify(activeTeam.clients.map(c=>c.startTime))) {
-      dispatch({ type: 'SET_CLIENT_TIMES', teamId: activeTeam.id, clients: updated });
-    }
-  }, [activeTeam?.travelSegments, activeTeam?.clients?.length, activeTeam?.dayStartTime, activeTeam?.breaks]);
-
-  // Auto-calculate travel
-  const recalculateTravel = useCallback(async () => {
-    if (!activeTeam?.baseAddress || activeTeam.clients.length === 0 || !directionsServiceRef.current) return;
-    setIsCalculating(true);
-    dispatch({ type: 'CLEAR_TRAVEL', teamId: activeTeam.id });
-    await calculateAllTravel(directionsServiceRef.current, activeTeam, (seg) => {
-      dispatch({ type: 'UPDATE_TRAVEL', teamId: activeTeam.id, segment: seg });
+    dispatch({
+      type: 'LOAD_STATE',
+      teams,
+      activeTeamId: teams[0].id,
+      selectedDate: today,
     });
-    setIsCalculating(false);
-  }, [activeTeam]);
+    setDbLoaded(true);
+  }, [orgId, supabase]);
 
-  // Debounced recalc
   useEffect(() => {
-    if (!activeTeam?.baseAddress || activeTeam.clients.length === 0) return;
-    if (calcTimerRef.current) clearTimeout(calcTimerRef.current);
-    calcTimerRef.current = setTimeout(() => recalculateTravel(), 800);
-    return () => { if (calcTimerRef.current) clearTimeout(calcTimerRef.current); };
-  }, [activeTeam?.clients?.length, activeTeam?.baseAddress]);
+    if (orgId && !dbLoaded) loadFromDb();
+  }, [orgId, dbLoaded, loadFromDb]);
 
-  const summary = useMemo(() => activeTeam ? calculateDaySummary(activeTeam) : { totalJobMinutes: 0, totalTravelMinutes: 0, totalDistanceKm: 0, totalWorkMinutes: 0, wageAmount: 0, fuelCost: 0, perKmCost: 0, clientCount: 0 }, [activeTeam]);
+  // ─── DB Persistence: Auto-save on state changes ───
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevStateRef = useRef<string>('');
 
-  const handleAddTeam = async () => { const t = await addTeam(); if (t) dispatch({ type: 'LOAD_STATE', teams: [...state.teams, t], activeTeamId: t.id, selectedDate }); };
-  const handleRemoveTeam = async (id: string) => { await removeTeam(id); dispatch({ type: 'REMOVE_TEAM', teamId: id }); };
-  const handleDateChange = (days: number) => { const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toISOString().split('T')[0]); };
+  useEffect(() => {
+    if (!dbLoaded || !orgId) return;
 
-  if (teamsLoading) return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center"><div className="shimmer w-48 h-6 rounded-lg mb-3 mx-auto" /><div className="shimmer w-32 h-4 rounded mb-2 mx-auto" /><div className="shimmer w-24 h-4 rounded mx-auto" /></div>
-    </div>
+    const fingerprint = JSON.stringify(
+      state.teams.map((t) => ({
+        id: t.id, name: t.name, base: t.baseAddress, start: t.dayStartTime,
+        rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
+        clients: t.clients.map((c) => ({
+          id: c.id, name: c.name, addr: c.location.address, dur: c.jobDurationMinutes,
+          staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
+        })),
+        breaks: t.breaks,
+      }))
+    );
+
+    if (fingerprint === prevStateRef.current) return;
+    prevStateRef.current = fingerprint;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    saveTimerRef.current = setTimeout(async () => {
+      const today = state.selectedDate;
+
+      for (const team of state.teams) {
+        const teamUpdate: Record<string, unknown> = {
+          name: team.name,
+          day_start_time: team.dayStartTime,
+          hourly_rate: team.hourlyRate,
+          fuel_efficiency: team.fuelEfficiency,
+          fuel_price: team.fuelPrice,
+          per_km_rate: team.perKmRate,
+        };
+        if (team.baseAddress) {
+          teamUpdate.base_address = team.baseAddress.address;
+          teamUpdate.base_lat = team.baseAddress.lat;
+          teamUpdate.base_lng = team.baseAddress.lng;
+          teamUpdate.base_place_id = team.baseAddress.placeId || null;
+        }
+        await supabase.from('teams').update(teamUpdate).eq('id', team.id);
+
+        let scheduleId: string;
+        const { data: existing } = await supabase
+          .from('schedules')
+          .select('id')
+          .eq('team_id', team.id)
+          .eq('schedule_date', today)
+          .maybeSingle();
+
+        if (existing) {
+          scheduleId = existing.id;
+        } else {
+          const { data: created } = await supabase
+            .from('schedules')
+            .insert({ org_id: orgId, team_id: team.id, schedule_date: today })
+            .select('id')
+            .single();
+          if (!created) continue;
+          scheduleId = created.id;
+        }
+
+        await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
+
+        if (team.clients.length > 0) {
+          const rows = team.clients.map((c, i) => ({
+            schedule_id: scheduleId,
+            org_id: orgId,
+            client_id: c.savedClientId || null,
+            position: i,
+            name: c.name,
+            address: c.location.address,
+            lat: c.location.lat,
+            lng: c.location.lng,
+            place_id: c.location.placeId || null,
+            duration_minutes: c.jobDurationMinutes,
+            staff_count: c.staffCount || 1,
+            is_locked: c.isLocked || false,
+            is_break: false,
+            notes: c.notes || '',
+            start_time: c.startTime || null,
+            end_time: c.endTime || null,
+          }));
+          await supabase.from('schedule_jobs').insert(rows);
+        }
+      }
+    }, 2000);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [state, dbLoaded, orgId, supabase]);
+
+  // ─── Handle ADD_TEAM to also create in DB ───
+  const handleAddTeam = useCallback(async () => {
+    if (!orgId) return;
+    const colorIndex = state.teams.length % TEAM_COLORS.length;
+    const baseAddr = state.teams[0]?.baseAddress;
+    const { data } = await supabase
+      .from('teams')
+      .insert({
+        org_id: orgId,
+        name: `Team ${state.teams.length + 1}`,
+        color_index: colorIndex,
+        sort_order: state.teams.length,
+        ...(baseAddr ? {
+          base_address: baseAddr.address,
+          base_lat: baseAddr.lat,
+          base_lng: baseAddr.lng,
+          base_place_id: baseAddr.placeId || null,
+        } : {}),
+      })
+      .select()
+      .single();
+
+    if (data) {
+      await loadFromDb();
+    }
+  }, [orgId, supabase, state.teams, loadFromDb]);
+
+  // ─── Handle REMOVE_TEAM to also delete from DB ───
+  const handleRemoveTeam = useCallback(async (teamId: string) => {
+    if (state.teams.length <= 1) return;
+    const { data: schedules } = await supabase
+      .from('schedules')
+      .select('id')
+      .eq('team_id', teamId);
+    if (schedules) {
+      for (const s of schedules) {
+        await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
+      }
+      await supabase.from('schedules').delete().eq('team_id', teamId);
+    }
+    await supabase.from('teams').delete().eq('id', teamId);
+    dispatch({ type: 'REMOVE_TEAM', teamId });
+  }, [supabase, state.teams.length]);
+
+  const activeTeam = useMemo(
+    () => state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0],
+    [state.teams, state.activeTeamId]
   );
 
+  const clientsWithTimes = useMemo(
+    () => calculateScheduleTimes(activeTeam),
+    [activeTeam]
+  );
+
+  useEffect(() => {
+    if (clientsWithTimes.length > 0) {
+      const hasChanges = clientsWithTimes.some((c, i) => {
+        const original = activeTeam.clients[i];
+        return original && (c.startTime !== original.startTime || c.endTime !== original.endTime);
+      });
+      if (hasChanges) {
+        dispatch({ type: 'SET_CLIENT_TIMES', teamId: activeTeam.id, clients: clientsWithTimes });
+      }
+    }
+  }, [clientsWithTimes, activeTeam.id, activeTeam.clients]);
+
+  const summary = useMemo(() => calculateDaySummary(activeTeam), [activeTeam]);
+
+  const routeKey = useMemo(() => {
+    const base = activeTeam.baseAddress
+      ? `${activeTeam.baseAddress.lat},${activeTeam.baseAddress.lng}`
+      : 'none';
+    const clients = activeTeam.clients
+      .map((c) => `${c.id}:${c.location.lat},${c.location.lng}`)
+      .join('|');
+    return `${activeTeam.id}::${base}::${clients}`;
+  }, [activeTeam.id, activeTeam.baseAddress, activeTeam.clients]);
+
+  const activeTeamRef = useRef(activeTeam);
+  activeTeamRef.current = activeTeam;
+
+  // Recalculate travel
+  useEffect(() => {
+    if (!directionsService || !activeTeamRef.current.baseAddress || activeTeamRef.current.clients.length === 0) return;
+    const teamId = activeTeamRef.current.id;
+    dispatch({ type: 'CLEAR_TRAVEL', teamId });
+    const timer = setTimeout(async () => {
+      await calculateAllTravel(directionsService, activeTeamRef.current, (segment) => {
+        dispatch({ type: 'UPDATE_TRAVEL', teamId, segment });
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [routeKey, directionsService]);
+
+  // Optimize route
+  const optimizeRoute = () => {
+    if (!directionsService || !activeTeam.baseAddress || activeTeam.clients.length < 2) return;
+    const lockedPositions: Record<number, Client> = {};
+    const unlocked: Client[] = [];
+    activeTeam.clients.forEach((c, i) => {
+      if (c.isLocked) lockedPositions[i] = c;
+      else unlocked.push(c);
+    });
+    if (unlocked.length < 2) return;
+    const origin = { lat: activeTeam.baseAddress.lat, lng: activeTeam.baseAddress.lng };
+    const waypoints: google.maps.DirectionsWaypoint[] = unlocked.map((c) => ({
+      location: { lat: c.location.lat, lng: c.location.lng }, stopover: true,
+    }));
+    directionsService.route({
+      origin, destination: origin, waypoints,
+      travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: true,
+    }, (result, status) => {
+      if (status === google.maps.DirectionsStatus.OK && result) {
+        const optimizedOrder = result.routes[0]?.waypoint_order;
+        if (optimizedOrder) {
+          const reorderedUnlocked: Client[] = optimizedOrder.map((idx) => unlocked[idx]);
+          const finalOrder: Client[] = [];
+          let unlockedIdx = 0;
+          for (let i = 0; i < activeTeam.clients.length; i++) {
+            if (lockedPositions[i]) finalOrder.push(lockedPositions[i]);
+            else finalOrder.push(reorderedUnlocked[unlockedIdx++]);
+          }
+          dispatch({ type: 'SET_CLIENTS_ORDER', teamId: activeTeam.id, clients: finalOrder });
+        }
+      }
+    });
+  };
+
+  const addBreak = (afterClientId: string) => {
+    dispatch({
+      type: 'ADD_BREAK', teamId: activeTeam.id, afterClientId,
+      breakItem: { id: generateId(), afterClientId, durationMinutes: 30, label: 'Lunch Break' },
+    });
+  };
+
+  const getTravelSegment = (fromId: string, toId: string): TravelSegment | undefined => {
+    return activeTeam.travelSegments.get(`${fromId}->${toId}`);
+  };
+
   return (
-    <APIProvider apiKey={apiKey} libraries={['places']}>
-      <div className="h-full flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="shrink-0 p-4 lg:p-6 pb-0 space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-text-primary">Schedule</h2>
-              <div className="flex items-center gap-2 mt-1">
-                <button onClick={() => handleDateChange(-1)} className="p-1 rounded-lg hover:bg-surface-hover text-text-tertiary">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-                <button onClick={() => setSelectedDate(getTodayISO())} className="text-sm font-medium text-text-secondary hover:text-primary transition-colors">{formatDateDisplay(selectedDate)}</button>
-                <button onClick={() => handleDateChange(1)} className="p-1 rounded-lg hover:bg-surface-hover text-text-tertiary">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                </button>
-              </div>
-            </div>
+    <APIProvider apiKey={MAPS_KEY} libraries={['places', 'routes']}>
+      <MapsInitializer onServiceReady={setDirectionsService} />
+      <div className="h-full flex flex-col">
+        {/* Schedule Header */}
+        <header className="shrink-0 z-20 px-4 lg:px-6 border-b border-border-light bg-white">
+          <div className="flex items-center justify-between h-14">
             <div className="flex items-center gap-2">
-              {isCalculating && <span className="text-xs text-text-tertiary flex items-center gap-1"><span className="animate-pulse-dot inline-block w-2 h-2 rounded-full bg-primary" /> Calculating...</span>}
-              <button onClick={recalculateTravel} disabled={isCalculating || !activeTeam?.baseAddress || (activeTeam?.clients.length || 0) === 0}
-                className="btn-secondary text-sm disabled:opacity-40">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                Recalculate
-              </button>
-            </div>
-          </div>
-          <TeamTabs teams={state.teams} activeTeamId={state.activeTeamId} dispatch={dispatch} onAddTeam={handleAddTeam} onRemoveTeam={handleRemoveTeam} />
-        </div>
-
-        {/* Main content */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
-          {/* Left panel — schedule list */}
-          <div className="flex-1 overflow-y-auto p-4 lg:p-6 custom-scrollbar lg:max-w-[560px] space-y-3">
-            {activeTeam && (
-              <>
-                {/* Base address + Day start */}
-                <div className="card p-4 space-y-3" style={{ borderLeft: `3px solid ${activeTeam.color.primary}` }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm" style={{ backgroundColor: activeTeam.color.primary }}>🏠</div>
-                    <span className="text-sm font-semibold text-text-primary">Base Address</span>
-                  </div>
-                  <PlacesAutocomplete onPlaceSelect={(loc) => {
-                    dispatch({ type: 'SET_BASE_ADDRESS', teamId: activeTeam.id, location: loc });
-                    updateTeam(activeTeam.id, { baseAddress: loc });
-                  }} defaultValue={activeTeam.baseAddress?.address || ''} placeholder="Set team base address..." className="text-sm" />
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-text-tertiary">Start:</span>
-                      <input type="time" value={activeTeam.dayStartTime} onChange={(e) => {
-                        dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value });
-                        updateTeam(activeTeam.id, { dayStartTime: e.target.value });
-                      }} className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-text-tertiary">Rate:</span>
-                      <div className="flex items-center">
-                        <span className="text-xs text-text-tertiary mr-1">$</span>
-                        <input type="number" value={activeTeam.hourlyRate} onChange={(e) => {
-                          const rate = Number(e.target.value) || 0;
-                          dispatch({ type: 'SET_HOURLY_RATE', teamId: activeTeam.id, rate });
-                          updateTeam(activeTeam.id, { hourlyRate: rate });
-                        }} className="w-16 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-center" step={1} />
-                        <span className="text-xs text-text-tertiary ml-1">/hr</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Travel from base */}
-                {activeTeam.clients.length > 0 && (
-                  <TravelSegmentComponent segment={activeTeam.travelSegments.get(`base->${activeTeam.clients[0].id}`)} teamColor={activeTeam.color.primary} />
-                )}
-
-                {/* Client list */}
-                <AnimatePresence mode="popLayout">
-                  {activeTeam.clients.map((client, i) => (
-                    <div key={client.id}>
-                      <ClientCard client={client} index={i} totalClients={activeTeam.clients.length} team={activeTeam} dispatch={dispatch} />
-                      {i < activeTeam.clients.length - 1 && (
-                        <TravelSegmentComponent segment={activeTeam.travelSegments.get(`${client.id}->${activeTeam.clients[i + 1].id}`)} teamColor={activeTeam.color.primary} />
-                      )}
-                      {i === activeTeam.clients.length - 1 && (
-                        <TravelSegmentComponent segment={activeTeam.travelSegments.get(`${client.id}->base-return`)} teamColor={activeTeam.color.primary} />
-                      )}
-                    </div>
-                  ))}
-                </AnimatePresence>
-
-                {/* Add client button */}
-                <AddClientButton teamId={activeTeam.id} dispatch={dispatch} savedClients={savedClients} searchClients={searchClients} />
-              </>
-            )}
-          </div>
-
-          {/* Right panel — Map + Summary */}
-          <div className="hidden lg:flex flex-col flex-1 min-h-0 p-6 pl-0 gap-4">
-            <div className="flex-1 card overflow-hidden min-h-[300px]">
-              {activeTeam && (
-                <div className="h-full">
-                  <RouteMap team={activeTeam} />
-                </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span className="text-sm font-medium text-text-primary">
+                {formatDateDisplay(state.selectedDate)}
+              </span>
+              {dbLoaded && (
+                <span className="text-[10px] text-text-tertiary ml-1">· Auto-saving</span>
               )}
             </div>
-            {activeTeam && <DailySummaryPanel summary={summary} team={activeTeam} selectedDate={selectedDate} />}
+            <button onClick={() => setMobileShowMap(!mobileShowMap)} className="md:hidden btn-ghost">
+              {mobileShowMap ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+                  <line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <div className="pb-3 -mx-1 overflow-x-auto">
+            <TeamTabs
+              state={state}
+              dispatch={dispatch}
+              onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
+              onAddTeam={handleAddTeam}
+              onRemoveTeam={handleRemoveTeam}
+            />
+          </div>
+        </header>
+
+        {/* Main content */}
+        <div className="flex-1 flex min-h-0">
+          {/* Schedule Panel */}
+          <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light bg-white/50`}>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+              {/* Base Address */}
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-surface-elevated flex items-center justify-center text-lg">🏠</div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">Base Address</h3>
+                    <p className="text-xs text-text-tertiary">Starting & return point</p>
+                  </div>
+                </div>
+                <PlacesAutocomplete
+                  onPlaceSelect={(location) => dispatch({ type: 'SET_BASE_ADDRESS', teamId: activeTeam.id, location })}
+                  defaultValue={activeTeam.baseAddress?.address || ''}
+                  placeholder="Enter your base address..."
+                  className="text-sm"
+                />
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-xs text-text-secondary">Day starts at</span>
+                  <input
+                    type="time"
+                    value={activeTeam.dayStartTime}
+                    onChange={(e) => dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value })}
+                    className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary"
+                  />
+                </div>
+              </motion.div>
+
+              {/* Optimize Route Button */}
+              {activeTeam.clients.length >= 2 && activeTeam.baseAddress && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
+                  <button onClick={optimizeRoute} className="btn-secondary text-xs flex-1"
+                    style={{ borderColor: `${activeTeam.color.primary}30`, color: activeTeam.color.primary }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M16 3h5v5" /><path d="M8 3H3v5" /><path d="M21 3l-7 7" /><path d="M3 3l7 7" />
+                      <path d="M16 21h5v-5" /><path d="M8 21H3v-5" /><path d="M21 21l-7-7" /><path d="M3 21l7-7" />
+                    </svg>
+                    Optimize Route Order
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Client Cards with Travel Segments */}
+              <AnimatePresence mode="popLayout">
+                {activeTeam.clients.map((client, index) => {
+                  const prevId = index === 0 ? 'base' : activeTeam.clients[index - 1].id;
+                  const segment = getTravelSegment(prevId, client.id);
+                  const breakAfterThis = activeTeam.breaks.find((b) => b.afterClientId === client.id);
+                  return (
+                    <motion.div key={client.id} layout>
+                      {activeTeam.baseAddress && (
+                        <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />
+                      )}
+                      <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
+                        team={activeTeam} dispatch={dispatch} />
+                      {breakAfterThis ? (
+                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                          className="flex items-center gap-2 py-1 pl-5 ml-4">
+                          <div className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full bg-warning-light text-warning border border-amber-200">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M17 8h1a4 4 0 1 1 0 8h-1" /><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                              <line x1="6" y1="2" x2="6" y2="4" /><line x1="10" y1="2" x2="10" y2="4" /><line x1="14" y1="2" x2="14" y2="4" />
+                            </svg>
+                            {breakAfterThis.label} · {breakAfterThis.durationMinutes}m
+                          </div>
+                          <button onClick={() => dispatch({ type: 'REMOVE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id })}
+                            className="p-1 rounded hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors" title="Remove break">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                          </button>
+                        </motion.div>
+                      ) : index < activeTeam.clients.length - 1 ? (
+                        <div className="flex justify-center py-0.5">
+                          <button onClick={() => addBreak(client.id)}
+                            className="text-xs text-text-tertiary hover:text-warning transition-colors opacity-0 hover:opacity-100 px-2 py-0.5"
+                            title="Add break after this client">+ break</button>
+                        </div>
+                      ) : null}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+
+              {/* Return to base */}
+              {activeTeam.clients.length > 0 && activeTeam.baseAddress && (
+                <>
+                  <TravelSegmentComponent
+                    segment={getTravelSegment(activeTeam.clients[activeTeam.clients.length - 1].id, 'base-return')}
+                    teamColor={activeTeam.color.primary}
+                  />
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-3 flex items-center gap-3 opacity-70">
+                    <div className="w-7 h-7 rounded-lg bg-surface-elevated flex items-center justify-center text-sm">🏠</div>
+                    <span className="text-sm text-text-secondary font-medium">Return to Base</span>
+                  </motion.div>
+                </>
+              )}
+
+              {/* Add Client */}
+              <div className="pt-1">
+                <AddClientButton teamId={activeTeam.id} teamColor={activeTeam.color.primary} dispatch={dispatch} />
+              </div>
+
+              {/* Daily Summary */}
+              {activeTeam.clients.length > 0 && (
+                <div className="pt-2">
+                  <DailySummaryCard team={activeTeam} summary={summary} dispatch={dispatch} />
+                </div>
+              )}
+
+              {/* Empty state */}
+              {activeTeam.clients.length === 0 && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="text-center py-12">
+                  <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center mx-auto mb-4 text-2xl">📍</div>
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">No clients yet</h3>
+                  <p className="text-xs text-text-tertiary max-w-[240px] mx-auto">
+                    Set your base address above, then add clients to start building your route.
+                  </p>
+                </motion.div>
+              )}
+            </div>
+          </div>
+
+          {/* Map Panel */}
+          <div className={`${mobileShowMap ? 'flex' : 'hidden md:flex'} flex-1 relative`}>
+            <GoogleMap defaultCenter={{ lat: -33.8688, lng: 151.2093 }} defaultZoom={11} mapId="cleanroute-map"
+              gestureHandling="greedy" disableDefaultUI={false} zoomControl={true} streetViewControl={false}
+              mapTypeControl={false} fullscreenControl={true} className="w-full h-full">
+              <RouteMap team={activeTeam} />
+            </GoogleMap>
+            <div className="absolute top-4 left-4 glass-panel rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+              <div className="team-dot animate-pulse-dot" style={{ backgroundColor: activeTeam.color.primary }} />
+              <span className="text-sm font-semibold text-text-primary">{activeTeam.name}</span>
+              {activeTeam.clients.length > 0 && (
+                <span className="text-xs text-text-secondary">
+                  · {activeTeam.clients.length} stop{activeTeam.clients.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </APIProvider>
   );
+}
+
+// Helper component to initialize DirectionsService
+function MapsInitializer({ onServiceReady }: { onServiceReady: (service: google.maps.DirectionsService) => void }) {
+  const routesLibrary = useMapsLibrary('routes');
+  useEffect(() => {
+    if (!routesLibrary) return;
+    const service = new routesLibrary.DirectionsService();
+    onServiceReady(service);
+  }, [routesLibrary, onServiceReady]);
+  return null;
 }

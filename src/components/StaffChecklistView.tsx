@@ -13,18 +13,23 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [notes, setNotes] = useState('');
   const [templateId, setTemplateId] = useState<string | null>(null);
+  const [templateName, setTemplateName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [clientEmail, setClientEmail] = useState<string | null>(null);
 
   const loadChecklist = useCallback(async () => {
     // Load the client's checklist template
-    const { data: client } = await supabase.from('clients').select('checklist_template_id').eq('id', clientId).single();
+    const { data: client } = await supabase.from('clients').select('checklist_template_id, email').eq('id', clientId).single();
+    if (client?.email) setClientEmail(client.email);
     if (!client?.checklist_template_id) { setLoading(false); return; }
     setTemplateId(client.checklist_template_id);
-    const { data: tmpl } = await supabase.from('checklist_templates').select('items').eq('id', client.checklist_template_id).single();
+    const { data: tmpl } = await supabase.from('checklist_templates').select('items, name').eq('id', client.checklist_template_id).single();
     if (tmpl?.items) {
       const templateItems = (tmpl.items as { id: string; text: string }[]).map((it) => ({ ...it, completed: false }));
       setItems(templateItems);
+      setTemplateName(tmpl.name || 'Checklist');
     }
     setLoading(false);
   }, [supabase, clientId]);
@@ -44,7 +49,34 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
       org_id: profile!.org_id, client_id: clientId, checklist_template_id: templateId,
       items: JSON.stringify(items), notes, completed_by: user!.id, completed_at: new Date().toISOString(),
     });
-    setSaving(false); onClose();
+    setSaving(false);
+    setSaved(true);
+  };
+
+  const handleEmailToClient = () => {
+    if (!clientEmail) return;
+    const completedItems = items.filter((it) => it.completed);
+    const incompleteItems = items.filter((it) => !it.completed);
+
+    const subject = encodeURIComponent(`${templateName} - ${clientName} - ${new Date().toLocaleDateString('en-AU')}`);
+
+    let body = `Hi,\n\nHere is the completed checklist for ${clientName}:\n\n`;
+    body += `✅ COMPLETED (${completedItems.length}/${items.length}):\n`;
+    completedItems.forEach((it) => { body += `  ✓ ${it.text}\n`; });
+
+    if (incompleteItems.length > 0) {
+      body += `\n⬚ NOT COMPLETED:\n`;
+      incompleteItems.forEach((it) => { body += `  ○ ${it.text}\n`; });
+    }
+
+    if (notes) {
+      body += `\nNotes: ${notes}\n`;
+    }
+
+    body += `\n---\nSent from CleanRoute Pro`;
+
+    const mailtoUrl = `mailto:${clientEmail}?subject=${subject}&body=${encodeURIComponent(body)}`;
+    window.open(mailtoUrl, '_self');
   };
 
   return (
@@ -76,8 +108,8 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
               <p className="text-text-tertiary text-xs mt-1">Assign one from the Clients page.</p>
             </div>
           ) : items.map((item) => (
-            <button key={item.id} onClick={() => toggleItem(item.id)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${item.completed ? 'bg-success-light border-emerald-200' : 'bg-white border-border-light hover:border-border'}`}>
+            <button key={item.id} onClick={() => !saved && toggleItem(item.id)}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${item.completed ? 'bg-success-light border-emerald-200' : 'bg-white border-border-light hover:border-border'} ${saved ? 'pointer-events-none' : ''}`}>
               <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${item.completed ? 'bg-success border-success text-white' : 'border-border'}`}>
                 {item.completed && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
               </div>
@@ -88,11 +120,32 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
 
         {items.length > 0 && (
           <div className="p-5 border-t border-border-light shrink-0 space-y-3">
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes..."
-              className="input-field text-sm resize-none" rows={2} />
-            <button onClick={handleSave} disabled={saving} className="btn-primary w-full py-3 disabled:opacity-50">
-              {saving ? 'Saving...' : progress === 100 ? '✓ Mark Complete' : 'Save Progress'}
-            </button>
+            {saved ? (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+                <div className="text-center py-2">
+                  <div className="text-2xl mb-1">✅</div>
+                  <p className="text-sm font-semibold text-text-primary">Checklist saved!</p>
+                </div>
+                {clientEmail && (
+                  <button onClick={handleEmailToClient} className="btn-secondary w-full py-2.5 text-sm">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                      <polyline points="22,6 12,13 2,6"/>
+                    </svg>
+                    Email to {clientEmail}
+                  </button>
+                )}
+                <button onClick={onClose} className="btn-ghost w-full py-2 text-sm">Close</button>
+              </motion.div>
+            ) : (
+              <>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes..."
+                  className="input-field text-sm resize-none" rows={2} />
+                <button onClick={handleSave} disabled={saving} className="btn-primary w-full py-3 disabled:opacity-50">
+                  {saving ? 'Saving...' : progress === 100 ? '✓ Mark Complete' : 'Save Progress'}
+                </button>
+              </>
+            )}
           </div>
         )}
       </motion.div>

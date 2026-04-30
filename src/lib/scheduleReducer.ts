@@ -20,7 +20,8 @@ function createDefaultTeam(index: number): TeamSchedule {
 
 export function createInitialState(): AppState {
   const team1 = createDefaultTeam(0);
-  return { teams: [team1], activeTeamId: team1.id, selectedDate: getTodayISO() };
+  const today = getTodayISO();
+  return { teams: [team1], activeTeamId: team1.id, selectedDate: today, viewMode: 'week', focusedDate: today };
 }
 
 export function scheduleReducer(state: AppState, action: ScheduleAction): AppState {
@@ -70,8 +71,13 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'SET_FIXED_START_TIME':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, fixedStartTime: action.time } : c) } : t) };
     case 'LOAD_STATE':
-      return { teams: action.teams, activeTeamId: action.activeTeamId, selectedDate: action.selectedDate };
+      return { ...state, teams: action.teams, activeTeamId: action.activeTeamId, selectedDate: action.selectedDate };
+    case 'SET_VIEW_MODE':
+      return { ...state, viewMode: action.viewMode };
+    case 'SET_FOCUSED_DATE':
+      return { ...state, focusedDate: action.date, selectedDate: action.date };
     default:
       return state;
   }
 }
+

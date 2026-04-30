@@ -4,12 +4,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 
 interface Template { id: string; name: string; label: string; week_data: Record<string, unknown>; created_at: string; }
 
 export default function TemplatesPage() {
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,6 +27,15 @@ export default function TemplatesPage() {
   const handleDelete = async (id: string) => {
     await supabase.from('schedule_templates').delete().eq('id', id);
     setTemplates((p) => p.filter((t) => t.id !== id));
+  };
+
+  const handleLoad = (id: string) => {
+    router.push(`/dashboard/schedule?template=${id}`);
+  };
+
+  const getClientCount = (t: Template) => {
+    const wd = t.week_data as { clients?: unknown[] };
+    return wd?.clients?.length || 0;
   };
 
   const labels = ['A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4'];
@@ -50,18 +61,26 @@ export default function TemplatesPage() {
             {templates.map((t, i) => (
               <motion.div key={t.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                 className="card p-4 group">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2 mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       {t.label && <span className="text-xs font-bold bg-primary-light text-primary px-2 py-0.5 rounded-md">{t.label}</span>}
                       <h4 className="text-sm font-bold text-text-primary">{t.name}</h4>
                     </div>
-                    <p className="text-xs text-text-tertiary">Created {new Date(t.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    <p className="text-xs text-text-tertiary">
+                      {getClientCount(t)} clients · Created {new Date(t.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
                   </div>
                   <button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger md:opacity-0 md:group-hover:opacity-100 transition-all">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 </div>
+                <button onClick={() => handleLoad(t.id)} className="btn-primary w-full text-sm py-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  Load to Schedule
+                </button>
               </motion.div>
             ))}
           </div>

@@ -73,6 +73,15 @@ export interface DaySummary {
   clientCount: number;
 }
 
+export interface DaySchedule {
+  date: string;
+  dayOfWeek: string;
+  scheduleId: string | null;
+  clients: Client[];
+  templateCode?: string;
+  isPublished: boolean;
+}
+
 export const TEAM_COLORS: TeamColor[] = [
   {
     name: 'Indigo',
@@ -160,10 +169,14 @@ export type ScheduleAction =
   | { type: 'SET_CLIENT_TIMES'; teamId: string; clients: Client[] }
   | { type: 'SET_CLIENTS_ORDER'; teamId: string; clients: Client[] }
   | { type: 'SET_FIXED_START_TIME'; teamId: string; clientId: string; time: string | undefined }
-  | { type: 'LOAD_STATE'; teams: TeamSchedule[]; activeTeamId: string; selectedDate: string };
+  | { type: 'LOAD_STATE'; teams: TeamSchedule[]; activeTeamId: string; selectedDate: string }
+  | { type: 'SET_VIEW_MODE'; viewMode: 'week' | 'day' }
+  | { type: 'SET_FOCUSED_DATE'; date: string };
 
 export interface AppState {
   teams: TeamSchedule[];
   activeTeamId: string;
   selectedDate: string;
+  viewMode: 'week' | 'day';
+  focusedDate: string;
 }

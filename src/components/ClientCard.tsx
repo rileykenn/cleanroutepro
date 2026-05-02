@@ -68,9 +68,9 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <input type="text" value={client.name} onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { name: e.target.value } })}
             className="font-semibold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors" placeholder="Client name" />
         </div>
-        <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-          <button onClick={() => setEditingStartTime(!editingStartTime)} className={`p-1.5 rounded-lg transition-colors ${client.fixedStartTime ? 'bg-indigo-50 text-primary' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Pin start time">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill={client.fixedStartTime ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5" fill={client.fixedStartTime ? 'white' : 'none'}/></svg>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button onClick={() => setEditingStartTime(!editingStartTime)} className={`p-1.5 rounded-lg transition-colors ${client.fixedStartTime ? 'bg-indigo-50 text-primary' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Override start time">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </button>
           <button onClick={() => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { isLocked: !client.isLocked } })} className={`p-1.5 rounded-lg transition-colors ${client.isLocked ? 'bg-amber-50 text-amber-600' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Lock position">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{client.isLocked ? <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>

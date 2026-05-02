@@ -68,139 +68,106 @@ export default function DailySummaryCard({ team, summary, dispatch }: DailySumma
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-2">
+        {/* Jobs */}
+        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+          <div className="text-xs font-medium text-text-secondary">Jobs</div>
+          <div className="flex items-center gap-3">
+            <span className="text-base font-bold text-text-primary">{formatDuration(summary.totalJobMinutes)}</span>
+            <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalJobMinutes / 60).toFixed(2)} hrs</span>
+          </div>
+        </div>
+
+        {/* Travel */}
+        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+          <div className="text-xs font-medium text-text-secondary">Travel</div>
+          <div className="flex items-center gap-3">
+            <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDuration(summary.totalTravelMinutes)}</span>
+            <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalTravelMinutes / 60).toFixed(2)} hrs</span>
+          </div>
+        </div>
+
+        {/* Break (if any) */}
+        {summary.totalBreakMinutes > 0 && (
+          <div className="flex items-center justify-between bg-amber-50 rounded-xl p-3 border border-amber-100">
+            <div className="text-xs font-medium text-amber-700">Break <span className="text-[10px] font-normal text-amber-500">(excl. payroll)</span></div>
+            <div className="flex items-center gap-3">
+              <span className="text-base font-bold text-amber-700">{formatDuration(summary.totalBreakMinutes)}</span>
+              <span className="text-xs text-amber-500 bg-white px-2 py-0.5 rounded-md border border-amber-100">{(summary.totalBreakMinutes / 60).toFixed(2)} hrs</span>
+            </div>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-border-light" />
+
+        {/* Total (J + T) — payable */}
+        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
+          <div className="text-xs font-bold" style={{ color: team.color.text }}>Total (J + T)</div>
+          <div className="flex items-center gap-3">
+            <span className="text-lg font-bold" style={{ color: team.color.text }}>{formatDuration(summary.payableMinutes)}</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white/60" style={{ color: team.color.text }}>{(summary.payableMinutes / 60).toFixed(2)} hrs</span>
+          </div>
+        </div>
+
+        {/* Driver Km */}
+        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+          <div className="text-xs font-medium text-text-secondary">Driver Km</div>
+          <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDistance(summary.totalDistanceKm)}</span>
+        </div>
+
         {/* Clients */}
-        <div className="bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs text-text-tertiary mb-1">Clients</div>
-          <div className="text-xl font-bold text-text-primary">{summary.clientCount}</div>
-        </div>
-
-        {/* Job Time */}
-        <div className="bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs text-text-tertiary mb-1">Job Time</div>
-          <div className="text-xl font-bold text-text-primary">{formatDuration(summary.totalJobMinutes)}</div>
-          <div className="text-[11px] text-text-tertiary mt-0.5">{(summary.totalJobMinutes / 60).toFixed(2)} hrs</div>
-        </div>
-
-        {/* Travel Time */}
-        <div className="bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs text-text-tertiary mb-1">Travel Time</div>
-          <div className="text-xl font-bold" style={{ color: team.color.primary }}>
-            {formatDuration(summary.totalTravelMinutes)}
-          </div>
-        </div>
-
-        {/* Distance */}
-        <div className="bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs text-text-tertiary mb-1">Distance</div>
-          <div className="text-xl font-bold" style={{ color: team.color.primary }}>
-            {formatDistance(summary.totalDistanceKm)}
-          </div>
-        </div>
-
-        {/* Total Work */}
-        <div className="bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs text-text-tertiary mb-1">Total Work</div>
-          <div className="text-xl font-bold text-text-primary">{formatDuration(summary.totalWorkMinutes)}</div>
-          <div className="text-[11px] text-text-tertiary mt-0.5">{(summary.totalWorkMinutes / 60).toFixed(2)} hrs</div>
+        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+          <div className="text-xs font-medium text-text-secondary">Clients</div>
+          <span className="text-base font-bold text-text-primary">{summary.clientCount}</span>
         </div>
 
         {/* Wage */}
-        <div className="rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
-          <div className="text-xs mb-1" style={{ color: team.color.text }}>
-            Wages
-          </div>
-          <div className="text-xl font-bold" style={{ color: team.color.text }}>
-            ${summary.wageAmount.toFixed(2)}
-          </div>
+        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
+          <div className="text-xs font-bold" style={{ color: team.color.text }}>Wages</div>
+          <span className="text-lg font-bold" style={{ color: team.color.text }}>${summary.wageAmount.toFixed(2)}</span>
         </div>
 
-        {/* Fuel Cost — spans full width */}
-        <div className="col-span-2 rounded-xl p-3 bg-surface-elevated border border-border-light">
+        {/* Fuel Cost */}
+        <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={team.color.primary} strokeWidth="2">
                 <path d="M3 22V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" />
                 <path d="M15 10h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 4" />
-                <path d="M3 22h12" />
-                <path d="M7 10h4" />
+                <path d="M3 22h12" /><path d="M7 10h4" />
               </svg>
               <span className="text-xs font-semibold text-text-primary">Fuel Cost</span>
             </div>
-            <div className="text-lg font-bold" style={{ color: team.color.primary }}>
-              ${summary.fuelCost.toFixed(2)}
-            </div>
+            <div className="text-lg font-bold" style={{ color: team.color.primary }}>${summary.fuelCost.toFixed(2)}</div>
           </div>
           <div className="flex items-center gap-3 text-xs">
             <label className="flex items-center gap-1.5">
               <span className="text-text-tertiary">L/100km</span>
-              <input
-                type="number"
-                value={team.fuelEfficiency}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value) || 0;
-                  dispatch({
-                    type: 'SET_FUEL_SETTINGS',
-                    teamId: team.id,
-                    fuelEfficiency: val,
-                    fuelPrice: team.fuelPrice,
-                  });
-                }}
-                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary"
-                min={0}
-                step={0.5}
-              />
+              <input type="number" value={team.fuelEfficiency}
+                onChange={(e) => dispatch({ type: 'SET_FUEL_SETTINGS', teamId: team.id, fuelEfficiency: parseFloat(e.target.value) || 0, fuelPrice: team.fuelPrice })}
+                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.5} />
             </label>
             <label className="flex items-center gap-1.5">
               <span className="text-text-tertiary">$/L</span>
-              <input
-                type="number"
-                value={team.fuelPrice}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value) || 0;
-                  dispatch({
-                    type: 'SET_FUEL_SETTINGS',
-                    teamId: team.id,
-                    fuelEfficiency: team.fuelEfficiency,
-                    fuelPrice: val,
-                  });
-                }}
-                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary"
-                min={0}
-                step={0.01}
-              />
+              <input type="number" value={team.fuelPrice}
+                onChange={(e) => dispatch({ type: 'SET_FUEL_SETTINGS', teamId: team.id, fuelEfficiency: team.fuelEfficiency, fuelPrice: parseFloat(e.target.value) || 0 })}
+                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.01} />
             </label>
           </div>
         </div>
 
-        {/* Per-KM Allowance — spans full width */}
-        <div className="col-span-2 rounded-xl p-3 bg-surface-elevated border border-border-light">
+        {/* Per-KM Allowance */}
+        <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={team.color.primary} strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span className="text-xs font-semibold text-text-primary">Per-KM Allowance</span>
-            </div>
-            <div className="text-lg font-bold" style={{ color: team.color.primary }}>
-              ${summary.perKmCost.toFixed(2)}
-            </div>
+            <span className="text-xs font-semibold text-text-primary">Per-KM Allowance</span>
+            <div className="text-lg font-bold" style={{ color: team.color.primary }}>${summary.perKmCost.toFixed(2)}</div>
           </div>
           <label className="flex items-center gap-1.5 text-xs">
             <span className="text-text-tertiary">$/km</span>
-            <input
-              type="number"
-              value={team.perKmRate}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value) || 0;
-                dispatch({ type: 'SET_PER_KM_RATE', teamId: team.id, rate: val });
-              }}
-              className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary"
-              min={0}
-              step={0.01}
-            />
+            <input type="number" value={team.perKmRate}
+              onChange={(e) => dispatch({ type: 'SET_PER_KM_RATE', teamId: team.id, rate: parseFloat(e.target.value) || 0 })}
+              className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.01} />
           </label>
         </div>
       </div>

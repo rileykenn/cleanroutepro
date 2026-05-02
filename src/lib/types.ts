@@ -67,6 +67,8 @@ export interface DaySummary {
   totalTravelMinutes: number;
   totalDistanceKm: number;
   totalWorkMinutes: number;
+  totalBreakMinutes: number;
+  payableMinutes: number;
   wageAmount: number;
   fuelCost: number;
   perKmCost: number;

@@ -103,9 +103,12 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
   const totalBreakMinutes = team.breaks.reduce((s, b) => s + b.durationMinutes, 0);
   const effectiveJobMinutes = team.clients.reduce((s, c) => s + c.jobDurationMinutes / (c.staffCount || 1), 0);
   const totalWorkMinutes = effectiveJobMinutes + totalTravelMinutes + totalBreakMinutes;
+  // Payable = jobs + travel (breaks excluded for payroll)
+  const payableMinutes = effectiveJobMinutes + totalTravelMinutes;
   return {
     totalJobMinutes, totalTravelMinutes, totalDistanceKm, totalWorkMinutes,
-    wageAmount: (totalWorkMinutes / 60) * team.hourlyRate,
+    totalBreakMinutes, payableMinutes,
+    wageAmount: (payableMinutes / 60) * team.hourlyRate,
     fuelCost: (totalDistanceKm / 100) * team.fuelEfficiency * team.fuelPrice,
     perKmCost: totalDistanceKm * team.perKmRate,
     clientCount: team.clients.length,

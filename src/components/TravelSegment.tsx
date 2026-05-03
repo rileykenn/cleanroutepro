@@ -11,7 +11,7 @@ interface TravelSegmentProps {
 }
 
 export default function TravelSegment({ segment, teamColor, onAddBreak }: TravelSegmentProps) {
-  if (!segment) return null;
+  if (!segment || segment.isCalculating) return null;
 
   return (
     <div className="travel-connector group" style={{ '--color-border': teamColor } as React.CSSProperties}>

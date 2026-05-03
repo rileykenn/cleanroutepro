@@ -73,9 +73,18 @@ export async function calculateAllTravel(
   }
 }
 
-export function calculateScheduleTimes(team: TeamSchedule): Client[] {
-  if (!team.baseAddress || team.clients.length === 0) return team.clients;
+export interface ScheduleTimesResult {
+  clients: Client[];
+  /** When the team actually needs to depart base (back-calculated if first client has a fixed start time) */
+  baseDepartureTime: string;
+}
+
+export function calculateScheduleTimes(team: TeamSchedule): ScheduleTimesResult {
+  if (!team.baseAddress || team.clients.length === 0) {
+    return { clients: team.clients, baseDepartureTime: team.dayStartTime };
+  }
   let currentTime = parseTime(team.dayStartTime);
+  let baseDepartureTime = team.dayStartTime;
   const updatedClients: Client[] = [];
   for (let i = 0; i < team.clients.length; i++) {
     const client = team.clients[i];
@@ -87,13 +96,24 @@ export function calculateScheduleTimes(team: TeamSchedule): Client[] {
       if (brk) currentTime += brk.durationMinutes;
     }
     let startTime: string;
-    if (client.fixedStartTime) { startTime = client.fixedStartTime; currentTime = parseTime(client.fixedStartTime); }
-    else { startTime = minutesToTime(currentTime); }
+    if (client.fixedStartTime) {
+      startTime = client.fixedStartTime;
+      // Back-calculate base departure for the first client
+      if (i === 0 && segment && !segment.isCalculating) {
+        const fixedMin = parseTime(client.fixedStartTime);
+        baseDepartureTime = minutesToTime(fixedMin - segment.durationMinutes);
+      } else if (i === 0) {
+        baseDepartureTime = client.fixedStartTime;
+      }
+      currentTime = parseTime(client.fixedStartTime);
+    } else {
+      startTime = minutesToTime(currentTime);
+    }
     const effectiveDuration = client.jobDurationMinutes / (client.staffCount || 1);
     currentTime += effectiveDuration;
     updatedClients.push({ ...client, startTime, endTime: minutesToTime(currentTime) });
   }
-  return updatedClients;
+  return { clients: updatedClients, baseDepartureTime };
 }
 
 export function calculateDaySummary(team: TeamSchedule): DaySummary {
@@ -124,7 +144,7 @@ export function getRouteWaypoints(team: TeamSchedule) {
   };
 }
 
-export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary): string {
+export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary, staffNames?: string[]): string {
   const h = ['Stop','Client','Address','Start','End','Duration','Staff','Effective Duration','Travel To (min)','Distance To (km)'];
   const rows: string[][] = [['0','Base',team.baseAddress?.address||'',team.dayStartTime,'','','','','','']];
   team.clients.forEach((c, i) => {
@@ -138,7 +158,12 @@ export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary): stri
     const ret = team.travelSegments.get(`${last.id}->base-return`);
     rows.push([String(team.clients.length+1),'Return to Base',team.baseAddress?.address||'',last.endTime||'','','','','',ret?String(ret.durationMinutes):'',ret?String(ret.distanceKm):'']);
   }
-  rows.push([],['Summary'],['Total Clients',String(summary.clientCount)],['Total Job Time',`${summary.totalJobMinutes} min`],['Total Travel',`${summary.totalTravelMinutes} min`],['Total Distance',`${summary.totalDistanceKm.toFixed(1)} km`],['Total Work',`${summary.totalWorkMinutes.toFixed(0)} min`],['Work Hours (decimal)',`${(summary.totalWorkMinutes/60).toFixed(2)} hours`],[`Wage ($${team.hourlyRate}/hr)`,`$${summary.wageAmount.toFixed(2)}`],['Fuel Cost',`$${summary.fuelCost.toFixed(2)}`]);
+  rows.push([],['Summary']);
+  if (staffNames && staffNames.length > 0) {
+    rows.push(['Assigned Staff', staffNames.join(', ')]);
+    rows.push(['Team Headcount', String(staffNames.length)]);
+  }
+  rows.push(['Total Clients',String(summary.clientCount)],['Total Job Time',`${summary.totalJobMinutes} min`],['Total Travel',`${summary.totalTravelMinutes} min`],['Total Distance',`${summary.totalDistanceKm.toFixed(1)} km`],['Total Work',`${summary.totalWorkMinutes.toFixed(0)} min`],['Work Hours (decimal)',`${(summary.totalWorkMinutes/60).toFixed(2)} hours`],[`Wage ($${team.hourlyRate}/hr)`,`$${summary.wageAmount.toFixed(2)}`],['Fuel Cost',`$${summary.fuelCost.toFixed(2)}`]);
   if (team.perKmRate > 0) rows.push([`Per-KM ($${team.perKmRate}/km)`,`$${summary.perKmCost.toFixed(2)}`]);
   return [h,...rows].map(r => r.join(',')).join('\n');
 }

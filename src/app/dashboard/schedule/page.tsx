@@ -16,6 +16,7 @@ import MonthOverlay from '@/components/MonthOverlay';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
 import LoadTemplateModal from '@/components/LoadTemplateModal';
 import DayEditor from '@/components/DayEditor';
+import ConfirmModal from '@/components/ConfirmModal';
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -25,13 +26,18 @@ export default function SchedulePage() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
-  const [weekSchedules, setWeekSchedules] = useState<Map<string, DaySchedule>>(new Map());
+  const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
+  const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
+  const activeTeamIdRef = useRef(state.activeTeamId);
+  activeTeamIdRef.current = state.activeTeamId;
+  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; clientCount: number } | null>(null);
 
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const orgId = profile?.org_id || null;
+  const isStaff = profile?.role === 'staff';
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
@@ -66,94 +72,141 @@ export default function SchedulePage() {
   // ─── Load week schedules for overview ───
   const loadWeekSchedules = useCallback(async (dates: string[]) => {
     if (!orgId) return;
-    const teamsList = await loadTeams();
-    if (!teamsList) return;
+    try {
+      const teamsList = await loadTeams();
 
-    const newMap = new Map<string, DaySchedule>();
-    const newPublished = new Set<string>();
-
-    for (const date of dates) {
-      const dayClients: Client[] = [];
-      let schedId: string | null = null;
-      let templateCode: string | undefined;
-      let isPublished = false;
-
-      // Get schedule for primary team for this date
-      for (const team of teamsList) {
-        const { data: schedule } = await supabase
-          .from('schedules')
-          .select('id, is_published, template_code')
-          .eq('team_id', team.id)
-          .eq('schedule_date', date)
-          .maybeSingle();
-
-        if (schedule) {
-          schedId = schedule.id;
-          isPublished = schedule.is_published || false;
-          templateCode = schedule.template_code || undefined;
-
-          const { data: jobs } = await supabase
-            .from('schedule_jobs')
-            .select('*')
-            .eq('schedule_id', schedule.id)
-            .order('position');
-
-          if (jobs) {
-            for (const j of jobs) {
-              if (j.is_break) continue;
-              dayClients.push({
-                id: j.id as string,
-                name: (j.name as string) || '',
-                location: {
-                  address: (j.address as string) || '',
-                  lat: (j.lat as number) || 0,
-                  lng: (j.lng as number) || 0,
-                  placeId: (j.place_id as string) || undefined,
-                },
-                jobDurationMinutes: Number(j.duration_minutes) || 90,
-                staffCount: (j.staff_count as number) || 1,
-                isLocked: (j.is_locked as boolean) || false,
-                startTime: (j.start_time as string) || undefined,
-                endTime: (j.end_time as string) || undefined,
-                notes: (j.notes as string) || undefined,
-                savedClientId: (j.client_id as string) || undefined,
-              });
-            }
-          }
+      // No teams found — create a default one and finish
+      if (!teamsList || teamsList.length === 0) {
+        const { data: newTeam } = await supabase.from('teams').insert({ org_id: orgId, name: 'Team 1', color_index: 0, sort_order: 0 }).select().single();
+        if (newTeam) {
+          const defaultTeam: TeamSchedule = {
+            id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0],
+            baseAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
+            breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+          };
+          dispatch({ type: 'LOAD_STATE', teams: [defaultTeam], activeTeamId: defaultTeam.id, selectedDate: state.selectedDate });
         }
+        setDbLoaded(true);
+        return;
       }
 
-      if (isPublished) newPublished.add(date);
+      const allTeamMaps = new Map<string, Map<string, DaySchedule>>();
+      const newPublished = new Set<string>();
 
-      newMap.set(date, {
-        date,
-        dayOfWeek: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
-        scheduleId: schedId,
-        clients: dayClients,
-        templateCode,
-        isPublished,
-      });
-    }
+      for (const team of teamsList) {
+        const teamMap = new Map<string, DaySchedule>();
 
-    setWeekSchedules(newMap);
-    setPublishedDates(newPublished);
+        for (const date of dates) {
+          const dayClients: Client[] = [];
+          let schedId: string | null = null;
+          let templateCode: string | undefined;
+          let isPublished = false;
 
-    // Also load the active day into the reducer
-    if (teamsList.length > 0) {
+          const { data: schedule } = await supabase
+            .from('schedules')
+            .select('id, is_published, template_code')
+            .eq('team_id', team.id)
+            .eq('schedule_date', date)
+            .maybeSingle();
+
+          if (schedule) {
+            schedId = schedule.id;
+            isPublished = schedule.is_published || false;
+            templateCode = schedule.template_code || undefined;
+
+            const { data: jobs } = await supabase
+              .from('schedule_jobs')
+              .select('*')
+              .eq('schedule_id', schedule.id)
+              .order('position');
+
+            if (jobs) {
+              for (const j of jobs) {
+                if (j.is_break) continue;
+                dayClients.push({
+                  id: j.id as string,
+                  name: (j.name as string) || '',
+                  location: {
+                    address: (j.address as string) || '',
+                    lat: (j.lat as number) || 0,
+                    lng: (j.lng as number) || 0,
+                    placeId: (j.place_id as string) || undefined,
+                  },
+                  jobDurationMinutes: Number(j.duration_minutes) || 90,
+                  staffCount: (j.staff_count as number) || 1,
+                  isLocked: (j.is_locked as boolean) || false,
+                  startTime: (j.start_time as string) || undefined,
+                  endTime: (j.end_time as string) || undefined,
+                  notes: (j.notes as string) || undefined,
+                  savedClientId: (j.client_id as string) || undefined,
+                });
+              }
+            }
+          }
+
+          if (isPublished) newPublished.add(date);
+
+          teamMap.set(date, {
+            date,
+            dayOfWeek: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
+            scheduleId: schedId,
+            clients: dayClients,
+            templateCode,
+            isPublished,
+          });
+        }
+
+        allTeamMaps.set(team.id, teamMap);
+      }
+
+      setWeekSchedules(allTeamMaps);
+      setPublishedDates(newPublished);
+
+      // Load the active day into the reducer
       const today = state.selectedDate;
       const teamsWithClients = teamsList.map((team: TeamSchedule) => {
-        const dayData = newMap.get(today);
+        const teamMap = allTeamMaps.get(team.id);
+        const dayData = teamMap?.get(today);
         return { ...team, clients: dayData?.clients || [] };
       });
       dispatch({
         type: 'LOAD_STATE',
         teams: teamsWithClients,
-        activeTeamId: teamsWithClients[0].id,
+        activeTeamId: teamsWithClients.find(t => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
         selectedDate: today,
       });
       setDbLoaded(true);
+    } catch (err) {
+      console.error('[Schedule] Failed to load week schedules:', err);
+      setDbLoaded(true); // Unblock the UI even on error
     }
   }, [orgId, supabase, loadTeams, state.selectedDate]);
+
+  // ─── Load staff assignments for current date ───
+  const loadStaffAssignments = useCallback(async (date: string) => {
+    if (!orgId) return;
+    const { data: assignments } = await supabase
+      .from('staff_assignments')
+      .select('team_id, staff_id, is_available')
+      .eq('org_id', orgId)
+      .eq('assignment_date', date);
+    if (!assignments || assignments.length === 0) { setTeamStaffMap(new Map()); return; }
+    const staffIds = [...new Set(assignments.filter((a: { is_available: boolean }) => a.is_available !== false).map((a: { staff_id: string }) => a.staff_id))];
+    if (staffIds.length === 0) { setTeamStaffMap(new Map()); return; }
+    const { data: staffRows } = await supabase
+      .from('staff_members').select('id, name, hourly_rate').in('id', staffIds);
+    const staffLookup = new Map<string, { name: string; hourly_rate: number }>((staffRows || []).map((s: { id: string; name: string; hourly_rate: number }) => [s.id, { name: s.name, hourly_rate: s.hourly_rate || 38 }]));
+    const map = new Map<string, { id: string; name: string; hourly_rate: number }[]>();
+    for (const a of assignments as { staff_id: string; team_id: string; is_available: boolean }[]) {
+      if (a.is_available === false) continue;
+      const info = staffLookup.get(a.staff_id);
+      if (!info) continue;
+      const list = map.get(a.team_id) || [];
+      list.push({ id: a.staff_id, name: info.name, hourly_rate: info.hourly_rate });
+      map.set(a.team_id, list);
+    }
+    setTeamStaffMap(map);
+  }, [orgId, supabase]);
 
   // Initial load
   useEffect(() => {
@@ -166,6 +219,12 @@ export default function SchedulePage() {
     if (orgId && dbLoaded) loadWeekSchedules(weekDates);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekDates[0]]);
+
+  // Load staff when date or teams change
+  useEffect(() => {
+    if (orgId && dbLoaded) loadStaffAssignments(state.selectedDate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, dbLoaded, state.selectedDate]);
 
   // ─── Load specific day into reducer for Day View ───
   const loadDayForEdit = useCallback(async (date: string) => {
@@ -198,7 +257,7 @@ export default function SchedulePage() {
         }
       }
     }
-    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList[0].id, selectedDate: date });
+    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find(t => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
   }, [orgId, supabase, loadTeams]);
 
   // ─── Week Navigation ───
@@ -210,6 +269,26 @@ export default function SchedulePage() {
     const newDate = addDays(state.focusedDate, 7);
     dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
   };
+
+  // ─── Day Navigation ───
+  const goToPrevDay = async () => {
+    if (daySaveRef.current) await daySaveRef.current();
+    const newDate = addDays(state.focusedDate, -1);
+    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
+    loadDayForEdit(newDate);
+  };
+  const goToNextDay = async () => {
+    if (daySaveRef.current) await daySaveRef.current();
+    const newDate = addDays(state.focusedDate, 1);
+    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
+    loadDayForEdit(newDate);
+  };
+
+  const dayLabel = useMemo(() => {
+    const parts = state.focusedDate.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  }, [state.focusedDate]);
 
   const handleDayClick = (date: string) => {
     dispatch({ type: 'SET_FOCUSED_DATE', date });
@@ -272,15 +351,26 @@ export default function SchedulePage() {
       ...(baseAddr ? { base_address: baseAddr.address, base_lat: baseAddr.lat, base_lng: baseAddr.lng, base_place_id: baseAddr.placeId || null } : {}),
     }).select().single();
     if (data) {
-      dispatch({ type: 'ADD_TEAM' });
-      const newTeams = [...state.teams];
-      const nt = newTeams[newTeams.length - 1];
-      if (nt) { nt.id = data.id; }
+      const newTeam: TeamSchedule = {
+        id: data.id, name: data.name, color: TEAM_COLORS[colorIndex],
+        baseAddress: baseAddr ? { ...baseAddr } : null,
+        clients: [], travelSegments: new Map(), dayStartTime: '08:00',
+        breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+      };
+      dispatch({ type: 'LOAD_STATE', teams: [...state.teams, newTeam], activeTeamId: newTeam.id, selectedDate: state.selectedDate });
     }
-  }, [orgId, supabase, state.teams]);
+  }, [orgId, supabase, state.teams, state.selectedDate]);
 
-  const handleRemoveTeam = useCallback(async (teamId: string) => {
+  const handleRemoveTeam = useCallback((teamId: string) => {
     if (state.teams.length <= 1) return;
+    const team = state.teams.find(t => t.id === teamId);
+    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', clientCount: team?.clients.length || 0 });
+  }, [state.teams]);
+
+  const confirmDeleteTeam = useCallback(async () => {
+    if (!pendingDeleteTeam) return;
+    const teamId = pendingDeleteTeam.id;
+    setPendingDeleteTeam(null);
     const { data: schedules } = await supabase.from('schedules').select('id').eq('team_id', teamId);
     if (schedules) {
       for (const s of schedules) await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
@@ -288,7 +378,7 @@ export default function SchedulePage() {
     }
     await supabase.from('teams').delete().eq('id', teamId);
     dispatch({ type: 'REMOVE_TEAM', teamId });
-  }, [supabase, state.teams.length]);
+  }, [supabase, pendingDeleteTeam]);
 
   // ─── Template loading (additive) ───
   const handleLoadTemplate = useCallback((data: { clients: Client[]; additive: boolean }) => {
@@ -307,12 +397,25 @@ export default function SchedulePage() {
   }, [state.teams, state.activeTeamId]);
 
   // ─── Month overlay data ───
+  // Derive the active team's week schedule for the week view
+  const activeWeekSchedules = useMemo(() => {
+    return weekSchedules.get(state.activeTeamId) || new Map<string, DaySchedule>();
+  }, [weekSchedules, state.activeTeamId]);
+
   const monthData = useMemo(() => {
     const m = new Map<string, { clientCount: number; isPublished: boolean; templateCode?: string }>();
-    weekSchedules.forEach((d, date) => {
-      if (d.clients.length > 0 || d.isPublished) {
-        m.set(date, { clientCount: d.clients.length, isPublished: d.isPublished, templateCode: d.templateCode });
-      }
+    // Aggregate across all teams for month overlay
+    weekSchedules.forEach((teamMap) => {
+      teamMap.forEach((d, date) => {
+        if (d.clients.length > 0 || d.isPublished) {
+          const existing = m.get(date);
+          m.set(date, {
+            clientCount: (existing?.clientCount || 0) + d.clients.length,
+            isPublished: existing?.isPublished || d.isPublished,
+            templateCode: d.templateCode || existing?.templateCode,
+          });
+        }
+      });
     });
     return m;
   }, [weekSchedules]);
@@ -322,13 +425,25 @@ export default function SchedulePage() {
     [state.teams, state.activeTeamId]
   );
 
+  if (!dbLoaded) {
+    return (
+      <APIProvider apiKey={MAPS_KEY} libraries={['places', 'routes']}>
+        <div className="h-full flex flex-col items-center justify-center gap-3 p-6">
+          <div className="shimmer w-48 h-6 rounded-lg" />
+          <div className="shimmer w-64 h-10 rounded-xl" />
+          <div className="shimmer w-full max-w-md h-32 rounded-xl" />
+        </div>
+      </APIProvider>
+    );
+  }
+
   return (
     <APIProvider apiKey={MAPS_KEY} libraries={['places', 'routes']}>
       <div className="h-full flex flex-col">
         {/* Header */}
         <header className="shrink-0 z-20 px-4 lg:px-6 border-b border-border-light bg-white">
           <div className="flex items-center justify-between h-14">
-            {/* Week navigation */}
+            {/* Date navigation */}
             <div className="flex items-center gap-2">
               {state.viewMode === 'day' && (
                 <button onClick={handleBackToWeek} className="btn-ghost text-xs mr-1" title="Back to week view">
@@ -336,11 +451,13 @@ export default function SchedulePage() {
                   Week
                 </button>
               )}
-              <button onClick={goToPrevWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+              <button onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
-              <span className="text-sm font-semibold text-text-primary min-w-[180px] text-center">{weekLabel}</span>
-              <button onClick={goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+              <span className="text-sm font-semibold text-text-primary min-w-[180px] text-center">
+                {state.viewMode === 'day' ? dayLabel : weekLabel}
+              </span>
+              <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
@@ -363,18 +480,20 @@ export default function SchedulePage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               </button>
 
-              {state.viewMode === 'day' && activeTeam?.clients.length > 0 && (
+              {state.viewMode === 'day' && activeTeam?.clients.length > 0 && !isStaff && (
                 <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-xs" title="Save as template">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                   Save
                 </button>
               )}
-              <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load template">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Load
-              </button>
+              {!isStaff && (
+                <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load template">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Load
+                </button>
+              )}
 
-              {state.viewMode === 'week' && (
+              {state.viewMode === 'week' && !isStaff && (
                 <button
                   onClick={handlePublishWeek}
                   disabled={weekIsPublished}
@@ -396,8 +515,9 @@ export default function SchedulePage() {
               state={state}
               dispatch={dispatch}
               onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
-              onAddTeam={handleAddTeam}
-              onRemoveTeam={handleRemoveTeam}
+              onAddTeam={isStaff ? undefined : handleAddTeam}
+              onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
+              teamStaffMap={teamStaffMap}
             />
           </div>
         </header>
@@ -407,7 +527,7 @@ export default function SchedulePage() {
           {state.viewMode === 'week' ? (
             <WeekView
               weekDates={weekDates}
-              daySchedules={weekSchedules}
+              daySchedules={activeWeekSchedules}
               teamColor={activeTeam?.color || TEAM_COLORS[0]}
               activeDate={state.focusedDate}
               onDayClick={handleDayClick}
@@ -421,6 +541,8 @@ export default function SchedulePage() {
               dbLoaded={dbLoaded}
               supabase={supabase}
               saveRef={daySaveRef}
+              teamStaffMap={teamStaffMap}
+              onRosterChange={() => loadStaffAssignments(state.selectedDate)}
             />
           )}
         </div>
@@ -439,6 +561,20 @@ export default function SchedulePage() {
             scheduledDates={monthData}
             onDayClick={(date) => { dispatch({ type: 'SET_FOCUSED_DATE', date }); }}
             onClose={() => setShowMonth(false)}
+          />
+        )}
+        {pendingDeleteTeam && (
+          <ConfirmModal
+            title={`Delete ${pendingDeleteTeam.name}?`}
+            message={
+              pendingDeleteTeam.clientCount > 0
+                ? `This will permanently delete all ${pendingDeleteTeam.clientCount} scheduled job${pendingDeleteTeam.clientCount !== 1 ? 's' : ''} and travel data for this team. This action cannot be undone.`
+                : 'All scheduling data for this team will be permanently deleted. This action cannot be undone.'
+            }
+            confirmLabel="Delete Team"
+            onConfirm={confirmDeleteTeam}
+            onCancel={() => setPendingDeleteTeam(null)}
+            danger
           />
         )}
       </AnimatePresence>

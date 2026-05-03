@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useRef, useCallback, Dispatch, MutableRef
 import { Map as GoogleMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
-import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary } from '@/lib/routeEngine';
+import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary, ScheduleTimesResult } from '@/lib/routeEngine';
 import { formatDateDisplay, generateId } from '@/lib/timeUtils';
 import { TravelSegment, Client, AppState, ScheduleAction } from '@/lib/types';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -15,6 +15,7 @@ import TravelSegmentComponent from '@/components/TravelSegment';
 import DailySummaryCard from '@/components/DailySummary';
 import RouteMap from '@/components/RouteMap';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
+import StaffRosterPanel from '@/components/StaffRosterPanel';
 
 interface DayEditorProps {
   state: AppState;
@@ -23,9 +24,11 @@ interface DayEditorProps {
   dbLoaded: boolean;
   supabase: SupabaseClient;
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
+  teamStaffMap?: Map<string, { id: string; name: string; hourly_rate: number }[]>;
+  onRosterChange?: () => void;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, teamStaffMap, onRosterChange }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
 
@@ -110,16 +113,17 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   }, [state, dbLoaded, orgId, saveNow]);
 
   // ─── Schedule calculations ───
-  const clientsWithTimes = useMemo(() => calculateScheduleTimes(activeTeam), [activeTeam]);
+  const scheduleResult = useMemo(() => calculateScheduleTimes(activeTeam), [activeTeam]);
+  const baseDepartureTime = scheduleResult.baseDepartureTime;
   useEffect(() => {
-    if (clientsWithTimes.length > 0) {
-      const hasChanges = clientsWithTimes.some((c, i) => {
+    if (scheduleResult.clients.length > 0) {
+      const hasChanges = scheduleResult.clients.some((c, i) => {
         const original = activeTeam.clients[i];
         return original && (c.startTime !== original.startTime || c.endTime !== original.endTime);
       });
-      if (hasChanges) dispatch({ type: 'SET_CLIENT_TIMES', teamId: activeTeam.id, clients: clientsWithTimes });
+      if (hasChanges) dispatch({ type: 'SET_CLIENT_TIMES', teamId: activeTeam.id, clients: scheduleResult.clients });
     }
-  }, [clientsWithTimes, activeTeam.id, activeTeam.clients, dispatch]);
+  }, [scheduleResult, activeTeam.id, activeTeam.clients, dispatch]);
 
   const summary = useMemo(() => calculateDaySummary(activeTeam), [activeTeam]);
 
@@ -223,12 +227,32 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
             {/* Start Time */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-              className="card p-3 flex items-center justify-between">
-              <span className="text-xs text-text-secondary">Day starts at</span>
-              <input type="time" value={activeTeam.dayStartTime}
-                onChange={(e) => dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value })}
-                className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary" />
+              className="card p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-secondary">Day starts at</span>
+                <input type="time" value={activeTeam.dayStartTime}
+                  onChange={(e) => dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value })}
+                  className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary" />
+              </div>
+              {baseDepartureTime !== activeTeam.dayStartTime && (
+                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-light">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary shrink-0">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  <span className="text-[11px] text-text-secondary">Leave base at</span>
+                  <span className="text-[11px] font-bold text-primary ml-auto">{baseDepartureTime}</span>
+                </div>
+              )}
             </motion.div>
+
+            {/* Staff Roster */}
+            <StaffRosterPanel
+              orgId={orgId}
+              selectedDate={state.selectedDate}
+              teams={state.teams}
+              activeTeamId={state.activeTeamId}
+              onRosterChange={onRosterChange || (() => {})}
+            />
 
             {/* Optimize */}
             {activeTeam.clients.length >= 2 && activeTeam.baseAddress && (
@@ -257,24 +281,50 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                       team={activeTeam} dispatch={dispatch} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                        className="flex items-center gap-2 py-1 pl-5 ml-4">
-                        <div className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full bg-warning-light text-warning border border-amber-200">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M17 8h1a4 4 0 1 1 0 8h-1" /><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
-                            <line x1="6" y1="2" x2="6" y2="4" /><line x1="10" y1="2" x2="10" y2="4" /><line x1="14" y1="2" x2="14" y2="4" />
-                          </svg>
-                          {breakAfterThis.label} · {breakAfterThis.durationMinutes}m
+                        className="mx-2 my-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500 shrink-0">
+                              <path d="M17 8h1a4 4 0 1 1 0 8h-1" /><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+                              <line x1="6" y1="2" x2="6" y2="4" /><line x1="10" y1="2" x2="10" y2="4" /><line x1="14" y1="2" x2="14" y2="4" />
+                            </svg>
+                            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Break</span>
+                          </div>
+                          <button onClick={() => dispatch({ type: 'REMOVE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id })}
+                            className="p-1 rounded-md hover:bg-red-100 text-amber-400 hover:text-red-500 transition-colors" title="Remove break">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                          </button>
                         </div>
-                        <button onClick={() => dispatch({ type: 'REMOVE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id })}
-                          className="p-1 rounded hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors" title="Remove break">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={breakAfterThis.label}
+                            onChange={(e) => dispatch({ type: 'UPDATE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id, updates: { label: e.target.value } })}
+                            className="flex-1 text-xs bg-white border border-amber-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-400 text-text-primary placeholder:text-text-tertiary min-w-0"
+                            placeholder="Break label"
+                          />
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => dispatch({ type: 'UPDATE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id, updates: { durationMinutes: Math.max(5, breakAfterThis.durationMinutes - 5) } })}
+                              className="w-6 h-6 rounded-md bg-white border border-amber-200 flex items-center justify-center text-amber-600 hover:bg-amber-100 transition-colors text-xs font-bold"
+                            >−</button>
+                            <span className="text-xs font-bold text-amber-700 w-10 text-center">{breakAfterThis.durationMinutes}m</span>
+                            <button
+                              onClick={() => dispatch({ type: 'UPDATE_BREAK', teamId: activeTeam.id, breakId: breakAfterThis.id, updates: { durationMinutes: breakAfterThis.durationMinutes + 5 } })}
+                              className="w-6 h-6 rounded-md bg-white border border-amber-200 flex items-center justify-center text-amber-600 hover:bg-amber-100 transition-colors text-xs font-bold"
+                            >+</button>
+                          </div>
+                        </div>
                       </motion.div>
                     ) : index < activeTeam.clients.length - 1 ? (
-                      <div className="flex justify-center py-0.5">
+                      <div className="flex justify-center py-2 -my-1">
                         <button onClick={() => addBreak(client.id)}
-                          className="text-xs text-text-tertiary hover:text-warning transition-colors opacity-0 hover:opacity-100 px-2 py-0.5"
-                          title="Add break after this client">+ break</button>
+                          className="flex items-center gap-1.5 text-[11px] font-medium text-transparent hover:text-amber-600 transition-all px-3 py-1.5 rounded-full hover:bg-amber-50 border border-transparent hover:border-amber-200">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                          </svg>
+                          Add Break
+                        </button>
                       </div>
                     ) : null}
                   </motion.div>
@@ -302,7 +352,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
             {/* Daily Summary */}
             {activeTeam.clients.length > 0 && (
-              <div className="pt-2"><DailySummaryCard team={activeTeam} summary={summary} dispatch={dispatch} /></div>
+              <div className="pt-2"><DailySummaryCard team={activeTeam} summary={summary} dispatch={dispatch} staffNames={(teamStaffMap?.get(activeTeam.id) || []).map(s => s.name)} staffRates={(teamStaffMap?.get(activeTeam.id) || []).map(s => ({ id: s.id, name: s.name, hourly_rate: s.hourly_rate }))} /></div>
             )}
 
             {/* Empty state */}

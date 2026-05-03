@@ -62,6 +62,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: [...t.breaks, action.breakItem] } : t) };
     case 'REMOVE_BREAK':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: t.breaks.filter((b) => b.id !== action.breakId) } : t) };
+    case 'UPDATE_BREAK':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: t.breaks.map((b) => b.id === action.breakId ? { ...b, ...action.updates } : b) } : t) };
     case 'SET_FUEL_SETTINGS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, fuelEfficiency: action.fuelEfficiency, fuelPrice: action.fuelPrice } : t) };
     case 'SET_PER_KM_RATE':

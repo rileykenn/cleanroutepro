@@ -167,6 +167,7 @@ export type ScheduleAction =
   | { type: 'UPDATE_TRAVEL'; teamId: string; segment: TravelSegment }
   | { type: 'ADD_BREAK'; teamId: string; afterClientId: string; breakItem: ScheduleBreak }
   | { type: 'REMOVE_BREAK'; teamId: string; breakId: string }
+  | { type: 'UPDATE_BREAK'; teamId: string; breakId: string; updates: Partial<ScheduleBreak> }
   | { type: 'CLEAR_TRAVEL'; teamId: string }
   | { type: 'SET_CLIENT_TIMES'; teamId: string; clients: Client[] }
   | { type: 'SET_CLIENTS_ORDER'; teamId: string; clients: Client[] }

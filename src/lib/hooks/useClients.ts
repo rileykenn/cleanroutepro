@@ -8,7 +8,9 @@ export interface SavedClient {
   lat: number | null; lng: number | null; place_id: string | null;
   email: string; phone: string;
   default_duration_minutes: number; default_staff_count: number;
-  notes: string; checklist_template_id: string | null; created_at: string;
+  notes: string; checklist_template_id: string | null;
+  custom_checklist_items: { id: string; text: string }[] | null;
+  created_at: string;
 }
 
 export function useClients(orgId: string | null) {

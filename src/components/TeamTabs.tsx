@@ -9,18 +9,17 @@ interface TeamTabsProps {
   onSelectTeam: (teamId: string) => void;
   onAddTeam?: () => void;
   onRemoveTeam?: (teamId: string) => void;
+  teamStaffMap?: Map<string, { id: string; name: string; hourly_rate: number }[]>;
 }
 
-export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onRemoveTeam }: TeamTabsProps) {
+export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onRemoveTeam, teamStaffMap }: TeamTabsProps) {
   const { teams, activeTeamId } = state;
 
   return (
     <div className="flex items-center gap-2 px-1">
       {teams.map((team, index) => {
         const isActive = team.id === activeTeamId;
-        // Total staff headcount for this team (sum of staffCount across all clients)
-        const totalStaff = team.clients.reduce((sum, c) => Math.max(sum, c.staffCount || 1), 0);
-        const uniqueStaffCount = team.clients.length > 0 ? totalStaff : 0;
+        const assignedStaff = teamStaffMap?.get(team.id) || [];
         return (
           <motion.div
             key={team.id}
@@ -51,17 +50,17 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
               </span>
             )}
 
-            {/* Staff headcount indicator */}
-            {uniqueStaffCount > 0 && (
+            {/* Staff headcount from roster */}
+            {assignedStaff.length > 0 && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                 style={{
                   backgroundColor: isActive ? `${team.color.primary}20` : '#F3F4F6',
                   color: isActive ? team.color.text : '#9CA3AF',
                 }}
-                title={`Max ${uniqueStaffCount} staff on a single job`}
+                title={assignedStaff.map(s => s.name).join(', ')}
               >
-                👤 {uniqueStaffCount}
+                👤 {assignedStaff.length}
               </span>
             )}
 

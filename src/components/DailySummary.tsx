@@ -5,15 +5,23 @@ import { formatDuration, formatDistance, formatTimeDisplay } from '@/lib/timeUti
 import { DaySummary, ScheduleAction, TeamSchedule } from '@/lib/types';
 import { exportScheduleCSV } from '@/lib/routeEngine';
 
+interface StaffWithRate {
+  id: string;
+  name: string;
+  hourly_rate: number;
+}
+
 interface DailySummaryProps {
   team: TeamSchedule;
   summary: DaySummary;
   dispatch: React.Dispatch<ScheduleAction>;
+  staffNames?: string[];
+  staffRates?: StaffWithRate[];
 }
 
-export default function DailySummaryCard({ team, summary, dispatch }: DailySummaryProps) {
+export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates }: DailySummaryProps) {
   const handleExport = () => {
-    const csv = exportScheduleCSV(team, summary);
+    const csv = exportScheduleCSV(team, summary, staffNames);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -38,6 +46,15 @@ export default function DailySummaryCard({ team, summary, dispatch }: DailySumma
     const m = totalMin % 60;
     finishTime = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   }
+
+  // Calculate wages from individual staff rates
+  const payableHours = summary.payableMinutes / 60;
+  const staffWages = (staffRates && staffRates.length > 0)
+    ? staffRates.map((s) => ({ name: s.name, rate: s.hourly_rate, wage: payableHours * s.hourly_rate }))
+    : [];
+  const totalWages = staffWages.length > 0
+    ? staffWages.reduce((sum, s) => sum + s.wage, 0)
+    : summary.wageAmount; // fallback to old calc if no staff assigned
 
   return (
     <motion.div
@@ -116,16 +133,41 @@ export default function DailySummaryCard({ team, summary, dispatch }: DailySumma
           <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDistance(summary.totalDistanceKm)}</span>
         </div>
 
+        {/* Staff with rates */}
+        {staffWages.length > 0 && (
+          <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-medium text-text-secondary">Staff</div>
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: team.color.light, color: team.color.text }}>
+                {staffWages.length}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {staffWages.map((s, i) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-text-primary">{s.name}</span>
+                    <span className="text-text-tertiary">${s.rate}/hr</span>
+                  </div>
+                  <span className="font-bold text-emerald-600">${s.wage.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Clients */}
         <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
           <div className="text-xs font-medium text-text-secondary">Clients</div>
           <span className="text-base font-bold text-text-primary">{summary.clientCount}</span>
         </div>
 
-        {/* Wage */}
+        {/* Wage Total */}
         <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
-          <div className="text-xs font-bold" style={{ color: team.color.text }}>Wages</div>
-          <span className="text-lg font-bold" style={{ color: team.color.text }}>${summary.wageAmount.toFixed(2)}</span>
+          <div className="text-xs font-bold" style={{ color: team.color.text }}>
+            Wages {staffWages.length > 1 && <span className="font-normal text-[10px]">({staffWages.length} staff)</span>}
+          </div>
+          <span className="text-lg font-bold" style={{ color: team.color.text }}>${totalWages.toFixed(2)}</span>
         </div>
 
         {/* Fuel Cost */}
@@ -181,31 +223,6 @@ export default function DailySummaryCard({ team, summary, dispatch }: DailySumma
           </span>
         </div>
       )}
-
-      {/* Hourly rate — editable */}
-      <div className="mt-3 pt-3 border-t border-border-light">
-        <label className="flex items-center justify-between text-sm">
-          <span className="text-text-secondary">Hourly Rate</span>
-          <div className="flex items-center gap-1">
-            <span className="text-text-tertiary">$</span>
-            <input
-              type="number"
-              value={team.hourlyRate}
-              onChange={(e) =>
-                dispatch({
-                  type: 'SET_HOURLY_RATE',
-                  teamId: team.id,
-                  rate: parseFloat(e.target.value) || 0,
-                })
-              }
-              className="w-16 text-right text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary"
-              min={0}
-              step={0.5}
-            />
-            <span className="text-text-tertiary text-xs">/hr</span>
-          </div>
-        </label>
-      </div>
     </motion.div>
   );
 }

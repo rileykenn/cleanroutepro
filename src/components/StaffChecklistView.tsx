@@ -20,16 +20,25 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
   const [clientEmail, setClientEmail] = useState<string | null>(null);
 
   const loadChecklist = useCallback(async () => {
-    // Load the client's checklist template
-    const { data: client } = await supabase.from('clients').select('checklist_template_id, email').eq('id', clientId).single();
+    // Load the client's checklist template + custom items
+    const { data: client } = await supabase.from('clients').select('checklist_template_id, email, custom_checklist_items').eq('id', clientId).single();
     if (client?.email) setClientEmail(client.email);
     if (!client?.checklist_template_id) { setLoading(false); return; }
     setTemplateId(client.checklist_template_id);
-    const { data: tmpl } = await supabase.from('checklist_templates').select('items, name').eq('id', client.checklist_template_id).single();
-    if (tmpl?.items) {
-      const templateItems = (tmpl.items as { id: string; text: string }[]).map((it) => ({ ...it, completed: false }));
-      setItems(templateItems);
-      setTemplateName(tmpl.name || 'Checklist');
+
+    // Prefer custom items over template items
+    if (client.custom_checklist_items && Array.isArray(client.custom_checklist_items) && client.custom_checklist_items.length > 0) {
+      const customItems = (client.custom_checklist_items as { id: string; text: string }[]).map((it) => ({ ...it, completed: false }));
+      setItems(customItems);
+      const { data: tmpl } = await supabase.from('checklist_templates').select('name').eq('id', client.checklist_template_id).single();
+      setTemplateName((tmpl?.name || 'Checklist') + ' (Customised)');
+    } else {
+      const { data: tmpl } = await supabase.from('checklist_templates').select('items, name').eq('id', client.checklist_template_id).single();
+      if (tmpl?.items) {
+        const templateItems = (tmpl.items as { id: string; text: string }[]).map((it) => ({ ...it, completed: false }));
+        setItems(templateItems);
+        setTemplateName(tmpl.name || 'Checklist');
+      }
     }
     setLoading(false);
   }, [supabase, clientId]);

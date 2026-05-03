@@ -133,14 +133,6 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <input type="number" value={durationHours} onChange={(e) => { const h = parseFloat(e.target.value) || 0; dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { jobDurationMinutes: Math.round(h * 60) } }); }}
             className="w-16 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-center" min={0.25} step={0.25} />
           <span className="text-xs text-text-tertiary">hrs</span>
-          <div className="flex items-center gap-1 ml-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <select value={client.staffCount || 1} onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { staffCount: Number(e.target.value) } })}
-              className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary cursor-pointer">
-              <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
-            </select>
-          </div>
-          {(client.staffCount || 1) > 1 && <span className="text-xs text-text-tertiary ml-1">= {(effectiveDuration / 60).toFixed(1)}h each</span>}
         </div>
         {client.startTime && client.endTime && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sm">

@@ -172,7 +172,7 @@ export default function SchedulePage() {
       dispatch({
         type: 'LOAD_STATE',
         teams: teamsWithClients,
-        activeTeamId: teamsWithClients.find(t => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
+        activeTeamId: teamsWithClients.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
         selectedDate: today,
       });
       setDbLoaded(true);
@@ -257,7 +257,7 @@ export default function SchedulePage() {
         }
       }
     }
-    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find(t => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
+    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
   }, [orgId, supabase, loadTeams]);
 
   // ─── Week Navigation ───

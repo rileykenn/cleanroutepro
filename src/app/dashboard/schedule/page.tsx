@@ -317,8 +317,13 @@ export default function SchedulePage() {
     }
     setWeekSchedules((prev) => {
       const nm = new Map(prev);
-      const d = nm.get(date);
-      if (d) nm.set(date, { ...d, templateCode: code || undefined });
+      const teamMap = nm.get(teamId);
+      if (teamMap) {
+        const dateMap = new Map(teamMap);
+        const d = dateMap.get(date);
+        if (d) dateMap.set(date, { ...d, templateCode: code || undefined });
+        nm.set(teamId, dateMap);
+      }
       return nm;
     });
   };

@@ -394,21 +394,66 @@ export default function SchedulePage() {
     dispatch({ type: 'REMOVE_TEAM', teamId });
   }, [supabase, pendingDeleteTeam]);
 
-  // ─── Template loading (additive) ───
-  const handleLoadTemplate = useCallback((data: { clients: Client[]; additive: boolean }) => {
-    if (!data.clients || data.clients.length === 0) return;
-    const newClients = data.clients.map((c: Client) => ({
-      ...c, id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      startTime: undefined, endTime: undefined,
-    }));
-    const activeTeam = state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0];
-    if (data.additive && activeTeam) {
-      dispatch({ type: 'SET_CLIENTS_ORDER', teamId: activeTeam.id, clients: [...activeTeam.clients, ...newClients] });
-    } else if (activeTeam) {
-      dispatch({ type: 'SET_CLIENTS_ORDER', teamId: activeTeam.id, clients: newClients });
+  // ─── Week template loading ───
+  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; clients: Client[] }[]>) => {
+    // First save any pending day edits
+    if (daySaveRef.current) await daySaveRef.current();
+
+    if (!orgId) return;
+
+    // For each day in the template, write the clients into schedule_jobs
+    for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+      const dayTeams = weekData[String(dayIdx)];
+      if (!dayTeams || dayTeams.length === 0) continue;
+
+      const date = weekDates[dayIdx];
+
+      // Match template teams to actual teams by position or name
+      for (const templateTeam of dayTeams) {
+        // Find best matching team: by name first, then by position
+        const matchedTeam = state.teams.find(t => t.name === templateTeam.teamName)
+          || state.teams.find(t => t.id === templateTeam.teamId)
+          || state.teams[0];
+
+        if (!matchedTeam) continue;
+
+        // Ensure schedule row exists for this team+date
+        let scheduleId: string;
+        const { data: existing } = await supabase
+          .from('schedules').select('id').eq('team_id', matchedTeam.id).eq('schedule_date', date).maybeSingle();
+        if (existing) {
+          scheduleId = existing.id;
+        } else {
+          const { data: created } = await supabase
+            .from('schedules').insert({ org_id: orgId, team_id: matchedTeam.id, schedule_date: date }).select('id').single();
+          if (!created) continue;
+          scheduleId = created.id;
+        }
+
+        // Delete existing jobs for this schedule and insert template clients
+        await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
+
+        if (templateTeam.clients.length > 0) {
+          const rows = templateTeam.clients.map((c: Client, i: number) => ({
+            schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
+            position: i, name: c.name, address: c.location?.address || '',
+            lat: c.location?.lat || 0, lng: c.location?.lng || 0,
+            place_id: c.location?.placeId || null,
+            duration_minutes: c.jobDurationMinutes || 90,
+            staff_count: c.staffCount || 1,
+            is_locked: c.isLocked || false, is_break: false,
+            notes: c.notes || '',
+            assigned_staff_ids: c.assignedStaffIds || [],
+          }));
+          await supabase.from('schedule_jobs').insert(rows);
+        }
+      }
     }
+
+    // Reload the week to pick up all changes
+    await loadWeekSchedules(weekDates);
     setShowLoadTemplate(false);
-  }, [state.teams, state.activeTeamId]);
+  }, [orgId, supabase, state.teams, weekDates, loadWeekSchedules]);
 
   // ─── Month overlay data ───
   // Derive the active team's week schedule for the week view
@@ -494,17 +539,17 @@ export default function SchedulePage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
               </button>
 
-              {state.viewMode === 'day' && activeTeam?.clients.length > 0 && !isStaff && (
-                <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-xs" title="Save as template">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                  Save
-                </button>
-              )}
-              {!isStaff && (
-                <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load template">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                  Load
-                </button>
+              {state.viewMode === 'week' && !isStaff && (
+                <>
+                  <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-xs" title="Save week as template">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    Save
+                  </button>
+                  <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load week template">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                    Load
+                  </button>
+                </>
               )}
 
               {state.viewMode === 'week' && !isStaff && (
@@ -562,11 +607,11 @@ export default function SchedulePage() {
 
       {/* Modals */}
       <AnimatePresence>
-        {showSaveTemplate && activeTeam && (
-          <SaveTemplateModal team={activeTeam} orgId={orgId} onClose={() => setShowSaveTemplate(false)} />
+        {showSaveTemplate && (
+          <SaveTemplateModal teams={state.teams} selectedDate={state.selectedDate} weekSchedules={weekSchedules} orgId={orgId} onClose={() => setShowSaveTemplate(false)} />
         )}
         {showLoadTemplate && (
-          <LoadTemplateModal orgId={orgId} onLoad={handleLoadTemplate} onClose={() => setShowLoadTemplate(false)} />
+          <LoadTemplateModal orgId={orgId} onLoadWeek={handleLoadWeekTemplate} onClose={() => setShowLoadTemplate(false)} />
         )}
         {showMonth && (
           <MonthOverlay

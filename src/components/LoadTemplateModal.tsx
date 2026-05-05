@@ -5,21 +5,46 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
 import { Client } from '@/lib/types';
 
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+interface TeamTemplateData {
+  teamName: string;
+  teamId: string;
+  dayStartTime?: string;
+  baseAddress?: unknown;
+  clients: Client[];
+}
+
+interface WeekTemplateData {
+  [dayIndex: string]: TeamTemplateData[];
+}
+
+// Legacy format (old single-day template)
+interface LegacyTemplateData {
+  clients: Client[];
+  dayStartTime?: string;
+  baseAddress?: unknown;
+}
+
 interface Template {
   id: string;
   name: string;
   label: string;
-  week_data: { clients: Client[]; dayStartTime?: string; baseAddress?: unknown };
+  week_data: WeekTemplateData | LegacyTemplateData;
   created_at: string;
 }
 
 interface LoadTemplateModalProps {
   orgId: string | null;
-  onLoad: (data: { clients: Client[]; additive: boolean }) => void;
+  onLoadWeek: (weekData: WeekTemplateData) => void;
   onClose: () => void;
 }
 
-export default function LoadTemplateModal({ orgId, onLoad, onClose }: LoadTemplateModalProps) {
+function isLegacyTemplate(data: WeekTemplateData | LegacyTemplateData): data is LegacyTemplateData {
+  return 'clients' in data && Array.isArray((data as LegacyTemplateData).clients);
+}
+
+export default function LoadTemplateModal({ orgId, onLoadWeek, onClose }: LoadTemplateModalProps) {
   const supabase = useMemo(() => createClient(), []);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,11 +67,49 @@ export default function LoadTemplateModal({ orgId, onLoad, onClose }: LoadTempla
     setTemplates((p) => p.filter((t) => t.id !== id));
   };
 
+  const getTemplatePreview = (t: Template): { totalJobs: number; dayPreviews: { dayLabel: string; jobCount: number; teamColors: string[] }[] } => {
+    const data = t.week_data;
+
+    // Legacy: single-day template → treat as Monday
+    if (isLegacyTemplate(data)) {
+      const count = data.clients?.length || 0;
+      return {
+        totalJobs: count,
+        dayPreviews: count > 0 ? [{ dayLabel: 'Mon', jobCount: count, teamColors: [] }] : [],
+      };
+    }
+
+    let totalJobs = 0;
+    const dayPreviews: { dayLabel: string; jobCount: number; teamColors: string[] }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const dayTeams = data[String(i)];
+      if (dayTeams && dayTeams.length > 0) {
+        const jobCount = dayTeams.reduce((sum, dt) => sum + (dt.clients?.length || 0), 0);
+        totalJobs += jobCount;
+        dayPreviews.push({ dayLabel: DAY_LABELS[i], jobCount, teamColors: [] });
+      }
+    }
+    return { totalJobs, dayPreviews };
+  };
+
+  const handleLoad = (t: Template) => {
+    const data = t.week_data;
+
+    // Legacy template → convert to week format (put all on Monday for the current team)
+    if (isLegacyTemplate(data)) {
+      const weekData: WeekTemplateData = {
+        '0': [{ teamName: 'Team', teamId: '', clients: data.clients || [] }],
+      };
+      onLoadWeek(weekData);
+      return;
+    }
+
+    onLoadWeek(data as WeekTemplateData);
+  };
+
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
@@ -66,8 +129,8 @@ export default function LoadTemplateModal({ orgId, onLoad, onClose }: LoadTempla
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-bold text-text-primary">Load Template</h3>
-                <p className="text-xs text-text-tertiary">{templates.length} saved templates</p>
+                <h3 className="text-base font-bold text-text-primary">Load Week Template</h3>
+                <p className="text-xs text-text-tertiary">{templates.length} saved template{templates.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary">
@@ -78,63 +141,60 @@ export default function LoadTemplateModal({ orgId, onLoad, onClose }: LoadTempla
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
           {loading ? (
-            <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="shimmer h-20 rounded-xl" />)}</div>
+            <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="shimmer h-24 rounded-xl" />)}</div>
           ) : templates.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-4xl mb-3">📋</div>
-              <p className="text-sm text-text-tertiary">No templates saved yet.</p>
-              <p className="text-xs text-text-tertiary mt-1">Save your current schedule to create a template.</p>
+              <p className="text-sm text-text-tertiary">No week templates saved yet.</p>
+              <p className="text-xs text-text-tertiary mt-1">Save your current week schedule to create a template.</p>
             </div>
           ) : (
-            templates.map((t, i) => (
-              <motion.div
-                key={t.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className="card p-4 group"
-              >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      {t.label && (
-                        <span className="text-xs font-bold bg-primary-light text-primary px-2 py-0.5 rounded-md">{t.label}</span>
-                      )}
-                      <h4 className="text-sm font-bold text-text-primary">{t.name}</h4>
-                    </div>
-                    <p className="text-xs text-text-tertiary">
-                      {t.week_data?.clients?.length || 0} clients · Created {new Date(t.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                    </p>
-                  </div>
-                  <button onClick={() => handleDelete(t.id)}
-                    className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"
-                    title="Delete template">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Client preview */}
-                {t.week_data?.clients && t.week_data.clients.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {t.week_data.clients.slice(0, 4).map((c: Client, j: number) => (
-                      <span key={j} className="text-[11px] bg-surface-elevated px-2 py-0.5 rounded-md text-text-secondary">{c.name}</span>
-                    ))}
-                    {t.week_data.clients.length > 4 && (
-                      <span className="text-[11px] text-text-tertiary px-1">+{t.week_data.clients.length - 4} more</span>
-                    )}
-                  </div>
-                )}
-
-                <button
-                  onClick={() => onLoad({ clients: t.week_data?.clients || [], additive: true })}
-                  className="btn-primary w-full text-sm py-2"
+            templates.map((t, i) => {
+              const preview = getTemplatePreview(t);
+              return (
+                <motion.div
+                  key={t.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                  className="card p-4 group"
                 >
-                  Add to Schedule
-                </button>
-              </motion.div>
-            ))
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-text-primary">{t.name}</h4>
+                      <p className="text-xs text-text-tertiary">
+                        {preview.totalJobs} job{preview.totalJobs !== 1 ? 's' : ''} · Created {new Date(t.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                    <button onClick={() => handleDelete(t.id)}
+                      className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0"
+                      title="Delete template">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Day-by-day preview */}
+                  {preview.dayPreviews.length > 0 && (
+                    <div className="flex items-center gap-1 mb-3 flex-wrap">
+                      {preview.dayPreviews.map((d, j) => (
+                        <span key={j} className="text-[10px] font-medium bg-primary-light text-primary px-2 py-0.5 rounded-md">
+                          {d.dayLabel}: {d.jobCount}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => handleLoad(t)}
+                    className="btn-primary w-full text-sm py-2"
+                  >
+                    Load Week
+                  </button>
+                </motion.div>
+              );
+            })
           )}
         </div>
       </motion.div>

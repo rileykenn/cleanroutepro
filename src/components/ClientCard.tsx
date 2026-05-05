@@ -1,24 +1,50 @@
 'use client';
 
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
-import { formatTimeDisplay } from '@/lib/timeUtils';
-import { Client, Location, ScheduleAction, TeamSchedule } from '@/lib/types';
+import { formatTimeDisplay, parseTime } from '@/lib/timeUtils';
+import { Client, Location, ScheduleAction, TeamSchedule, StaffMember } from '@/lib/types';
+
+export type StaffBusyPeriod = { start: number; end: number; teamName: string; clientName: string; clientId: string };
 
 const StaffChecklistView = lazy(() => import('./StaffChecklistView'));
 
-interface ClientCardProps { client: Client; index: number; totalClients: number; team: TeamSchedule; dispatch: React.Dispatch<ScheduleAction>; }
+interface ClientCardProps {
+  client: Client;
+  index: number;
+  totalClients: number;
+  team: TeamSchedule;
+  dispatch: React.Dispatch<ScheduleAction>;
+  availableStaff?: StaffMember[];
+  staffBusyPeriods?: Map<string, StaffBusyPeriod[]>;
+}
 
-export default function ClientCard({ client, index, totalClients, team, dispatch }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods }: ClientCardProps) {
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [addressVersion, setAddressVersion] = useState(0);
   const [editingStartTime, setEditingStartTime] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
+  const [showStaffPicker, setShowStaffPicker] = useState(false);
   const placesLib = useMapsLibrary('places');
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const pickerBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Close staff picker on outside click
+  useEffect(() => {
+    if (!showStaffPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node) &&
+          pickerBtnRef.current && !pickerBtnRef.current.contains(e.target as Node)) {
+        setShowStaffPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showStaffPicker]);
 
   const resolveAddress = useCallback(async (text: string): Promise<Location | null> => {
     if (!placesLib) return null;
@@ -48,10 +74,43 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const handleCancelEdit = () => { setHasEdited(false); setAddressText(''); setAddressVersion((v) => v + 1); };
   const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.location.address)}&destination_place_id=${client.location.placeId || ''}`;
   const durationHours = client.jobDurationMinutes / 60;
-  const effectiveDuration = client.jobDurationMinutes / (client.staffCount || 1);
+  const assignedIds = client.assignedStaffIds || [];
+  const effectiveStaffCount = assignedIds.length > 0 ? assignedIds.length : (client.staffCount || 1);
 
   const handleFixedTimeChange = (time: string) => { dispatch({ type: 'SET_FIXED_START_TIME', teamId: team.id, clientId: client.id, time: time || undefined }); setEditingStartTime(false); };
   const clearFixedTime = () => { dispatch({ type: 'SET_FIXED_START_TIME', teamId: team.id, clientId: client.id, time: undefined }); setEditingStartTime(false); };
+
+  // Staff assignment helpers
+  const assignedStaffMembers = (availableStaff || []).filter(s => assignedIds.includes(s.id));
+  // Separate staff into available vs busy (for this job's time window)
+  const { freeStaff, busyStaff } = (() => {
+    const notAssigned = (availableStaff || []).filter(s => !assignedIds.includes(s.id));
+    if (!client.startTime || !client.endTime || !staffBusyPeriods) {
+      return { freeStaff: notAssigned, busyStaff: [] as { staff: StaffMember; conflict: StaffBusyPeriod }[] };
+    }
+    const jobStart = parseTime(client.startTime);
+    const jobEnd = parseTime(client.endTime);
+    const free: StaffMember[] = [];
+    const busy: { staff: StaffMember; conflict: StaffBusyPeriod }[] = [];
+    for (const s of notAssigned) {
+      const periods = staffBusyPeriods.get(s.id) || [];
+      // Find the first overlapping period (excluding this same job)
+      const conflict = periods.find(p => p.clientId !== client.id && p.start < jobEnd && p.end > jobStart);
+      if (conflict) busy.push({ staff: s, conflict });
+      else free.push(s);
+    }
+    return { freeStaff: free, busyStaff: busy };
+  })();
+
+  const assignStaff = (staffId: string) => {
+    const newIds = [...assignedIds, staffId];
+    dispatch({ type: 'ASSIGN_STAFF_TO_JOB', teamId: team.id, clientId: client.id, staffIds: newIds });
+  };
+
+  const unassignStaff = (staffId: string) => {
+    const newIds = assignedIds.filter(id => id !== staffId);
+    dispatch({ type: 'ASSIGN_STAFF_TO_JOB', teamId: team.id, clientId: client.id, staffIds: newIds });
+  };
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
@@ -126,13 +185,23 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         </div>
       </div>
 
-      {/* Duration + Staff + Times */}
+      {/* Duration + Staff Count + Times */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <input type="number" value={durationHours} onChange={(e) => { const h = parseFloat(e.target.value) || 0; dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { jobDurationMinutes: Math.round(h * 60) } }); }}
-            className="w-16 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-center" min={0.25} step={0.25} />
-          <span className="text-xs text-text-tertiary">hrs</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <input type="number" value={durationHours} onChange={(e) => { const h = parseFloat(e.target.value) || 0; dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { jobDurationMinutes: Math.round(h * 60) } }); }}
+              className="w-16 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-center" min={0.25} step={0.25} />
+            <span className="text-xs text-text-tertiary">hrs</span>
+          </div>
+          {/* Staff count indicator */}
+          {effectiveStaffCount > 1 && (
+            <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg" style={{ backgroundColor: `${team.color.primary}10`, color: team.color.text }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>{effectiveStaffCount}</span>
+              <span className="text-text-tertiary font-normal">({(client.jobDurationMinutes / effectiveStaffCount / 60).toFixed(1)}h eff.)</span>
+            </div>
+          )}
         </div>
         {client.startTime && client.endTime && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sm">
@@ -143,6 +212,107 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           </motion.div>
         )}
       </div>
+
+      {/* Per-Job Staff Assignment */}
+      {availableStaff && availableStaff.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border-light">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {assignedStaffMembers.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg border group/staff transition-colors"
+                style={{
+                  backgroundColor: `${team.color.primary}08`,
+                  borderColor: `${team.color.primary}25`,
+                  color: team.color.text,
+                }}
+              >
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: team.color.primary }}>
+                  {s.name.charAt(0).toUpperCase()}
+                </div>
+                <span>{s.name}</span>
+                <span className="text-[10px] font-normal opacity-60">${s.hourly_rate}/hr</span>
+                <button
+                  onClick={() => unassignStaff(s.id)}
+                  className="p-0.5 rounded opacity-0 group-hover/staff:opacity-100 hover:bg-red-100 text-red-400 hover:text-red-600 transition-all"
+                  title="Remove from job"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            ))}
+
+            {/* Assign button */}
+            <div className="relative">
+              <button
+                ref={pickerBtnRef}
+                onClick={() => setShowStaffPicker(!showStaffPicker)}
+                className="flex items-center gap-1 text-[11px] font-medium text-text-tertiary hover:text-primary px-2 py-1.5 rounded-lg border border-dashed border-border-light hover:border-primary hover:bg-primary-light/30 transition-all"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                {assignedIds.length === 0 ? 'Assign Staff' : 'Add'}
+              </button>
+
+              <AnimatePresence>
+                {showStaffPicker && (
+                  <motion.div
+                    ref={pickerRef}
+                    initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full left-0 mb-1.5 z-30 w-52 bg-white rounded-xl shadow-lg border border-border-light p-2"
+                  >
+                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1">Available Staff</div>
+                    {freeStaff.length === 0 && busyStaff.length === 0 ? (
+                      <div className="text-xs text-text-tertiary px-2 py-3 text-center">All staff assigned</div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                        {freeStaff.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => { assignStaff(s.id); if (freeStaff.length <= 1) setShowStaffPicker(false); }}
+                            className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs hover:bg-surface-hover transition-colors text-left"
+                          >
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: team.color.primary }}>
+                              {s.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="font-medium text-text-primary block truncate">{s.name}</span>
+                              <span className="text-[10px] text-text-tertiary capitalize">{s.role} · ${s.hourly_rate}/hr</span>
+                            </div>
+                          </button>
+                        ))}
+                        {/* Busy / conflicting staff (greyed out) */}
+                        {busyStaff.length > 0 && (
+                          <>
+                            <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2 pb-1 mt-1 border-t border-border-light">Busy</div>
+                            {busyStaff.map(({ staff: s, conflict }) => (
+                              <div
+                                key={s.id}
+                                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-left opacity-50 cursor-not-allowed"
+                                title={`Busy at ${conflict.clientName} (${conflict.teamName})`}
+                              >
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-400">
+                                  {s.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-medium text-text-tertiary block truncate">{s.name}</span>
+                                  <span className="text-[10px] text-red-400">@ {conflict.clientName} · {conflict.teamName}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {showChecklist && <Suspense fallback={null}><StaffChecklistView clientId={client.savedClientId || client.id} clientName={client.name} onClose={() => setShowChecklist(false)} /></Suspense>}

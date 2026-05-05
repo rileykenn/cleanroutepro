@@ -1,3 +1,11 @@
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string;
+  hourly_rate: number;
+  available_days: number[] | null;
+}
+
 export interface Location {
   address: string;
   lat: number;
@@ -19,6 +27,7 @@ export interface Client {
   savedClientId?: string;
   email?: string;
   phone?: string;
+  assignedStaffIds?: string[];
 }
 
 export interface TravelSegment {
@@ -174,7 +183,8 @@ export type ScheduleAction =
   | { type: 'SET_FIXED_START_TIME'; teamId: string; clientId: string; time: string | undefined }
   | { type: 'LOAD_STATE'; teams: TeamSchedule[]; activeTeamId: string; selectedDate: string }
   | { type: 'SET_VIEW_MODE'; viewMode: 'week' | 'day' }
-  | { type: 'SET_FOCUSED_DATE'; date: string };
+  | { type: 'SET_FOCUSED_DATE'; date: string }
+  | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] };
 
 export interface AppState {
   teams: TeamSchedule[];

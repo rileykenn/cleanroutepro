@@ -6,7 +6,7 @@ import { AnimatePresence } from 'framer-motion';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays } from '@/lib/timeUtils';
-import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule } from '@/lib/types';
+import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember } from '@/lib/types';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 
@@ -28,6 +28,7 @@ export default function SchedulePage() {
   const [showMonth, setShowMonth] = useState(false);
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
+  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
@@ -123,6 +124,7 @@ export default function SchedulePage() {
             if (jobs) {
               for (const j of jobs) {
                 if (j.is_break) continue;
+                const assignedIds = (j.assigned_staff_ids as string[]) || [];
                 dayClients.push({
                   id: j.id as string,
                   name: (j.name as string) || '',
@@ -133,12 +135,13 @@ export default function SchedulePage() {
                     placeId: (j.place_id as string) || undefined,
                   },
                   jobDurationMinutes: Number(j.duration_minutes) || 90,
-                  staffCount: (j.staff_count as number) || 1,
+                  staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
                   isLocked: (j.is_locked as boolean) || false,
                   startTime: (j.start_time as string) || undefined,
                   endTime: (j.end_time as string) || undefined,
                   notes: (j.notes as string) || undefined,
                   savedClientId: (j.client_id as string) || undefined,
+                  assignedStaffIds: assignedIds,
                 });
               }
             }
@@ -182,49 +185,51 @@ export default function SchedulePage() {
     }
   }, [orgId, supabase, loadTeams, state.selectedDate]);
 
-  // ─── Load staff assignments for current date ───
-  const loadStaffAssignments = useCallback(async (date: string) => {
+  // ─── Load staff directory once ───
+  const loadStaffMembers = useCallback(async () => {
     if (!orgId) return;
-    const { data: assignments } = await supabase
-      .from('staff_assignments')
-      .select('team_id, staff_id, is_available')
-      .eq('org_id', orgId)
-      .eq('assignment_date', date);
-    if (!assignments || assignments.length === 0) { setTeamStaffMap(new Map()); return; }
-    const staffIds = [...new Set(assignments.filter((a: { is_available: boolean }) => a.is_available !== false).map((a: { staff_id: string }) => a.staff_id))];
-    if (staffIds.length === 0) { setTeamStaffMap(new Map()); return; }
-    const { data: staffRows } = await supabase
-      .from('staff_members').select('id, name, hourly_rate').in('id', staffIds);
-    const staffLookup = new Map<string, { name: string; hourly_rate: number }>((staffRows || []).map((s: { id: string; name: string; hourly_rate: number }) => [s.id, { name: s.name, hourly_rate: s.hourly_rate || 38 }]));
+    const { data } = await supabase.from('staff_members').select('id, name, role, hourly_rate, available_days').eq('org_id', orgId).order('name');
+    if (data) setAllStaff(data as StaffMember[]);
+  }, [orgId, supabase]);
+
+  // Derive teamStaffMap from per-job assignments (for TeamTabs badges)
+  const deriveTeamStaffMap = useCallback(() => {
     const map = new Map<string, { id: string; name: string; hourly_rate: number }[]>();
-    for (const a of assignments as { staff_id: string; team_id: string; is_available: boolean }[]) {
-      if (a.is_available === false) continue;
-      const info = staffLookup.get(a.staff_id);
-      if (!info) continue;
-      const list = map.get(a.team_id) || [];
-      list.push({ id: a.staff_id, name: info.name, hourly_rate: info.hourly_rate });
-      map.set(a.team_id, list);
+    const staffLookup = new Map(allStaff.map(s => [s.id, { name: s.name, hourly_rate: s.hourly_rate }]));
+    for (const team of state.teams) {
+      const seen = new Set<string>();
+      const list: { id: string; name: string; hourly_rate: number }[] = [];
+      for (const c of team.clients) {
+        for (const sid of c.assignedStaffIds || []) {
+          if (!seen.has(sid)) {
+            seen.add(sid);
+            const info = staffLookup.get(sid);
+            if (info) list.push({ id: sid, name: info.name, hourly_rate: info.hourly_rate });
+          }
+        }
+      }
+      if (list.length > 0) map.set(team.id, list);
     }
     setTeamStaffMap(map);
-  }, [orgId, supabase]);
+  }, [state.teams, allStaff]);
 
   // Initial load
   useEffect(() => {
-    if (orgId && !dbLoaded) loadWeekSchedules(weekDates);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (orgId && !dbLoaded) { loadWeekSchedules(weekDates); loadStaffMembers(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   // Reload on week change
   useEffect(() => {
     if (orgId && dbLoaded) loadWeekSchedules(weekDates);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekDates[0]]);
 
-  // Load staff when date or teams change
+  // Derive team badges when teams or staff change
   useEffect(() => {
-    if (orgId && dbLoaded) loadStaffAssignments(state.selectedDate);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, dbLoaded, state.selectedDate]);
+    if (dbLoaded && allStaff.length > 0) deriveTeamStaffMap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.teams, allStaff]);
 
   // ─── Load specific day into reducer for Day View ───
   const loadDayForEdit = useCallback(async (date: string) => {
@@ -243,17 +248,21 @@ export default function SchedulePage() {
         if (jobs) {
           team.clients = jobs
             .filter((j: Record<string, unknown>) => !j.is_break)
-            .map((j: Record<string, unknown>): Client => ({
-              id: j.id as string, name: (j.name as string) || '',
-              location: { address: (j.address as string) || '', lat: (j.lat as number) || 0, lng: (j.lng as number) || 0, placeId: (j.place_id as string) || undefined },
-              jobDurationMinutes: Number(j.duration_minutes) || 90,
-              staffCount: (j.staff_count as number) || 1,
-              isLocked: (j.is_locked as boolean) || false,
-              startTime: (j.start_time as string) || undefined,
-              endTime: (j.end_time as string) || undefined,
-              notes: (j.notes as string) || undefined,
-              savedClientId: (j.client_id as string) || undefined,
-            }));
+            .map((j: Record<string, unknown>): Client => {
+              const assignedIds = (j.assigned_staff_ids as string[]) || [];
+              return {
+                id: j.id as string, name: (j.name as string) || '',
+                location: { address: (j.address as string) || '', lat: (j.lat as number) || 0, lng: (j.lng as number) || 0, placeId: (j.place_id as string) || undefined },
+                jobDurationMinutes: Number(j.duration_minutes) || 90,
+                staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
+                isLocked: (j.is_locked as boolean) || false,
+                startTime: (j.start_time as string) || undefined,
+                endTime: (j.end_time as string) || undefined,
+                notes: (j.notes as string) || undefined,
+                savedClientId: (j.client_id as string) || undefined,
+                assignedStaffIds: assignedIds,
+              };
+            });
         }
       }
     }
@@ -452,18 +461,18 @@ export default function SchedulePage() {
             <div className="flex items-center gap-2">
               {state.viewMode === 'day' && (
                 <button onClick={handleBackToWeek} className="btn-ghost text-xs mr-1" title="Back to week view">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                   Week
                 </button>
               )}
               <button onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
               <span className="text-sm font-semibold text-text-primary min-w-[180px] text-center">
                 {state.viewMode === 'day' ? dayLabel : weekLabel}
               </span>
               <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
             </div>
 
@@ -482,18 +491,18 @@ export default function SchedulePage() {
               </div>
 
               <button onClick={() => setShowMonth(true)} className="btn-ghost text-xs" title="Month view">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
               </button>
 
               {state.viewMode === 'day' && activeTeam?.clients.length > 0 && !isStaff && (
                 <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-xs" title="Save as template">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                   Save
                 </button>
               )}
               {!isStaff && (
                 <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load template">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                   Load
                 </button>
               )}
@@ -502,11 +511,10 @@ export default function SchedulePage() {
                 <button
                   onClick={handlePublishWeek}
                   disabled={weekIsPublished}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                    weekIsPublished
+                  className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${weekIsPublished
                       ? 'bg-success-light text-success cursor-default'
                       : 'bg-primary text-white hover:bg-primary-hover'
-                  }`}
+                    }`}
                 >
                   {weekIsPublished ? '✓ Published' : 'Publish Week'}
                 </button>
@@ -546,8 +554,7 @@ export default function SchedulePage() {
               dbLoaded={dbLoaded}
               supabase={supabase}
               saveRef={daySaveRef}
-              teamStaffMap={teamStaffMap}
-              onRosterChange={() => loadStaffAssignments(state.selectedDate)}
+              allStaff={allStaff}
             />
           )}
         </div>

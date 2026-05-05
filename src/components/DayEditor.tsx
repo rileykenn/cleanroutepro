@@ -5,8 +5,8 @@ import { Map as GoogleMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary, ScheduleTimesResult } from '@/lib/routeEngine';
-import { formatDateDisplay, generateId } from '@/lib/timeUtils';
-import { TravelSegment, Client, AppState, ScheduleAction } from '@/lib/types';
+import { formatDateDisplay, generateId, parseTime } from '@/lib/timeUtils';
+import { TravelSegment, Client, AppState, ScheduleAction, StaffMember } from '@/lib/types';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 import ClientCard from '@/components/ClientCard';
@@ -15,7 +15,6 @@ import TravelSegmentComponent from '@/components/TravelSegment';
 import DailySummaryCard from '@/components/DailySummary';
 import RouteMap from '@/components/RouteMap';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
-import StaffRosterPanel from '@/components/StaffRosterPanel';
 
 interface DayEditorProps {
   state: AppState;
@@ -24,11 +23,10 @@ interface DayEditorProps {
   dbLoaded: boolean;
   supabase: SupabaseClient;
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
-  teamStaffMap?: Map<string, { id: string; name: string; hourly_rate: number }[]>;
-  onRosterChange?: () => void;
+  allStaff?: StaffMember[];
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, teamStaffMap, onRosterChange }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
 
@@ -36,6 +34,39 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     () => state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0],
     [state.teams, state.activeTeamId]
   );
+
+  // Filter staff available on this day-of-week
+  const availableStaff = useMemo(() => {
+    if (!allStaff) return [];
+    const parts = state.selectedDate.split('-').map(Number);
+    const dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
+    return allStaff.filter((s) => {
+      if (!s.available_days || s.available_days.length === 0) return true;
+      return s.available_days.includes(dayOfWeek);
+    });
+  }, [allStaff, state.selectedDate]);
+
+  // Build busy schedule for ALL staff across ALL teams (for conflict detection)
+  const staffBusyPeriods = useMemo(() => {
+    const periods = new Map<string, { start: number; end: number; teamName: string; clientName: string; clientId: string }[]>();
+    for (const team of state.teams) {
+      for (const client of team.clients) {
+        if (!client.startTime || !client.endTime) continue;
+        for (const staffId of client.assignedStaffIds || []) {
+          const existing = periods.get(staffId) || [];
+          existing.push({
+            start: parseTime(client.startTime),
+            end: parseTime(client.endTime),
+            teamName: team.name,
+            clientName: client.name,
+            clientId: client.id,
+          });
+          periods.set(staffId, existing);
+        }
+      }
+    }
+    return periods;
+  }, [state.teams]);
 
   // ─── Auto-save ───
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,6 +111,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           duration_minutes: c.jobDurationMinutes, staff_count: c.staffCount || 1,
           is_locked: c.isLocked || false, is_break: false, notes: c.notes || '',
           start_time: c.startTime || null, end_time: c.endTime || null,
+          assigned_staff_ids: c.assignedStaffIds || [],
         }));
         await supabase.from('schedule_jobs').insert(rows);
       }
@@ -101,6 +133,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address, dur: c.jobDurationMinutes,
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
+          assignedStaff: c.assignedStaffIds,
         })),
         breaks: t.breaks,
       }))
@@ -189,6 +222,24 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     return activeTeam.travelSegments.get(`${fromId}->${toId}`);
   };
 
+  // Build per-job staff rates for DailySummary
+  const jobStaffRates = useMemo(() => {
+    if (!allStaff || allStaff.length === 0) return [];
+    const staffMap = new Map(allStaff.map(s => [s.id, s]));
+    const rates: { id: string; name: string; hourly_rate: number }[] = [];
+    const seen = new Set<string>();
+    for (const c of activeTeam.clients) {
+      for (const sid of c.assignedStaffIds || []) {
+        if (!seen.has(sid)) {
+          seen.add(sid);
+          const s = staffMap.get(sid);
+          if (s) rates.push({ id: s.id, name: s.name, hourly_rate: s.hourly_rate });
+        }
+      }
+    }
+    return rates;
+  }, [activeTeam.clients, allStaff]);
+
   return (
     <>
       <MapsInitializer onServiceReady={setDirectionsService} />
@@ -245,14 +296,27 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               )}
             </motion.div>
 
-            {/* Staff Roster */}
-            <StaffRosterPanel
-              orgId={orgId}
-              selectedDate={state.selectedDate}
-              teams={state.teams}
-              activeTeamId={state.activeTeamId}
-              onRosterChange={onRosterChange || (() => {})}
-            />
+            {/* Available staff summary */}
+            {availableStaff.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+                className="card p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+                  </svg>
+                  <span className="text-xs font-bold text-text-primary">Available Today</span>
+                  <span className="text-[10px] text-text-tertiary">{availableStaff.length} staff</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {availableStaff.map((s) => (
+                    <span key={s.id} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-surface-elevated text-text-secondary">
+                      {s.name}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            )}
 
             {/* Optimize */}
             {activeTeam.clients.length >= 2 && activeTeam.baseAddress && (
@@ -278,7 +342,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   <motion.div key={client.id} layout>
                     {activeTeam.baseAddress && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
-                      team={activeTeam} dispatch={dispatch} />
+                      team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
+                      staffBusyPeriods={staffBusyPeriods} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="mx-2 my-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">
@@ -352,7 +417,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
             {/* Daily Summary */}
             {activeTeam.clients.length > 0 && (
-              <div className="pt-2"><DailySummaryCard team={activeTeam} summary={summary} dispatch={dispatch} staffNames={(teamStaffMap?.get(activeTeam.id) || []).map(s => s.name)} staffRates={(teamStaffMap?.get(activeTeam.id) || []).map(s => ({ id: s.id, name: s.name, hourly_rate: s.hourly_rate }))} /></div>
+              <div className="pt-2">
+                <DailySummaryCard
+                  team={activeTeam}
+                  summary={summary}
+                  dispatch={dispatch}
+                  staffNames={jobStaffRates.map(s => s.name)}
+                  staffRates={jobStaffRates}
+                />
+              </div>
             )}
 
             {/* Empty state */}

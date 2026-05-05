@@ -22,8 +22,13 @@ export async function GET(request: NextRequest) {
 
   // PKCE flow — token hash exchange
   if (token_hash && type) {
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash });
-    if (!error) {
+    const { data, error } = await supabase.auth.verifyOtp({ type, token_hash });
+    if (!error && data?.user) {
+      // Check if this is a staff user — redirect them to their dashboard
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
+      if (profile?.role === 'staff') {
+        redirectTo.pathname = '/dashboard/staff-view';
+      }
       return NextResponse.redirect(redirectTo);
     }
   }

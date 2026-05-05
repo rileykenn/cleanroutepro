@@ -6,9 +6,9 @@ import { createClient } from '@/lib/supabase/client';
 
 interface ChecklistItem { id: string; text: string; completed: boolean; }
 
-interface StaffChecklistViewProps { clientId: string; clientName: string; onClose: () => void; }
+interface StaffChecklistViewProps { clientId: string; clientName: string; scheduleJobId?: string; onClose: () => void; }
 
-export default function StaffChecklistView({ clientId, clientName, onClose }: StaffChecklistViewProps) {
+export default function StaffChecklistView({ clientId, clientName, scheduleJobId, onClose }: StaffChecklistViewProps) {
   const supabase = useMemo(() => createClient(), []);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [notes, setNotes] = useState('');
@@ -49,15 +49,49 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
   const completedCount = items.filter((it) => it.completed).length;
   const progress = items.length > 0 ? (completedCount / items.length) * 100 : 0;
 
+  // Load existing completion for this job (if resuming)
+  useEffect(() => {
+    if (!scheduleJobId || !templateId) return;
+    (async () => {
+      const { data } = await supabase.from('checklist_completions').select('items, notes').eq('schedule_job_id', scheduleJobId).maybeSingle();
+      if (data?.items) {
+        try {
+          const parsed = typeof data.items === 'string' ? JSON.parse(data.items) : data.items;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setItems(parsed);
+            setNotes(data.notes || '');
+            setSaved(true);
+          }
+        } catch { /* ignore */ }
+      }
+    })();
+  }, [scheduleJobId, templateId, supabase]);
+
   const handleSave = async () => {
     if (!templateId) return;
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', user!.id).single();
-    await supabase.from('checklist_completions').insert({
-      org_id: profile!.org_id, client_id: clientId, checklist_template_id: templateId,
-      items: JSON.stringify(items), notes, completed_by: user!.id, completed_at: new Date().toISOString(),
-    });
+
+    // Upsert: if this job already has a completion, update it
+    if (scheduleJobId) {
+      const { data: existing } = await supabase.from('checklist_completions').select('id').eq('schedule_job_id', scheduleJobId).maybeSingle();
+      if (existing) {
+        await supabase.from('checklist_completions').update({
+          items: JSON.stringify(items), notes, completed_by: user!.id, completed_at: new Date().toISOString(),
+        }).eq('id', existing.id);
+      } else {
+        await supabase.from('checklist_completions').insert({
+          org_id: profile!.org_id, client_id: clientId, schedule_job_id: scheduleJobId, checklist_template_id: templateId,
+          items: JSON.stringify(items), notes, completed_by: user!.id, completed_at: new Date().toISOString(),
+        });
+      }
+    } else {
+      await supabase.from('checklist_completions').insert({
+        org_id: profile!.org_id, client_id: clientId, checklist_template_id: templateId,
+        items: JSON.stringify(items), notes, completed_by: user!.id, completed_at: new Date().toISOString(),
+      });
+    }
     setSaving(false);
     setSaved(true);
   };
@@ -144,7 +178,8 @@ export default function StaffChecklistView({ clientId, clientName, onClose }: St
                     Email to {clientEmail}
                   </button>
                 )}
-                <button onClick={onClose} className="btn-ghost w-full py-2 text-sm">Close</button>
+                <button onClick={() => setSaved(false)} className="btn-ghost w-full py-2 text-sm">Edit Checklist</button>
+                <button onClick={onClose} className="btn-ghost w-full py-2 text-sm text-text-tertiary">Close</button>
               </motion.div>
             ) : (
               <>

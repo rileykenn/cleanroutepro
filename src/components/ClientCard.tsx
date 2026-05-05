@@ -315,7 +315,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       )}
 
       <AnimatePresence>
-        {showChecklist && <Suspense fallback={null}><StaffChecklistView clientId={client.savedClientId || client.id} clientName={client.name} onClose={() => setShowChecklist(false)} /></Suspense>}
+        {showChecklist && <Suspense fallback={null}><StaffChecklistView clientId={client.savedClientId || client.id} clientName={client.name} scheduleJobId={client.id} onClose={() => setShowChecklist(false)} /></Suspense>}
       </AnimatePresence>
     </motion.div>
   );

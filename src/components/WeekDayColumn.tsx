@@ -1,20 +1,17 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { DaySchedule, TeamColor, TEAM_COLORS } from '@/lib/types';
+import { DaySchedule, TeamColor } from '@/lib/types';
 import { formatTimeDisplay, isToday, getShortDayLabel } from '@/lib/timeUtils';
-
-const TEMPLATE_CODES = ['', 'A1', 'A2', 'A3', 'A4', 'B1', 'B2', 'B3', 'B4'];
 
 interface WeekDayColumnProps {
   daySchedule: DaySchedule;
   teamColor: TeamColor;
   isActive: boolean;
   onDayClick: () => void;
-  onTemplateCodeChange?: (code: string) => void;
 }
 
-export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, onTemplateCodeChange }: WeekDayColumnProps) {
+export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick }: WeekDayColumnProps) {
   const today = isToday(daySchedule.date);
   const clients = daySchedule.clients;
   const hasJobs = clients.length > 0;
@@ -41,27 +38,10 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
               <span className="text-[9px] font-bold bg-primary text-white px-1.5 py-0.5 rounded-full">TODAY</span>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            {daySchedule.isPublished && (
-              <span className="w-2 h-2 rounded-full bg-success shrink-0" title="Published" />
-            )}
-            {daySchedule.templateCode && (
-              <span className="text-[10px] font-bold bg-primary-light text-primary px-1.5 py-0.5 rounded-md">{daySchedule.templateCode}</span>
-            )}
-          </div>
+          {daySchedule.isPublished && (
+            <span className="w-2 h-2 rounded-full bg-success shrink-0" title="Published" />
+          )}
         </div>
-        {/* Template code selector — show on click, don't propagate */}
-        {onTemplateCodeChange && (
-          <select
-            value={daySchedule.templateCode || ''}
-            onChange={(e) => { e.stopPropagation(); onTemplateCodeChange(e.target.value); }}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-1.5 w-full text-[10px] font-medium bg-surface-elevated border border-border-light rounded-md px-1.5 py-1 outline-none focus:border-primary cursor-pointer"
-          >
-            <option value="">No code</option>
-            {TEMPLATE_CODES.filter(c => c).map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
       </div>
 
       {/* Jobs list */}

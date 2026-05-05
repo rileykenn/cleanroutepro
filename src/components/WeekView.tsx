@@ -9,10 +9,9 @@ interface WeekViewProps {
   teamColor: TeamColor;
   activeDate: string;
   onDayClick: (date: string) => void;
-  onTemplateCodeChange: (date: string, code: string) => void;
 }
 
-export default function WeekView({ weekDates, daySchedules, teamColor, activeDate, onDayClick, onTemplateCodeChange }: WeekViewProps) {
+export default function WeekView({ weekDates, daySchedules, teamColor, activeDate, onDayClick }: WeekViewProps) {
   return (
     <div className="flex gap-2 h-full overflow-x-auto custom-scrollbar p-3 lg:p-4">
       {weekDates.map((date) => {
@@ -31,7 +30,6 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
             teamColor={teamColor}
             isActive={date === activeDate}
             onDayClick={() => onDayClick(date)}
-            onTemplateCodeChange={(code) => onTemplateCodeChange(date, code)}
           />
         );
       })}

@@ -312,30 +312,6 @@ export default function SchedulePage() {
     loadWeekSchedules(weekDates);
   };
 
-  // ─── Template Code ───
-  const handleTemplateCodeChange = async (date: string, code: string) => {
-    if (!orgId || !state.teams[0]) return;
-    const teamId = state.teams[0].id;
-    const { data: schedule } = await supabase
-      .from('schedules').select('id')
-      .eq('team_id', teamId).eq('schedule_date', date).maybeSingle();
-    if (schedule) {
-      await supabase.from('schedules').update({ template_code: code || null }).eq('id', schedule.id);
-    } else {
-      await supabase.from('schedules').insert({ org_id: orgId, team_id: teamId, schedule_date: date, template_code: code || null });
-    }
-    setWeekSchedules((prev) => {
-      const nm = new Map(prev);
-      const teamMap = nm.get(teamId);
-      if (teamMap) {
-        const dateMap = new Map(teamMap);
-        const d = dateMap.get(date);
-        if (d) dateMap.set(date, { ...d, templateCode: code || undefined });
-        nm.set(teamId, dateMap);
-      }
-      return nm;
-    });
-  };
 
   // ─── Publish Week ───
   const handlePublishWeek = async () => {
@@ -589,7 +565,6 @@ export default function SchedulePage() {
               teamColor={activeTeam?.color || TEAM_COLORS[0]}
               activeDate={state.focusedDate}
               onDayClick={handleDayClick}
-              onTemplateCodeChange={handleTemplateCodeChange}
             />
           ) : (
             <DayEditor

@@ -39,30 +39,21 @@ export default function DashboardHomePage() {
   const [creating, setCreating] = useState(false);
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
 
-  // Load pending invites
+  // Load pending invites via server API (bypasses RLS)
   const loadInvites = useCallback(async () => {
     if (!profile?.id) { setLoading(false); return; }
 
-    const { data: memberships } = await supabase
-      .from('org_members')
-      .select('id, org_id, role, status, organizations:org_id(name)')
-      .eq('user_id', profile.id)
-      .eq('status', 'pending');
-
-    if (memberships) {
-      const invites = memberships.map((m: Record<string, unknown>) => {
-        const org = m.organizations as Record<string, unknown> | null;
-        return {
-          id: m.id as string,
-          org_id: m.org_id as string,
-          role: m.role as string,
-          org_name: (org?.name as string) || 'Unknown',
-        };
-      });
-      setPendingInvites(invites);
+    try {
+      const res = await fetch('/api/invite/pending');
+      if (res.ok) {
+        const data = await res.json();
+        setPendingInvites(data.invites || []);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Failed to load invites:', err);
     }
     setLoading(false);
-  }, [supabase, profile?.id]);
+  }, [profile?.id]);
 
   useEffect(() => { loadInvites(); }, [loadInvites]);
 

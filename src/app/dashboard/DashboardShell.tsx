@@ -55,38 +55,34 @@ function Inner({ children }: { children: React.ReactNode }) {
 
   const loadOrgs = useCallback(async () => {
     if (!profile?.id) return;
+
+    // Load accepted orgs (RLS works for these since user has org_id)
     const { data } = await supabase.from('org_members')
       .select('org_id, role, status, organizations:org_id(name)')
-      .eq('user_id', profile.id);
-    if (!data) return;
+      .eq('user_id', profile.id)
+      .eq('status', 'accepted');
 
-    const accepted: OrgMembership[] = [];
-    const pending: { id: string; org_name: string; role: string }[] = [];
+    if (data) {
+      const accepted = (data as Record<string, unknown>[]).map(m => {
+        const org = m.organizations as Record<string, unknown> | null;
+        return {
+          org_id: m.org_id as string,
+          role: m.role as string,
+          org_name: (org?.name as string) || 'Unknown',
+        };
+      });
+      setOrgs(accepted);
+    }
 
-    for (const m of data as Record<string, unknown>[]) {
-      const org = m.organizations as Record<string, unknown> | null;
-      const name = (org?.name as string) || 'Unknown';
-      if ((m.status as string) === 'accepted') {
-        accepted.push({ org_id: m.org_id as string, role: m.role as string, org_name: name });
-      } else {
-        // For pending, we need the membership ID - refetch with id
+    // Load pending invites via server API (bypasses RLS for org name lookup)
+    try {
+      const res = await fetch('/api/invite/pending');
+      if (res.ok) {
+        const { invites } = await res.json();
+        setPendingInvites(invites || []);
+        setPendingCount((invites || []).length);
       }
-    }
-    setOrgs(accepted);
-
-    // Separate query for pending invites (need the id)
-    const { data: pend } = await supabase.from('org_members')
-      .select('id, org_id, role, organizations:org_id(name)')
-      .eq('user_id', profile.id).eq('status', 'pending');
-    if (pend) {
-      const mapped = (pend as Record<string, unknown>[]).map(m => ({
-        id: m.id as string,
-        org_name: ((m.organizations as Record<string, unknown> | null)?.name as string) || 'Unknown',
-        role: m.role as string,
-      }));
-      setPendingInvites(mapped);
-      setPendingCount(mapped.length);
-    }
+    } catch { /* silent */ }
   }, [supabase, profile?.id]);
 
   useEffect(() => { loadOrgs(); }, [loadOrgs]);

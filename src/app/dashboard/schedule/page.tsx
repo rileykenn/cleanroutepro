@@ -313,7 +313,7 @@ export default function SchedulePage() {
   };
 
 
-  // ─── Publish Week ───
+  // ─── Publish / Unpublish Week ───
   const handlePublishWeek = async () => {
     if (!orgId) return;
     for (const date of weekDates) {
@@ -327,9 +327,78 @@ export default function SchedulePage() {
     }
     setPublishedDates(new Set(weekDates));
     loadWeekSchedules(weekDates);
+    loadPublishHistory();
+  };
+
+  const handleUnpublishWeek = async () => {
+    if (!orgId) return;
+    for (const date of weekDates) {
+      const { data: schedules } = await supabase
+        .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
+      if (schedules) {
+        for (const s of schedules) {
+          await supabase.from('schedules').update({ is_published: false }).eq('id', s.id);
+        }
+      }
+    }
+    setPublishedDates(new Set());
+    loadWeekSchedules(weekDates);
+    loadPublishHistory();
   };
 
   const weekIsPublished = weekDates.every((d) => publishedDates.has(d));
+  const weekPartiallyPublished = !weekIsPublished && weekDates.some((d) => publishedDates.has(d));
+
+  // ─── Publish History ───
+  const [publishHistory, setPublishHistory] = useState<{ weekStart: string; weekEnd: string; label: string; dates: string[] }[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const loadPublishHistory = useCallback(async () => {
+    if (!orgId) return;
+    const { data: published } = await supabase
+      .from('schedules')
+      .select('schedule_date')
+      .eq('org_id', orgId)
+      .eq('is_published', true)
+      .order('schedule_date', { ascending: false });
+
+    if (!published) return;
+
+    // Group by week (Mon-Sun)
+    const allDates = Array.from(new Set(published.map((p: { schedule_date: string }) => p.schedule_date))) as string[];
+    const weeks = new Map<string, string[]>();
+
+    for (const dateStr of allDates) {
+      const parts = dateStr.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      const day = d.getDay();
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((day + 6) % 7));
+      const mondayStr = monday.toISOString().split('T')[0];
+      if (!weeks.has(mondayStr)) weeks.set(mondayStr, []);
+      weeks.get(mondayStr)!.push(dateStr);
+    }
+
+    const history = Array.from(weeks.entries())
+      .map(([mondayStr, dates]) => {
+        const parts = mondayStr.split('-').map(Number);
+        const mon = new Date(parts[0], parts[1] - 1, parts[2]);
+        const sun = new Date(mon);
+        sun.setDate(mon.getDate() + 6);
+        return {
+          weekStart: mondayStr,
+          weekEnd: sun.toISOString().split('T')[0],
+          label: `${mon.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${sun.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          dates,
+        };
+      })
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+      .slice(0, 12);
+
+    setPublishHistory(history);
+  }, [orgId, supabase]);
+
+  useEffect(() => { loadPublishHistory(); }, [loadPublishHistory]);
 
   // ─── Team handlers ───
   const handleAddTeam = useCallback(async () => {
@@ -529,16 +598,80 @@ export default function SchedulePage() {
               )}
 
               {state.viewMode === 'week' && !isStaff && (
-                <button
-                  onClick={handlePublishWeek}
-                  disabled={weekIsPublished}
-                  className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${weekIsPublished
-                      ? 'bg-success-light text-success cursor-default'
-                      : 'bg-primary text-white hover:bg-primary-hover'
-                    }`}
-                >
-                  {weekIsPublished ? '✓ Published' : 'Publish Week'}
-                </button>
+                <div className="flex items-center gap-1.5 relative">
+                  {weekIsPublished ? (
+                    <button
+                      onClick={handleUnpublishWeek}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors bg-success-light text-success hover:bg-red-50 hover:text-red-600 group"
+                    >
+                      <span className="group-hover:hidden">✓ Published</span>
+                      <span className="hidden group-hover:inline">Unpublish</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePublishWeek}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                        weekPartiallyPublished
+                          ? 'bg-amber-50 text-amber-700 hover:bg-primary hover:text-white'
+                          : 'bg-primary text-white hover:bg-primary-hover'
+                      }`}
+                    >
+                      {weekPartiallyPublished ? 'Partially Published' : 'Publish Week'}
+                    </button>
+                  )}
+
+                  {/* History button */}
+                  <button
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary transition-colors"
+                    title="Publish History"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </button>
+
+                  {/* History dropdown */}
+                  {showHistory && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
+                      <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl border border-border-light shadow-xl w-[280px] overflow-hidden">
+                        <div className="px-4 py-3 border-b border-border-light">
+                          <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider">Published Weeks</h4>
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto">
+                          {publishHistory.length === 0 ? (
+                            <p className="text-xs text-text-tertiary text-center py-6">No weeks published yet</p>
+                          ) : (
+                            publishHistory.map((week) => {
+                              const isCurrent = week.weekStart === weekDates[0];
+                              return (
+                                <button key={week.weekStart}
+                                  onClick={() => {
+                                    dispatch({ type: 'SET_FOCUSED_DATE', date: week.weekStart });
+                                    setShowHistory(false);
+                                  }}
+                                  className={`w-full text-left px-4 py-3 hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 ${
+                                    isCurrent ? 'bg-primary/5' : ''
+                                  }`}>
+                                  <div className="flex items-center justify-between">
+                                    <span className={`text-sm font-medium ${isCurrent ? 'text-primary' : 'text-text-primary'}`}>
+                                      {week.label}
+                                    </span>
+                                    {isCurrent && <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">Current</span>}
+                                  </div>
+                                  <p className="text-[10px] text-text-tertiary mt-0.5">
+                                    {week.dates.length} day{week.dates.length !== 1 ? 's' : ''} published
+                                  </p>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

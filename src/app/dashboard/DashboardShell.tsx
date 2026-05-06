@@ -122,15 +122,21 @@ function Inner({ children }: { children: React.ReactNode }) {
   };
 
   const handleRespondInvite = async (inviteId: string, action: 'accept' | 'decline') => {
+    // Immediately remove from UI
+    setPendingInvites(p => p.filter(i => i.id !== inviteId));
+    setPendingCount(c => Math.max(0, c - 1));
+    setShowInvites(false);
+
     const res = await fetch('/api/invite/respond', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ membershipId: inviteId, action }),
     });
-    if (res.ok) {
-      if (action === 'accept') { await refreshProfile(); router.push('/dashboard'); router.refresh(); }
-      else { setPendingInvites(p => p.filter(i => i.id !== inviteId)); setPendingCount(c => c - 1); }
+    if (res.ok && action === 'accept') {
+      await refreshProfile();
+      await loadOrgs();
+      router.push('/dashboard');
+      router.refresh();
     }
-    setShowInvites(false);
   };
 
   // No org = render children directly (they show the no-org state)

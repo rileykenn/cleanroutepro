@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import OrgSwitcher, { DeleteOrgModal } from '@/components/OrgSwitcher';
+import CreateOrgModal from '@/components/CreateOrgModal';
 
 interface UserProfile {
   id: string; org_id: string; full_name: string; email: string;
@@ -48,6 +49,7 @@ function Inner({ children }: { children: React.ReactNode }) {
   const [deleting, setDeleting] = useState(false);
   const [showInvites, setShowInvites] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<{ id: string; org_name: string; role: string }[]>([]);
+  const [showCreateOrg, setShowCreateOrg] = useState(false);
 
   const hasOrg = !!profile?.org_id;
   const userRole = profile?.role || 'admin';
@@ -103,7 +105,7 @@ function Inner({ children }: { children: React.ReactNode }) {
     setSwitching(false);
   };
 
-  const handleCreate = () => { router.push('/dashboard'); };
+  const handleCreate = () => { setShowCreateOrg(true); };
 
   const handleDelete = async () => {
     if (!showDelete || deleting) return;
@@ -308,6 +310,20 @@ function Inner({ children }: { children: React.ReactNode }) {
       {/* Delete modal */}
       {showDelete && (
         <DeleteOrgModal orgName={showDelete.orgName} onConfirm={handleDelete} onCancel={() => setShowDelete(null)} deleting={deleting} />
+      )}
+
+      {/* Create org modal */}
+      {showCreateOrg && (
+        <CreateOrgModal
+          onCancel={() => setShowCreateOrg(false)}
+          onCreated={async () => {
+            setShowCreateOrg(false);
+            await refreshProfile();
+            await loadOrgs();
+            router.push('/dashboard/schedule');
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

@@ -103,20 +103,28 @@ export default function StaffViewPage() {
     return `${start.dayNum} ${start.monthName} – ${end.dayNum} ${end.monthName}`;
   }, [weekDates]);
 
-  // Load all staff for name lookups
+  // Load all staff for name lookups + find this user's staff_member_id
+  const [staffMemberId, setStaffMemberId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!profile?.org_id) return;
+    if (!profile?.org_id || !profile?.id) return;
     (async () => {
       const { data } = await supabase
         .from('staff_members').select('id, name')
         .eq('org_id', profile.org_id);
       if (data) setAllStaff(data);
+
+      // Find which staff_member record belongs to this user
+      const { data: me } = await supabase
+        .from('staff_members').select('id')
+        .eq('user_id', profile.id).maybeSingle();
+      if (me) setStaffMemberId(me.id);
     })();
-  }, [profile?.org_id, supabase]);
+  }, [profile?.org_id, profile?.id, supabase]);
 
   // Load entire week's data
   const loadWeek = useCallback(async () => {
-    if (!profile?.org_id || weekDates.length === 0) return;
+    if (!profile?.org_id || weekDates.length === 0 || !staffMemberId) return;
     setLoading(true);
 
     const dateStrings = weekDates.map(d => d.date);
@@ -143,7 +151,7 @@ export default function StaffViewPage() {
       allJobs = (jobsData || []) as (JobInfo & { schedule_id: string })[];
     }
 
-    // Build day data
+    // Build day data — only include jobs this staff member is assigned to
     const days: DayData[] = weekDates.map(wd => {
       const daySchedules = (schedules || []).filter((s: { schedule_date: string; is_published: boolean; id: string; team_id: string }) => s.schedule_date === wd.date && s.is_published);
       const dayJobs: JobInfo[] = [];
@@ -153,9 +161,10 @@ export default function StaffViewPage() {
 
       for (const sched of daySchedules) {
         const team = (teams || []).find((t: { id: string; name: string; color_index: number; day_start_time: string }) => t.id === sched.team_id);
-        const jobs = allJobs.filter(j => j.schedule_id === sched.id);
-        dayJobs.push(...jobs);
-        if (team && !teamName) {
+        // Only include jobs where THIS staff member is assigned
+        const myJobs = allJobs.filter(j => j.schedule_id === sched.id && (j.assigned_staff_ids || []).includes(staffMemberId));
+        dayJobs.push(...myJobs);
+        if (team && myJobs.length > 0 && !teamName) {
           teamName = team.name;
           teamColor = TEAM_COLORS[team.color_index % TEAM_COLORS.length];
           startTime = team.day_start_time;
@@ -177,7 +186,7 @@ export default function StaffViewPage() {
 
     setWeekData(days);
     setLoading(false);
-  }, [profile?.org_id, supabase, weekDates]);
+  }, [profile?.org_id, supabase, weekDates, staffMemberId]);
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
 

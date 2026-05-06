@@ -191,46 +191,89 @@ export default function StaffViewPage() {
   const dateLabel = (() => {
     const parts = selectedDate.split('-').map(Number);
     const d = new Date(parts[0], parts[1] - 1, parts[2]);
-    return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
   })();
 
-  const goToPrevDay = () => {
-    const d = new Date(selectedDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    setSelectedDate(d.toISOString().split('T')[0]);
-  };
-  const goToNextDay = () => {
-    const d = new Date(selectedDate + 'T00:00:00');
-    d.setDate(d.getDate() + 1);
-    setSelectedDate(d.toISOString().split('T')[0]);
-  };
   const goToToday = () => setSelectedDate(new Date().toISOString().split('T')[0]);
+
+  // Generate the week (Mon-Sun) that contains selectedDate
+  const weekDays = useMemo(() => {
+    const parts = selectedDate.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    const day = d.getDay(); // 0=Sun
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((day + 6) % 7)); // go back to Monday
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(monday);
+      dd.setDate(monday.getDate() + i);
+      days.push({
+        date: dd.toISOString().split('T')[0],
+        dayName: dd.toLocaleDateString('en-AU', { weekday: 'short' }).slice(0, 3),
+        dayNum: dd.getDate(),
+        isToday: dd.toISOString().split('T')[0] === new Date().toISOString().split('T')[0],
+      });
+    }
+    return days;
+  }, [selectedDate]);
+
+  const goToPrevWeek = () => {
+    const d = new Date(selectedDate + 'T00:00:00');
+    d.setDate(d.getDate() - 7);
+    setSelectedDate(d.toISOString().split('T')[0]);
+  };
+  const goToNextWeek = () => {
+    const d = new Date(selectedDate + 'T00:00:00');
+    d.setDate(d.getDate() + 7);
+    setSelectedDate(d.toISOString().split('T')[0]);
+  };
 
   const clientJobs = jobs.filter(j => !j.is_break);
   const breakJobs = jobs.filter(j => j.is_break);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      {/* Header / Date Nav */}
+      {/* Header with week strip */}
       <header className="sticky top-0 z-10 bg-white border-b border-border-light">
-        <div className="px-4 lg:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button onClick={goToPrevDay} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+        {/* Month + nav */}
+        <div className="px-4 lg:px-6 pt-3 pb-2 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <button onClick={goToPrevWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
-            <div className="text-center min-w-[200px]">
-              <p className="text-sm font-semibold text-text-primary">{dateLabel}</p>
-            </div>
-            <button onClick={goToNextDay} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+            <h2 className="text-sm font-bold text-text-primary min-w-[140px] text-center">{dateLabel}</h2>
+            <button onClick={goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </div>
           <button onClick={goToToday} className="btn-ghost text-xs">Today</button>
         </div>
 
+        {/* Week strip */}
+        <div className="px-4 lg:px-6 pb-3 flex gap-1 justify-between">
+          {weekDays.map((day) => {
+            const isSelected = day.date === selectedDate;
+            return (
+              <button key={day.date} onClick={() => setSelectedDate(day.date)}
+                className={`flex-1 flex flex-col items-center py-2 rounded-xl transition-all ${
+                  isSelected
+                    ? 'bg-primary text-white shadow-sm'
+                    : day.isToday
+                      ? 'bg-primary/10 text-primary'
+                      : 'hover:bg-surface-hover text-text-secondary'
+                }`}>
+                <span className={`text-[10px] font-medium uppercase ${isSelected ? 'text-white/80' : ''}`}>{day.dayName}</span>
+                <span className={`text-base font-bold mt-0.5 ${isSelected ? 'text-white' : day.isToday ? 'text-primary' : 'text-text-primary'}`}>{day.dayNum}</span>
+                {day.isToday && !isSelected && <div className="w-1 h-1 rounded-full bg-primary mt-0.5" />}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Team tabs */}
         {teams.length > 1 && (
-          <div className="px-4 lg:px-6 pb-3 flex gap-1.5 overflow-x-auto">
+          <div className="px-4 lg:px-6 pb-3 flex gap-1.5 overflow-x-auto border-t border-border-light pt-2">
             {teams.map((t) => {
               const color = TEAM_COLORS[t.color_index % TEAM_COLORS.length];
               const isActive = t.id === activeTeamId;

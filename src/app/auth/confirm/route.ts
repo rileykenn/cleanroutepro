@@ -24,9 +24,12 @@ export async function GET(request: NextRequest) {
   if (token_hash && type) {
     const { data, error } = await supabase.auth.verifyOtp({ type, token_hash });
     if (!error && data?.user) {
-      // Check if this is a staff user — redirect them to their dashboard
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
-      if (profile?.role === 'staff') {
+      // Invited users go to /dashboard where they see the accept/decline modal
+      // Users with an org go to their role-appropriate page
+      const { data: profile } = await supabase.from('profiles').select('role, org_id').eq('id', data.user.id).maybeSingle();
+      if (!profile?.org_id) {
+        redirectTo.pathname = '/dashboard';
+      } else if (profile?.role === 'staff') {
         redirectTo.pathname = '/dashboard/staff-view';
       }
       return NextResponse.redirect(redirectTo);

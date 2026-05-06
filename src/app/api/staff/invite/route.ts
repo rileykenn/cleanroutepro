@@ -66,21 +66,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'This person already has access to your organisation' }, { status: 400 });
       }
 
-      // Add them as a member of this org
+      // Add them as a PENDING member — they must accept in-app
       await adminSupabase.from('org_members').insert({
         user_id: existingUser.id,
         org_id: profile.org_id,
         role: 'staff',
         staff_member_id: staffMemberId,
+        status: 'pending',
       });
 
       // Link the staff_members record
       await adminSupabase
         .from('staff_members')
-        .update({ user_id: existingUser.id, invite_status: 'accepted', email })
+        .update({ user_id: existingUser.id, invite_status: 'pending', email })
         .eq('id', staffMemberId);
 
-      return NextResponse.json({ success: true, existing: true, message: 'Existing user linked to your organisation' });
+      return NextResponse.json({ success: true, existing: true, message: 'Invitation sent — they will see it when they log in' });
     }
 
     // New user — send invite email

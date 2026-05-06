@@ -55,23 +55,32 @@ export function AuthProvider({ children, serverProfile }: { children: React.Reac
         return;
       }
 
-      const { data: orgData } = await supabase
-        .from('organizations')
-        .select('name, subscription_status, subscription_tier')
-        .eq('id', profileData.org_id)
-        .single();
+      let orgName = '';
+      let subscriptionStatus = 'trialing';
+      let subscriptionTier = 'pro';
+
+      if (profileData.org_id) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name, subscription_status, subscription_tier')
+          .eq('id', profileData.org_id)
+          .single();
+        orgName = orgData?.name || '';
+        subscriptionStatus = orgData?.subscription_status || 'trialing';
+        subscriptionTier = orgData?.subscription_tier || 'pro';
+      }
 
       setProfile({
         id: profileData.id,
-        org_id: profileData.org_id,
+        org_id: profileData.org_id || '',
         full_name: profileData.full_name,
         email: profileData.email,
         role: profileData.role as 'admin' | 'staff',
         is_platform_admin: profileData.is_platform_admin || false,
         onboarding_completed: profileData.onboarding_completed || false,
-        org_name: orgData?.name || '',
-        subscription_status: orgData?.subscription_status || 'trialing',
-        subscription_tier: orgData?.subscription_tier || 'pro',
+        org_name: orgName,
+        subscription_status: subscriptionStatus,
+        subscription_tier: subscriptionTier,
       });
     } catch (err) {
       console.error('[Auth] Unexpected error loading profile:', err);

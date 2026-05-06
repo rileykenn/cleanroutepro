@@ -10,21 +10,30 @@ export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [businessName, setBusinessName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
     const { error: authError } = await supabase.auth.signUp({
       email, password,
-      options: { data: { full_name: fullName, business_name: businessName } },
+      options: { data: {} },
     });
     if (authError) { setError(authError.message); setLoading(false); return; }
-    router.push('/dashboard/schedule');
+    router.push('/dashboard');
   };
 
   return (
@@ -40,29 +49,24 @@ export default function RegisterPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-text-primary">Create Account</h1>
-            <p className="text-sm text-text-secondary mt-1">Start optimising your routes today</p>
+            <p className="text-sm text-text-secondary mt-1">Get started with CleanRoute Pro</p>
           </div>
 
           <form onSubmit={handleRegister} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1.5">Full Name</label>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
-                className="input-field" placeholder="Sarah O'Connell" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1.5">Business Name</label>
-              <input type="text" value={businessName} onChange={(e) => setBusinessName(e.target.value)}
-                className="input-field" placeholder="The Cleaning Co" required />
-            </div>
-            <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">Email</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                className="input-field" placeholder="you@company.com" required />
+                className="input-field" placeholder="you@example.com" required />
             </div>
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 className="input-field" placeholder="Minimum 6 characters" required minLength={6} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1.5">Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                className="input-field" placeholder="Re-enter your password" required minLength={6} />
             </div>
             {error && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}

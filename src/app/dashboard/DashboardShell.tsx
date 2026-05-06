@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from '@/lib/hooks/useAuth';
+import { createClient } from '@/lib/supabase/client';
 
 interface UserProfile {
   id: string;
@@ -16,6 +17,12 @@ interface UserProfile {
   org_name: string;
   subscription_status: string;
   subscription_tier: string;
+}
+
+interface OrgMembership {
+  org_id: string;
+  role: string;
+  org_name: string;
 }
 
 const ADMIN_NAV_ITEMS = [
@@ -44,8 +51,13 @@ export default function DashboardShell({ children, serverProfile }: { children: 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, refreshProfile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [orgSwitcherOpen, setOrgSwitcherOpen] = useState(false);
+  const [orgs, setOrgs] = useState<OrgMembership[]>([]);
+  const [switching, setSwitching] = useState(false);
+
   const userEmail = profile?.email || '';
   const orgName = profile?.org_name || '';
   const userRole = profile?.role || 'admin';
@@ -53,7 +65,59 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
 
   const navItems = userRole === 'staff' ? STAFF_NAV_ITEMS : ADMIN_NAV_ITEMS;
 
+  // Load org memberships
+  const loadOrgs = useCallback(async () => {
+    if (!profile?.id) return;
+    const { data: memberships } = await supabase
+      .from('org_members')
+      .select('org_id, role, organizations:org_id(name)')
+      .eq('user_id', profile.id);
+
+    if (memberships) {
+      const mapped = memberships.map((m: Record<string, unknown>) => {
+        const org = m.organizations as Record<string, unknown> | null;
+        return {
+          org_id: m.org_id as string,
+          role: m.role as string,
+          org_name: (org?.name as string) || 'Unknown',
+        };
+      });
+      setOrgs(mapped);
+    }
+  }, [supabase, profile?.id]);
+
+  useEffect(() => { loadOrgs(); }, [loadOrgs]);
+
+  const handleSwitchOrg = async (orgId: string) => {
+    if (orgId === profile?.org_id || switching) return;
+    setSwitching(true);
+    try {
+      const res = await fetch('/api/org/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshProfile();
+        setOrgSwitcherOpen(false);
+        // Redirect based on new role
+        if (data.role === 'staff') {
+          router.push('/dashboard/staff-view');
+        } else {
+          router.push('/dashboard/schedule');
+        }
+        router.refresh();
+      }
+    } catch (err) {
+      console.error('Failed to switch org:', err);
+    }
+    setSwitching(false);
+  };
+
   const handleSignOut = async () => { await signOut(); window.location.href = '/login'; };
+
+  const hasMultipleOrgs = orgs.length > 1;
 
   return (
     <div className="h-full flex">
@@ -73,11 +137,49 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                 <circle cx="12" cy="10" r="3"/>
               </svg>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="text-sm font-bold text-text-primary tracking-tight truncate">CleanRoute Pro</h1>
-              <p className="text-xs text-text-tertiary truncate">{orgName || 'Loading...'}</p>
+              {hasMultipleOrgs ? (
+                <button onClick={() => setOrgSwitcherOpen(!orgSwitcherOpen)}
+                  className="flex items-center gap-1 text-xs text-text-tertiary hover:text-primary transition-colors">
+                  <span className="truncate">{orgName || 'Loading...'}</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform ${orgSwitcherOpen ? 'rotate-180' : ''}`}>
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+              ) : (
+                <p className="text-xs text-text-tertiary truncate">{orgName || 'Loading...'}</p>
+              )}
             </div>
           </div>
+
+          {/* Org Switcher Dropdown */}
+          <AnimatePresence>
+            {orgSwitcherOpen && hasMultipleOrgs && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                className="mt-3 space-y-1 overflow-hidden">
+                {orgs.map((org) => {
+                  const isActive = org.org_id === profile?.org_id;
+                  return (
+                    <button key={org.org_id} onClick={() => handleSwitchOrg(org.org_id)} disabled={switching}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between ${
+                        isActive ? 'bg-primary-light text-primary border border-primary-border' : 'text-text-secondary hover:bg-surface-hover'
+                      } disabled:opacity-50`}>
+                      <div className="min-w-0">
+                        <p className="truncate">{org.org_name}</p>
+                        <p className="text-[10px] text-text-tertiary capitalize">{org.role}</p>
+                      </div>
+                      {isActive && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">

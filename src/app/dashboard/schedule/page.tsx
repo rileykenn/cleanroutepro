@@ -349,24 +349,53 @@ export default function SchedulePage() {
   const weekIsPublished = weekDates.every((d) => publishedDates.has(d));
   const weekPartiallyPublished = !weekIsPublished && weekDates.some((d) => publishedDates.has(d));
 
+  // Check if current week has any jobs across all teams
+  const weekHasJobs = useMemo(() => {
+    let total = 0;
+    weekSchedules.forEach((teamMap) => {
+      teamMap.forEach((d) => {
+        total += d.clients.length;
+      });
+    });
+    return total > 0;
+  }, [weekSchedules]);
+
   // ─── Publish History ───
-  const [publishHistory, setPublishHistory] = useState<{ weekStart: string; weekEnd: string; label: string; dates: string[] }[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [publishHistory, setPublishHistory] = useState<{ weekStart: string; weekEnd: string; label: string; dates: string[]; jobCount: number }[]>([]);
+  const [showPublishedWeeks, setShowPublishedWeeks] = useState(false);
+  const [unpublishingWeek, setUnpublishingWeek] = useState<string | null>(null);
 
   const loadPublishHistory = useCallback(async () => {
     if (!orgId) return;
+    // Get all published schedules with job counts
     const { data: published } = await supabase
       .from('schedules')
-      .select('schedule_date')
+      .select('id, schedule_date, team_id')
       .eq('org_id', orgId)
       .eq('is_published', true)
       .order('schedule_date', { ascending: false });
 
     if (!published) return;
 
+    // Get job counts for each schedule
+    const scheduleIds = published.map((p: { id: string }) => p.id);
+    let jobCounts = new Map<string, number>();
+    if (scheduleIds.length > 0) {
+      const { data: jobs } = await supabase
+        .from('schedule_jobs')
+        .select('schedule_id')
+        .in('schedule_id', scheduleIds)
+        .eq('is_break', false);
+      if (jobs) {
+        for (const j of jobs as { schedule_id: string }[]) {
+          jobCounts.set(j.schedule_id, (jobCounts.get(j.schedule_id) || 0) + 1);
+        }
+      }
+    }
+
     // Group by week (Mon-Sun)
     const allDates = Array.from(new Set(published.map((p: { schedule_date: string }) => p.schedule_date))) as string[];
-    const weeks = new Map<string, string[]>();
+    const weeks = new Map<string, { dates: string[]; jobCount: number }>();
 
     for (const dateStr of allDates) {
       const parts = dateStr.split('-').map(Number);
@@ -375,12 +404,19 @@ export default function SchedulePage() {
       const monday = new Date(d);
       monday.setDate(d.getDate() - ((day + 6) % 7));
       const mondayStr = monday.toISOString().split('T')[0];
-      if (!weeks.has(mondayStr)) weeks.set(mondayStr, []);
-      weeks.get(mondayStr)!.push(dateStr);
+      if (!weeks.has(mondayStr)) weeks.set(mondayStr, { dates: [], jobCount: 0 });
+      const w = weeks.get(mondayStr)!;
+      w.dates.push(dateStr);
+
+      // Sum job counts for schedules on this date
+      const dateSchedules = published.filter((p: { schedule_date: string }) => p.schedule_date === dateStr);
+      for (const ds of dateSchedules as { id: string }[]) {
+        w.jobCount += jobCounts.get(ds.id) || 0;
+      }
     }
 
     const history = Array.from(weeks.entries())
-      .map(([mondayStr, dates]) => {
+      .map(([mondayStr, data]) => {
         const parts = mondayStr.split('-').map(Number);
         const mon = new Date(parts[0], parts[1] - 1, parts[2]);
         const sun = new Date(mon);
@@ -389,16 +425,46 @@ export default function SchedulePage() {
           weekStart: mondayStr,
           weekEnd: sun.toISOString().split('T')[0],
           label: `${mon.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${sun.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
-          dates,
+          dates: data.dates,
+          jobCount: data.jobCount,
         };
       })
-      .sort((a, b) => b.weekStart.localeCompare(a.weekStart))
-      .slice(0, 12);
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 
     setPublishHistory(history);
   }, [orgId, supabase]);
 
   useEffect(() => { loadPublishHistory(); }, [loadPublishHistory]);
+
+  const handleUnpublishHistoryWeek = async (weekStart: string) => {
+    if (!orgId) return;
+    setUnpublishingWeek(weekStart);
+    // Get all 7 dates for this week
+    const dates = [];
+    const parts = weekStart.split('-').map(Number);
+    const mon = new Date(parts[0], parts[1] - 1, parts[2]);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mon);
+      d.setDate(mon.getDate() + i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    for (const date of dates) {
+      const { data: schedules } = await supabase
+        .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
+      if (schedules) {
+        for (const s of schedules) {
+          await supabase.from('schedules').update({ is_published: false }).eq('id', s.id);
+        }
+      }
+    }
+    setUnpublishingWeek(null);
+    await loadPublishHistory();
+    // If we just unpublished the current week, update the UI
+    if (dates.some(d => weekDates.includes(d))) {
+      setPublishedDates(new Set());
+      loadWeekSchedules(weekDates);
+    }
+  };
 
   // ─── Team handlers ───
   const handleAddTeam = useCallback(async () => {
@@ -598,7 +664,7 @@ export default function SchedulePage() {
               )}
 
               {state.viewMode === 'week' && !isStaff && (
-                <div className="flex items-center gap-1.5 relative">
+                <div className="flex items-center gap-1.5">
                   {weekIsPublished ? (
                     <button
                       onClick={handleUnpublishWeek}
@@ -610,67 +676,33 @@ export default function SchedulePage() {
                   ) : (
                     <button
                       onClick={handlePublishWeek}
+                      disabled={!weekHasJobs}
+                      title={!weekHasJobs ? 'Add jobs before publishing' : ''}
                       className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                        weekPartiallyPublished
-                          ? 'bg-amber-50 text-amber-700 hover:bg-primary hover:text-white'
-                          : 'bg-primary text-white hover:bg-primary-hover'
+                        !weekHasJobs
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : weekPartiallyPublished
+                            ? 'bg-amber-50 text-amber-700 hover:bg-primary hover:text-white'
+                            : 'bg-primary text-white hover:bg-primary-hover'
                       }`}
                     >
                       {weekPartiallyPublished ? 'Partially Published' : 'Publish Week'}
                     </button>
                   )}
 
-                  {/* History button */}
+                  {/* Published Weeks button */}
                   <button
-                    onClick={() => setShowHistory(!showHistory)}
-                    className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary transition-colors"
-                    title="Publish History"
+                    onClick={() => setShowPublishedWeeks(true)}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors bg-surface-elevated text-text-secondary hover:bg-surface-hover flex items-center gap-1.5"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                     </svg>
+                    Published Weeks
+                    {publishHistory.length > 0 && (
+                      <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">{publishHistory.length}</span>
+                    )}
                   </button>
-
-                  {/* History dropdown */}
-                  {showHistory && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
-                      <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl border border-border-light shadow-xl w-[280px] overflow-hidden">
-                        <div className="px-4 py-3 border-b border-border-light">
-                          <h4 className="text-xs font-bold text-text-primary uppercase tracking-wider">Published Weeks</h4>
-                        </div>
-                        <div className="max-h-[300px] overflow-y-auto">
-                          {publishHistory.length === 0 ? (
-                            <p className="text-xs text-text-tertiary text-center py-6">No weeks published yet</p>
-                          ) : (
-                            publishHistory.map((week) => {
-                              const isCurrent = week.weekStart === weekDates[0];
-                              return (
-                                <button key={week.weekStart}
-                                  onClick={() => {
-                                    dispatch({ type: 'SET_FOCUSED_DATE', date: week.weekStart });
-                                    setShowHistory(false);
-                                  }}
-                                  className={`w-full text-left px-4 py-3 hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 ${
-                                    isCurrent ? 'bg-primary/5' : ''
-                                  }`}>
-                                  <div className="flex items-center justify-between">
-                                    <span className={`text-sm font-medium ${isCurrent ? 'text-primary' : 'text-text-primary'}`}>
-                                      {week.label}
-                                    </span>
-                                    {isCurrent && <span className="text-[10px] font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">Current</span>}
-                                  </div>
-                                  <p className="text-[10px] text-text-tertiary mt-0.5">
-                                    {week.dates.length} day{week.dates.length !== 1 ? 's' : ''} published
-                                  </p>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
                 </div>
               )}
             </div>
@@ -712,6 +744,101 @@ export default function SchedulePage() {
           )}
         </div>
       </div>
+
+      {/* ========== PUBLISHED WEEKS MODAL ========== */}
+      {showPublishedWeeks && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowPublishedWeeks(false)} />
+          <div className="relative bg-white rounded-2xl w-full max-w-[520px] max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-border-light flex items-center justify-between shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-text-primary">Published Weeks</h2>
+                <p className="text-xs text-text-tertiary mt-0.5">{publishHistory.length} week{publishHistory.length !== 1 ? 's' : ''} published</p>
+              </div>
+              <button onClick={() => setShowPublishedWeeks(false)} className="p-2 rounded-xl hover:bg-surface-hover text-text-tertiary transition-colors">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto">
+              {publishHistory.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="text-4xl mb-3">📅</div>
+                  <p className="text-sm text-text-secondary">No weeks have been published yet</p>
+                  <p className="text-xs text-text-tertiary mt-1">Publish a week to make schedules visible to staff</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border-light">
+                  {publishHistory.map((week) => {
+                    const isCurrent = week.weekStart === weekDates[0];
+                    const isUnpublishing = unpublishingWeek === week.weekStart;
+                    const today = new Date().toISOString().split('T')[0];
+                    const isPast = week.weekEnd < today;
+                    const isFuture = week.weekStart > today;
+
+                    return (
+                      <div key={week.weekStart} className={`px-6 py-4 ${isCurrent ? 'bg-primary/[0.03]' : ''}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className={`text-sm font-semibold ${isCurrent ? 'text-primary' : 'text-text-primary'}`}>
+                                {week.label}
+                              </h3>
+                              {isCurrent && <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">Current</span>}
+                              {isPast && !isCurrent && <span className="text-[10px] font-medium text-text-tertiary bg-surface-elevated px-1.5 py-0.5 rounded">Past</span>}
+                              {isFuture && <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Upcoming</span>}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-text-tertiary">
+                              <span>{week.dates.length} day{week.dates.length !== 1 ? 's' : ''}</span>
+                              <span>·</span>
+                              <span>{week.jobCount} job{week.jobCount !== 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Edit (jump to week) */}
+                            <button
+                              onClick={() => {
+                                dispatch({ type: 'SET_FOCUSED_DATE', date: week.weekStart });
+                                setShowPublishedWeeks(false);
+                              }}
+                              className="p-2 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors"
+                              title="Edit this week"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              </svg>
+                            </button>
+
+                            {/* Unpublish */}
+                            <button
+                              onClick={() => handleUnpublishHistoryWeek(week.weekStart)}
+                              disabled={isUnpublishing}
+                              className="p-2 rounded-lg hover:bg-red-50 text-text-tertiary hover:text-red-600 transition-colors disabled:opacity-40"
+                              title="Unpublish this week"
+                            >
+                              {isUnpublishing ? (
+                                <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <AnimatePresence>

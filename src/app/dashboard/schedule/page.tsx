@@ -365,6 +365,14 @@ export default function SchedulePage() {
   const [showPublishedWeeks, setShowPublishedWeeks] = useState(false);
   const [unpublishingWeek, setUnpublishingWeek] = useState<string | null>(null);
 
+  // Timezone-safe date formatter (avoids toISOString UTC shift)
+  const formatLocalDate = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const loadPublishHistory = useCallback(async () => {
     if (!orgId) return;
     // Get all published schedules with job counts
@@ -393,17 +401,12 @@ export default function SchedulePage() {
       }
     }
 
-    // Group by week (Mon-Sun)
+    // Group by week (Mon-Sun) using the same logic as getWeekDates
     const allDates = Array.from(new Set(published.map((p: { schedule_date: string }) => p.schedule_date))) as string[];
     const weeks = new Map<string, { dates: string[]; jobCount: number }>();
 
     for (const dateStr of allDates) {
-      const parts = dateStr.split('-').map(Number);
-      const d = new Date(parts[0], parts[1] - 1, parts[2]);
-      const day = d.getDay();
-      const monday = new Date(d);
-      monday.setDate(d.getDate() - ((day + 6) % 7));
-      const mondayStr = monday.toISOString().split('T')[0];
+      const mondayStr = getWeekDates(dateStr)[0]; // Use the same function the week view uses
       if (!weeks.has(mondayStr)) weeks.set(mondayStr, { dates: [], jobCount: 0 });
       const w = weeks.get(mondayStr)!;
       w.dates.push(dateStr);
@@ -417,14 +420,11 @@ export default function SchedulePage() {
 
     const history = Array.from(weeks.entries())
       .map(([mondayStr, data]) => {
-        const parts = mondayStr.split('-').map(Number);
-        const mon = new Date(parts[0], parts[1] - 1, parts[2]);
-        const sun = new Date(mon);
-        sun.setDate(mon.getDate() + 6);
+        const sundayStr = addDays(mondayStr, 6);
         return {
           weekStart: mondayStr,
-          weekEnd: sun.toISOString().split('T')[0],
-          label: `${mon.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${sun.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          weekEnd: sundayStr,
+          label: getWeekLabel(mondayStr, sundayStr),
           dates: data.dates,
           jobCount: data.jobCount,
         };
@@ -439,15 +439,8 @@ export default function SchedulePage() {
   const handleUnpublishHistoryWeek = async (weekStart: string) => {
     if (!orgId) return;
     setUnpublishingWeek(weekStart);
-    // Get all 7 dates for this week
-    const dates = [];
-    const parts = weekStart.split('-').map(Number);
-    const mon = new Date(parts[0], parts[1] - 1, parts[2]);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(mon);
-      d.setDate(mon.getDate() + i);
-      dates.push(d.toISOString().split('T')[0]);
-    }
+    // Get all 7 dates for this week using the same function as the week view
+    const dates = getWeekDates(weekStart);
     for (const date of dates) {
       const { data: schedules } = await supabase
         .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
@@ -459,11 +452,8 @@ export default function SchedulePage() {
     }
     setUnpublishingWeek(null);
     await loadPublishHistory();
-    // If we just unpublished the current week, update the UI
-    if (dates.some(d => weekDates.includes(d))) {
-      setPublishedDates(new Set());
-      loadWeekSchedules(weekDates);
-    }
+    // Refresh the current week's published state
+    loadWeekSchedules(weekDates);
   };
 
   // ─── Team handlers ───

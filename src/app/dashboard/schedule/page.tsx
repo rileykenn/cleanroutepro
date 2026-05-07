@@ -59,6 +59,11 @@ export default function SchedulePage() {
         lng: (row.base_lng as number) || 0,
         placeId: (row.base_place_id as string) || undefined,
       } : null,
+      returnAddress: row.return_disabled
+        ? 'none'
+        : row.return_address
+          ? { address: row.return_address as string, lat: (row.return_lat as number) || 0, lng: (row.return_lng as number) || 0, placeId: (row.return_place_id as string) || undefined }
+          : null,
       clients: [],
       travelSegments: new Map<string, TravelSegment>(),
       dayStartTime: (row.day_start_time as string) || '08:00',
@@ -82,7 +87,7 @@ export default function SchedulePage() {
         if (newTeam) {
           const defaultTeam: TeamSchedule = {
             id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0],
-            baseAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
+            baseAddress: null, returnAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
             breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
           };
           dispatch({ type: 'LOAD_STATE', teams: [defaultTeam], activeTeamId: defaultTeam.id, selectedDate: state.selectedDate });
@@ -468,7 +473,7 @@ export default function SchedulePage() {
     if (data) {
       const newTeam: TeamSchedule = {
         id: data.id, name: data.name, color: TEAM_COLORS[colorIndex],
-        baseAddress: baseAddr ? { ...baseAddr } : null,
+        baseAddress: baseAddr ? { ...baseAddr } : null, returnAddress: null,
         clients: [], travelSegments: new Map(), dayStartTime: '08:00',
         breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
       };

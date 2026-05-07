@@ -47,10 +47,12 @@ export async function calculateAllTravel(
   onUpdate: (segment: TravelSegment) => void
 ): Promise<void> {
   if (!team.baseAddress || team.clients.length === 0) return;
+  // Determine return destination: custom address, base address, or none
+  const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
   const stops = [
     { id: 'base', lat: team.baseAddress.lat, lng: team.baseAddress.lng },
     ...team.clients.map((c) => ({ id: c.id, lat: c.location.lat, lng: c.location.lng })),
-    { id: 'base-return', lat: team.baseAddress.lat, lng: team.baseAddress.lng },
+    ...(returnAddr ? [{ id: 'base-return', lat: returnAddr.lat, lng: returnAddr.lng }] : []),
   ];
   const today = new Date();
   const [startH, startM] = team.dayStartTime.split(':').map(Number);
@@ -137,9 +139,14 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
 
 export function getRouteWaypoints(team: TeamSchedule) {
   if (!team.baseAddress || team.clients.length === 0) return null;
+  const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
+  const lastClient = team.clients[team.clients.length - 1];
+  const destination = returnAddr
+    ? { lat: returnAddr.lat, lng: returnAddr.lng }
+    : { lat: lastClient.location.lat, lng: lastClient.location.lng };
   return {
     origin: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
-    destination: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
+    destination,
     waypoints: team.clients.map((c) => ({ location: { lat: c.location.lat, lng: c.location.lng }, stopover: true })),
   };
 }

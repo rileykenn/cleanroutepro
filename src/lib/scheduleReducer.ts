@@ -7,6 +7,7 @@ function createDefaultTeam(index: number): TeamSchedule {
     name: `Team ${index + 1}`,
     color: TEAM_COLORS[index % TEAM_COLORS.length],
     baseAddress: null,
+    returnAddress: null,
     clients: [],
     travelSegments: new Map<string, TravelSegment>(),
     dayStartTime: '08:00',
@@ -80,8 +81,11 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, focusedDate: action.date, selectedDate: action.date };
     case 'ASSIGN_STAFF_TO_JOB':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, action.staffIds.length) } : c) } : t) };
+    case 'SET_RETURN_ADDRESS':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: action.location, travelSegments: new Map() } : t) };
+    case 'CLEAR_RETURN_ADDRESS':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: 'none', travelSegments: new Map() } : t) };
     default:
       return state;
   }
 }
-

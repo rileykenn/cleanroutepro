@@ -52,6 +52,7 @@ export interface TeamSchedule {
   name: string;
   color: TeamColor;
   baseAddress: Location | null;
+  returnAddress: Location | null | 'none';
   clients: Client[];
   travelSegments: Map<string, TravelSegment>;
   dayStartTime: string;
@@ -184,7 +185,9 @@ export type ScheduleAction =
   | { type: 'LOAD_STATE'; teams: TeamSchedule[]; activeTeamId: string; selectedDate: string }
   | { type: 'SET_VIEW_MODE'; viewMode: 'week' | 'day' }
   | { type: 'SET_FOCUSED_DATE'; date: string }
-  | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] };
+  | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] }
+  | { type: 'SET_RETURN_ADDRESS'; teamId: string; location: Location }
+  | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string };
 
 export interface AppState {
   teams: TeamSchedule[];

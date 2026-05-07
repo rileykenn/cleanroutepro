@@ -91,6 +91,23 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         teamUpdate.base_lng = team.baseAddress.lng;
         teamUpdate.base_place_id = team.baseAddress.placeId || null;
       }
+      // Save return address
+      if (team.returnAddress === 'none') {
+        teamUpdate.return_disabled = true;
+        teamUpdate.return_address = null;
+        teamUpdate.return_lat = null;
+        teamUpdate.return_lng = null;
+        teamUpdate.return_place_id = null;
+      } else if (team.returnAddress) {
+        teamUpdate.return_disabled = false;
+        teamUpdate.return_address = team.returnAddress.address;
+        teamUpdate.return_lat = team.returnAddress.lat;
+        teamUpdate.return_lng = team.returnAddress.lng;
+        teamUpdate.return_place_id = team.returnAddress.placeId || null;
+      } else {
+        teamUpdate.return_disabled = false;
+        teamUpdate.return_address = null;
+      }
       await supabase.from('teams').update(teamUpdate).eq('id', team.id);
       let scheduleId: string;
       const { data: existing } = await supabase
@@ -128,7 +145,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (!dbLoaded || !orgId) return;
     const fingerprint = JSON.stringify(
       state.teams.map((t) => ({
-        id: t.id, name: t.name, base: t.baseAddress, start: t.dayStartTime,
+        id: t.id, name: t.name, base: t.baseAddress, ret: t.returnAddress, start: t.dayStartTime,
         rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address, dur: c.jobDurationMinutes,
@@ -397,17 +414,71 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               })}
             </AnimatePresence>
 
-            {/* Return to base */}
-            {activeTeam.clients.length > 0 && activeTeam.baseAddress && (
+            {/* Return destination */}
+            {activeTeam.clients.length > 0 && activeTeam.baseAddress && activeTeam.returnAddress !== 'none' && (
               <>
                 <TravelSegmentComponent
                   segment={getTravelSegment(activeTeam.clients[activeTeam.clients.length - 1].id, 'base-return')}
                   teamColor={activeTeam.color.primary} />
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-3 flex items-center gap-3 opacity-70">
-                  <div className="w-7 h-7 rounded-lg bg-surface-elevated flex items-center justify-center text-sm">🏠</div>
-                  <span className="text-sm text-text-secondary font-medium">Return to Base</span>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-surface-elevated flex items-center justify-center text-sm">🏠</div>
+                      <span className="text-xs font-bold text-text-primary">
+                        {activeTeam.returnAddress ? 'Return To' : 'Return to Base'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => dispatch({ type: 'CLEAR_RETURN_ADDRESS', teamId: activeTeam.id })}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-text-tertiary hover:text-red-500 transition-colors"
+                      title="Remove return — day ends at last client"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  <PlacesAutocomplete
+                    defaultValue={
+                      activeTeam.returnAddress
+                        ? activeTeam.returnAddress.address
+                        : activeTeam.baseAddress?.address || ''
+                    }
+                    onPlaceSelect={(place) => {
+                      dispatch({
+                        type: 'SET_RETURN_ADDRESS',
+                        teamId: activeTeam.id,
+                        location: { address: place.address, lat: place.lat, lng: place.lng, placeId: place.placeId },
+                      });
+                    }}
+                  />
+                  {activeTeam.returnAddress && (
+                    <button
+                      onClick={() => dispatch({ type: 'SET_RETURN_ADDRESS', teamId: activeTeam.id, location: activeTeam.baseAddress! })}
+                      className="mt-2 text-[11px] text-text-tertiary hover:text-primary transition-colors"
+                    >
+                      ↩ Reset to base address
+                    </button>
+                  )}
                 </motion.div>
               </>
+            )}
+
+            {/* Add return if removed */}
+            {activeTeam.clients.length > 0 && activeTeam.returnAddress === 'none' && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center pt-2">
+                <button
+                  onClick={() => {
+                    if (activeTeam.baseAddress) {
+                      dispatch({ type: 'SET_RETURN_ADDRESS', teamId: activeTeam.id, location: activeTeam.baseAddress });
+                    }
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-medium text-text-tertiary hover:text-primary transition-colors px-3 py-2 rounded-lg hover:bg-surface-hover border border-dashed border-border-light"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  Add return destination
+                </button>
+              </motion.div>
             )}
 
             {/* Add Client */}

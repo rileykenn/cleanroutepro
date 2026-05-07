@@ -7,6 +7,7 @@ import { TeamSchedule, TEAM_COLORS, TravelSegment } from '@/lib/types';
 interface DbTeam {
   id: string; org_id: string; name: string; color_index: number;
   base_address: string | null; base_lat: number | null; base_lng: number | null; base_place_id: string | null;
+  return_address: string | null; return_lat: number | null; return_lng: number | null; return_place_id: string | null; return_disabled: boolean | null;
   day_start_time: string; hourly_rate: number; fuel_efficiency: number; fuel_price: number; per_km_rate: number; sort_order: number;
 }
 
@@ -25,6 +26,7 @@ export function useTeams(authOrgId: string | null) {
     id: row.id, name: row.name,
     color: TEAM_COLORS[row.color_index % TEAM_COLORS.length],
     baseAddress: row.base_address ? { address: row.base_address, lat: row.base_lat || 0, lng: row.base_lng || 0, placeId: row.base_place_id || undefined } : null,
+    returnAddress: row.return_disabled ? 'none' : row.return_address ? { address: row.return_address, lat: row.return_lat || 0, lng: row.return_lng || 0, placeId: row.return_place_id || undefined } : null,
     clients: [], travelSegments: new Map<string, TravelSegment>(),
     dayStartTime: row.day_start_time || '08:00', breaks: [],
     hourlyRate: Number(row.hourly_rate) || 38, fuelEfficiency: Number(row.fuel_efficiency) || 10,

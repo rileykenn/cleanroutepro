@@ -62,11 +62,7 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.02 }}
                 className="rounded-lg p-2 border border-border-light hover:border-border transition-colors"
-                style={{
-                  borderLeftWidth: 3,
-                  borderLeftColor: client.clientColor || borderColor,
-                  backgroundColor: client.clientColor ? `${client.clientColor}08` : undefined,
-                }}
+                style={{ borderLeftWidth: 3, borderLeftColor: borderColor }}
               >
                 <div className="flex items-center justify-between gap-1 mb-0.5">
                   {client.startTime && (

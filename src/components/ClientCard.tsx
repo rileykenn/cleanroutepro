@@ -112,20 +112,23 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
     dispatch({ type: 'ASSIGN_STAFF_TO_JOB', teamId: team.id, clientId: client.id, staffIds: newIds });
   };
 
+  // Use client color if set, otherwise fall back to team color
+  const cardColor = client.clientColor || team.color.primary;
+
   return (
     <motion.div layout initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.97 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
       className={`card p-4 group ${client.isLocked ? 'ring-2 ring-amber-300' : ''}`}
-      style={{ borderLeft: `3px solid ${team.color.primary}` }}>
+      style={{
+        borderLeft: `3px solid ${cardColor}`,
+        backgroundColor: client.clientColor ? `${client.clientColor}08` : undefined,
+      }}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative" style={{ backgroundColor: team.color.primary }}>
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative" style={{ backgroundColor: cardColor }}>
             {index + 1}
             {client.isLocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px]">🔒</div>}
-            {client.clientColor && (
-              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ backgroundColor: client.clientColor }} />
-            )}
           </div>
           <input type="text" value={client.name} onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { name: e.target.value } })}
             className="font-semibold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors" placeholder="Client name" />
@@ -199,7 +202,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           </div>
           {/* Staff count indicator */}
           {effectiveStaffCount > 1 && (
-            <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg" style={{ backgroundColor: `${team.color.primary}10`, color: team.color.text }}>
+            <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg" style={{ backgroundColor: `${cardColor}10`, color: cardColor }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               <span>{effectiveStaffCount}</span>
               <span className="text-text-tertiary font-normal">({(client.jobDurationMinutes / effectiveStaffCount / 60).toFixed(1)}h eff.)</span>
@@ -209,9 +212,9 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         {client.startTime && client.endTime && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sm">
             {client.fixedStartTime && <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-primary shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>}
-            <span className="font-medium" style={{ color: team.color.primary }}>{formatTimeDisplay(client.startTime)}</span>
+            <span className="font-medium" style={{ color: cardColor }}>{formatTimeDisplay(client.startTime)}</span>
             <span className="text-text-tertiary">–</span>
-            <span className="font-medium" style={{ color: team.color.primary }}>{formatTimeDisplay(client.endTime)}</span>
+            <span className="font-medium" style={{ color: cardColor }}>{formatTimeDisplay(client.endTime)}</span>
           </motion.div>
         )}
       </div>
@@ -225,12 +228,12 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                 key={s.id}
                 className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg border group/staff transition-colors"
                 style={{
-                  backgroundColor: `${team.color.primary}08`,
-                  borderColor: `${team.color.primary}25`,
-                  color: team.color.text,
+                  backgroundColor: `${cardColor}08`,
+                  borderColor: `${cardColor}25`,
+                  color: cardColor,
                 }}
               >
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: team.color.primary }}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: cardColor }}>
                   {s.name.charAt(0).toUpperCase()}
                 </div>
                 <span>{s.name}</span>
@@ -277,7 +280,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                             onClick={() => { assignStaff(s.id); if (freeStaff.length <= 1) setShowStaffPicker(false); }}
                             className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs hover:bg-surface-hover transition-colors text-left"
                           >
-                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: team.color.primary }}>
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: cardColor }}>
                               {s.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0 flex-1">

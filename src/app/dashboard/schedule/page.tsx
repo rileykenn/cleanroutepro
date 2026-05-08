@@ -6,7 +6,7 @@ import { AnimatePresence } from 'framer-motion';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays } from '@/lib/timeUtils';
-import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex } from '@/lib/types';
+import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex, Location as AppLocation } from '@/lib/types';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 
@@ -135,15 +135,42 @@ export default function SchedulePage() {
 
           const { data: schedule } = await supabase
             .from('schedules')
-            .select('id, is_published, template_code')
+            .select('id, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
             .eq('team_id', team.id)
             .eq('schedule_date', date)
             .maybeSingle();
+
+          // Per-day base address (from schedule row, or fallback to team default)
+          let dayBaseAddress: AppLocation | null = team.baseAddress;
+          let dayReturnAddress: AppLocation | null | 'none' = team.returnAddress;
+          let hasStartBase = true;
+          let hasReturnBase = true;
 
           if (schedule) {
             schedId = schedule.id;
             isPublished = schedule.is_published || false;
             templateCode = schedule.template_code || undefined;
+            hasStartBase = schedule.has_start_base !== false;
+            hasReturnBase = schedule.has_return_base !== false;
+
+            // Override base from schedule if set
+            if (schedule.base_address) {
+              dayBaseAddress = {
+                address: String(schedule.base_address), lat: Number(schedule.base_lat) || 0,
+                lng: Number(schedule.base_lng) || 0, placeId: schedule.base_place_id ? String(schedule.base_place_id) : undefined,
+              } as AppLocation;
+            }
+            if (!hasStartBase) dayBaseAddress = null;
+
+            // Override return from schedule if set
+            if (!hasReturnBase) {
+              dayReturnAddress = 'none';
+            } else if (schedule.return_address) {
+              dayReturnAddress = {
+                address: String(schedule.return_address), lat: Number(schedule.return_lat) || 0,
+                lng: Number(schedule.return_lng) || 0, placeId: schedule.return_place_id ? String(schedule.return_place_id) : undefined,
+              } as AppLocation;
+            }
 
             const { data: jobs } = await supabase
               .from('schedule_jobs')
@@ -187,6 +214,10 @@ export default function SchedulePage() {
             clients: dayClients,
             templateCode,
             isPublished,
+            baseAddress: dayBaseAddress,
+            returnAddress: dayReturnAddress,
+            hasStartBase,
+            hasReturnBase,
           });
         }
 
@@ -201,7 +232,13 @@ export default function SchedulePage() {
       const teamsWithClients = teamsList.map((team: TeamSchedule) => {
         const teamMap = allTeamMaps.get(team.id);
         const dayData = teamMap?.get(today);
-        return { ...team, clients: dayData?.clients || [] };
+        return {
+          ...team,
+          clients: dayData?.clients || [],
+          // Per-day base address override
+          baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
+          returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
+        };
       });
       dispatch({
         type: 'LOAD_STATE',
@@ -270,9 +307,30 @@ export default function SchedulePage() {
 
     for (const team of teamsList) {
       const { data: schedule } = await supabase
-        .from('schedules').select('id')
+        .from('schedules').select('id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
         .eq('team_id', team.id).eq('schedule_date', date).maybeSingle();
       if (schedule) {
+        // Per-day base address override
+        const hasStartBase = schedule.has_start_base !== false;
+        const hasReturnBase = schedule.has_return_base !== false;
+
+        if (schedule.base_address) {
+          team.baseAddress = {
+            address: String(schedule.base_address), lat: Number(schedule.base_lat) || 0,
+            lng: Number(schedule.base_lng) || 0, placeId: schedule.base_place_id ? String(schedule.base_place_id) : undefined,
+          };
+        }
+        if (!hasStartBase) team.baseAddress = null;
+
+        if (!hasReturnBase) {
+          team.returnAddress = 'none';
+        } else if (schedule.return_address) {
+          team.returnAddress = {
+            address: String(schedule.return_address), lat: Number(schedule.return_lat) || 0,
+            lng: Number(schedule.return_lng) || 0, placeId: schedule.return_place_id ? String(schedule.return_place_id) : undefined,
+          };
+        }
+
         const { data: jobs } = await supabase
           .from('schedule_jobs').select('*')
           .eq('schedule_id', schedule.id).order('position');

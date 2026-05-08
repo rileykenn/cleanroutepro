@@ -88,6 +88,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: action.location, travelSegments: new Map() } : t) };
     case 'CLEAR_RETURN_ADDRESS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: 'none', travelSegments: new Map() } : t) };
+    case 'CLEAR_BASE_ADDRESS':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, baseAddress: null, returnAddress: 'none', travelSegments: new Map() } : t) };
     default:
       return state;
   }

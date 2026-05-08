@@ -94,6 +94,11 @@ export interface DaySchedule {
   clients: Client[];
   templateCode?: string;
   isPublished: boolean;
+  /** Per-day base address override */
+  baseAddress?: Location | null;
+  returnAddress?: Location | null | 'none';
+  hasStartBase?: boolean;
+  hasReturnBase?: boolean;
 }
 
 export const TEAM_COLORS: TeamColor[] = [
@@ -214,7 +219,8 @@ export type ScheduleAction =
   | { type: 'SET_FOCUSED_DATE'; date: string }
   | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] }
   | { type: 'SET_RETURN_ADDRESS'; teamId: string; location: Location }
-  | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string };
+  | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string }
+  | { type: 'CLEAR_BASE_ADDRESS'; teamId: string };
 
 export interface AppState {
   teams: TeamSchedule[];

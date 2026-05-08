@@ -85,37 +85,51 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
         fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
       };
-      if (team.baseAddress) {
-        teamUpdate.base_address = team.baseAddress.address;
-        teamUpdate.base_lat = team.baseAddress.lat;
-        teamUpdate.base_lng = team.baseAddress.lng;
-        teamUpdate.base_place_id = team.baseAddress.placeId || null;
-      }
-      // Save return address
-      if (team.returnAddress === 'none') {
-        teamUpdate.return_disabled = true;
-        teamUpdate.return_address = null;
-        teamUpdate.return_lat = null;
-        teamUpdate.return_lng = null;
-        teamUpdate.return_place_id = null;
-      } else if (team.returnAddress) {
-        teamUpdate.return_disabled = false;
-        teamUpdate.return_address = team.returnAddress.address;
-        teamUpdate.return_lat = team.returnAddress.lat;
-        teamUpdate.return_lng = team.returnAddress.lng;
-        teamUpdate.return_place_id = team.returnAddress.placeId || null;
-      } else {
-        teamUpdate.return_disabled = false;
-        teamUpdate.return_address = null;
-      }
       await supabase.from('teams').update(teamUpdate).eq('id', team.id);
+
+      // Build per-day schedule record with base addresses
+      const scheduleData: Record<string, unknown> = {
+        org_id: orgId, team_id: team.id, schedule_date: today,
+        has_start_base: team.baseAddress !== null,
+        has_return_base: team.returnAddress !== 'none',
+      };
+      if (team.baseAddress) {
+        scheduleData.base_address = team.baseAddress.address;
+        scheduleData.base_lat = team.baseAddress.lat;
+        scheduleData.base_lng = team.baseAddress.lng;
+        scheduleData.base_place_id = team.baseAddress.placeId || null;
+      } else {
+        scheduleData.base_address = null;
+        scheduleData.base_lat = null;
+        scheduleData.base_lng = null;
+        scheduleData.base_place_id = null;
+      }
+      if (team.returnAddress === 'none') {
+        scheduleData.return_address = null;
+        scheduleData.return_lat = null;
+        scheduleData.return_lng = null;
+        scheduleData.return_place_id = null;
+      } else if (team.returnAddress) {
+        scheduleData.return_address = team.returnAddress.address;
+        scheduleData.return_lat = team.returnAddress.lat;
+        scheduleData.return_lng = team.returnAddress.lng;
+        scheduleData.return_place_id = team.returnAddress.placeId || null;
+      } else {
+        scheduleData.return_address = null;
+        scheduleData.return_lat = null;
+        scheduleData.return_lng = null;
+        scheduleData.return_place_id = null;
+      }
+
       let scheduleId: string;
       const { data: existing } = await supabase
         .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
-      if (existing) { scheduleId = existing.id; }
-      else {
+      if (existing) {
+        scheduleId = existing.id;
+        await supabase.from('schedules').update(scheduleData).eq('id', scheduleId);
+      } else {
         const { data: created } = await supabase
-          .from('schedules').insert({ org_id: orgId, team_id: team.id, schedule_date: today }).select('id').single();
+          .from('schedules').insert(scheduleData).select('id').single();
         if (!created) continue;
         scheduleId = created.id;
       }
@@ -277,21 +291,46 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
             {/* Base Address */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ backgroundColor: activeTeam.color.light }}>🏠</div>
-                <div><span className="text-xs font-bold text-text-primary">Base Address</span></div>
-              </div>
-              <PlacesAutocomplete
-                defaultValue={activeTeam.baseAddress?.address || ''}
-                onPlaceSelect={(place) => {
+            {activeTeam.baseAddress !== null ? (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ backgroundColor: activeTeam.color.light }}>🏠</div>
+                    <span className="text-xs font-bold text-text-primary">Start Base</span>
+                  </div>
+                  <button
+                    onClick={() => dispatch({ type: 'CLEAR_BASE_ADDRESS', teamId: activeTeam.id })}
+                    className="p-1.5 rounded-lg hover:bg-red-50 text-text-tertiary hover:text-red-500 transition-colors"
+                    title="Remove start base — day starts at first client"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <PlacesAutocomplete
+                  defaultValue={activeTeam.baseAddress?.address || ''}
+                  onPlaceSelect={(place) => {
+                    dispatch({
+                      type: 'SET_BASE_ADDRESS', teamId: activeTeam.id,
+                      location: { address: place.address, lat: place.lat, lng: place.lng, placeId: place.placeId },
+                    });
+                  }}
+                />
+              </motion.div>
+            ) : (
+              <motion.button
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                onClick={() => {
+                  // Restore base with a prompt to enter address
                   dispatch({
                     type: 'SET_BASE_ADDRESS', teamId: activeTeam.id,
-                    location: { address: place.address, lat: place.lat, lng: place.lng, placeId: place.placeId },
+                    location: { address: '', lat: 0, lng: 0 },
                   });
                 }}
-              />
-            </motion.div>
+                className="w-full card p-3 text-center border-dashed border-2 border-border-light text-text-tertiary hover:text-primary hover:border-primary transition-colors text-xs font-medium"
+              >
+                + Add Start Base
+              </motion.button>
+            )}
 
             {/* Start Time */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}

@@ -49,7 +49,7 @@ export default function SchedulePage() {
     const { data: dbTeams } = await supabase
       .from('teams').select('*').eq('org_id', orgId).order('sort_order');
     if (!dbTeams || dbTeams.length === 0) return null;
-    return dbTeams.map((row: Record<string, unknown>): TeamSchedule => ({
+    const teams = dbTeams.map((row: Record<string, unknown>): TeamSchedule => ({
       id: row.id as string,
       name: row.name as string,
       color: TEAM_COLORS[(row.color_index as number) % TEAM_COLORS.length],
@@ -74,6 +74,21 @@ export default function SchedulePage() {
       fuelPrice: Number(row.fuel_price) || 1.85,
       perKmRate: Number(row.per_km_rate) || 0,
     }));
+
+    // Auto-fix duplicate color indices
+    const usedIndices = new Set<number>();
+    for (const team of teams) {
+      if (usedIndices.has(team.colorIndex)) {
+        const newIdx = getNextColorIndex(Array.from(usedIndices));
+        team.colorIndex = newIdx;
+        team.color = TEAM_COLORS[newIdx % TEAM_COLORS.length];
+        // Persist fix to DB
+        supabase.from('teams').update({ color_index: newIdx }).eq('id', team.id).then(() => {});
+      }
+      usedIndices.add(team.colorIndex);
+    }
+
+    return teams;
   }, [orgId, supabase]);
 
   // ─── Load week schedules for overview ───

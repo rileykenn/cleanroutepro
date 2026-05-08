@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useClients, SavedClient } from '@/lib/hooks/useClients';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { generateId } from '@/lib/timeUtils';
 import { CLIENT_COLORS } from '@/lib/types';
+
+const ClientInfoPanel = lazy(() => import('@/components/ClientInfoPanel'));
 
 interface ChecklistTemplate { id: string; name: string; items: { id: string; text: string }[]; }
 
@@ -21,6 +23,24 @@ export default function ClientsPage() {
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
   const [customizingId, setCustomizingId] = useState<string | null>(null);
   const [customItems, setCustomItems] = useState<{ id: string; text: string }[]>([]);
+  const [infoClientId, setInfoClientId] = useState<string | null>(null);
+  const [infoClientName, setInfoClientName] = useState('');
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+  const colorTriggerRef = useRef<HTMLButtonElement>(null);
+
+  // Close color picker on outside click
+  useEffect(() => {
+    if (!colorPickerId) return;
+    const handler = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node) &&
+          colorTriggerRef.current && !colorTriggerRef.current.contains(e.target as Node)) {
+        setColorPickerId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colorPickerId]);
 
   useEffect(() => {
     if (profile?.org_id) {
@@ -145,26 +165,69 @@ export default function ClientsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  {/* Color tag picker */}
-                  <div className="flex items-center gap-1 mr-1">
-                    {CLIENT_COLORS.map((c) => (
-                      <button
-                        key={c.value}
-                        onClick={() => updateClient(client.id, { color: client.color === c.value ? null : c.value } as Partial<SavedClient>)}
-                        className={`w-5 h-5 rounded-full border-2 transition-all hover:scale-110 ${client.color === c.value ? 'border-gray-700 scale-110 shadow-sm' : 'border-transparent opacity-50 hover:opacity-100'}`}
-                        style={{ backgroundColor: c.value }}
-                        title={c.name}
-                      />
-                    ))}
-                    {client.color && (
-                      <button
-                        onClick={() => updateClient(client.id, { color: null } as Partial<SavedClient>)}
-                        className="w-5 h-5 rounded-full border border-border-light flex items-center justify-center text-text-tertiary hover:text-danger hover:border-danger transition-colors"
-                        title="Clear colour"
-                      >
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                      </button>
-                    )}
+                  {/* Color tag popover */}
+                  <div className="relative mr-1">
+                    <button
+                      ref={colorPickerId === client.id ? colorTriggerRef : undefined}
+                      onClick={() => setColorPickerId(colorPickerId === client.id ? null : client.id)}
+                      className={`w-7 h-7 rounded-lg border-2 transition-all hover:scale-105 flex items-center justify-center ${
+                        colorPickerId === client.id ? 'border-primary shadow-sm' : 'border-border-light hover:border-gray-300'
+                      }`}
+                      title="Set colour"
+                    >
+                      {client.color ? (
+                        <div className="w-4 h-4 rounded-full" style={{ backgroundColor: client.color }} />
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary">
+                          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                        </svg>
+                      )}
+                    </button>
+                    <AnimatePresence>
+                      {colorPickerId === client.id && (
+                        <motion.div
+                          ref={colorPickerRef}
+                          initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute right-0 top-full mt-2 z-40 bg-white rounded-xl shadow-lg border border-border-light p-3 w-[200px]"
+                        >
+                          <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Colour Tag</div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {CLIENT_COLORS.map((c) => (
+                              <button
+                                key={c.value}
+                                onClick={() => {
+                                  updateClient(client.id, { color: client.color === c.value ? null : c.value } as Partial<SavedClient>);
+                                  setColorPickerId(null);
+                                }}
+                                className={`w-8 h-8 rounded-lg border-2 transition-all hover:scale-110 flex items-center justify-center ${
+                                  client.color === c.value ? 'border-gray-700 scale-110 shadow-sm' : 'border-transparent hover:border-gray-200'
+                                }`}
+                                style={{ backgroundColor: c.value }}
+                                title={c.name}
+                              >
+                                {client.color === c.value && (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                          {client.color && (
+                            <button
+                              onClick={() => {
+                                updateClient(client.id, { color: null } as Partial<SavedClient>);
+                                setColorPickerId(null);
+                              }}
+                              className="w-full mt-2 pt-2 border-t border-border-light text-xs text-text-tertiary hover:text-danger transition-colors text-center py-1.5"
+                            >
+                              Clear colour
+                            </button>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                   {templates.length > 0 && (
                     <select value={client.checklist_template_id || ''} onChange={(e) => assignTemplate(client.id, e.target.value || null)}
@@ -181,6 +244,10 @@ export default function ClientsPage() {
                       </svg>
                     </button>
                   )}
+                  <button onClick={() => { setInfoClientId(client.id); setInfoClientName(client.name); }}
+                    className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors" title="Client info, checklist & media">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                  </button>
                   <button onClick={() => handleEdit(client)} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors" title="Edit">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
@@ -232,6 +299,17 @@ export default function ClientsPage() {
           )}
         </div>
       </div>
+
+      {/* Client Info Panel */}
+      {infoClientId && (
+        <Suspense fallback={null}>
+          <ClientInfoPanel
+            clientId={infoClientId}
+            clientName={infoClientName}
+            onClose={() => setInfoClientId(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

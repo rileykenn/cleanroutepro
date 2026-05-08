@@ -183,6 +183,7 @@ export function getNextColorIndex(usedColorIndices: number[]): number {
 
 /** Manual client color tags */
 export const CLIENT_COLORS = [
+  // Original colours
   { name: 'Red', value: '#EF4444' },
   { name: 'Orange', value: '#F97316' },
   { name: 'Yellow', value: '#EAB308' },
@@ -191,6 +192,20 @@ export const CLIENT_COLORS = [
   { name: 'Purple', value: '#8B5CF6' },
   { name: 'Pink', value: '#EC4899' },
   { name: 'Teal', value: '#14B8A6' },
+  // New colours
+  { name: 'Grey', value: '#6B7280' },
+  { name: 'Black', value: '#1F2937' },
+  { name: 'Navy', value: '#1E40AF' },
+  { name: 'Brown', value: '#92400E' },
+  { name: 'Tan', value: '#B45309' },
+  { name: 'Rose', value: '#F472B6' },
+  { name: 'Violet', value: '#7C3AED' },
+  // Extra colours
+  { name: 'Coral', value: '#F97066' },
+  { name: 'Lime', value: '#84CC16' },
+  { name: 'Cyan', value: '#06B6D4' },
+  { name: 'Indigo', value: '#6366F1' },
+  { name: 'Slate', value: '#475569' },
 ];
 
 export type ScheduleAction =

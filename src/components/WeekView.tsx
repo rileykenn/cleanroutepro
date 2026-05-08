@@ -13,9 +13,11 @@ interface WeekViewProps {
   allTeamsMode?: boolean;
   allTeams?: TeamSchedule[];
   allTeamSchedules?: Map<string, Map<string, DaySchedule>>;
+  /** Staff ID → name lookup */
+  staffNameMap?: Record<string, string>;
 }
 
-export default function WeekView({ weekDates, daySchedules, teamColor, activeDate, onDayClick, allTeamsMode, allTeams, allTeamSchedules }: WeekViewProps) {
+export default function WeekView({ weekDates, daySchedules, teamColor, activeDate, onDayClick, allTeamsMode, allTeams, allTeamSchedules, staffNameMap }: WeekViewProps) {
   return (
     <div className="flex gap-2 h-full overflow-x-auto custom-scrollbar p-3 lg:p-4">
       {weekDates.map((date) => {
@@ -53,6 +55,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
               isActive={date === activeDate}
               onDayClick={() => onDayClick(date)}
               clientColorMap={teamColorMap}
+              staffNameMap={staffNameMap}
             />
           );
         }
@@ -72,6 +75,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
             teamColor={teamColor}
             isActive={date === activeDate}
             onDayClick={() => onDayClick(date)}
+            staffNameMap={staffNameMap}
           />
         );
       })}

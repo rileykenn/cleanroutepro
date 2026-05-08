@@ -759,6 +759,7 @@ export default function SchedulePage() {
               allTeamsMode={state.activeTeamId === 'all'}
               allTeams={state.teams}
               allTeamSchedules={weekSchedules}
+              staffNameMap={Object.fromEntries(allStaff.map(s => [s.id, s.name]))}
             />
           ) : (
             <DayEditor

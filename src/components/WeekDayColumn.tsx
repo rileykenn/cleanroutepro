@@ -11,9 +11,11 @@ interface WeekDayColumnProps {
   onDayClick: () => void;
   /** Per-client color override (used in All Teams mode) */
   clientColorMap?: Record<string, string>;
+  /** Staff ID → name lookup */
+  staffNameMap?: Record<string, string>;
 }
 
-export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, clientColorMap }: WeekDayColumnProps) {
+export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, clientColorMap, staffNameMap }: WeekDayColumnProps) {
   const today = isToday(daySchedule.date);
   const clients = daySchedule.clients;
   const hasJobs = clients.length > 0;
@@ -77,6 +79,19 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
                   <p className="text-[9px] text-text-tertiary mt-0.5">
                     {formatTimeDisplay(client.startTime)} – {formatTimeDisplay(client.endTime)}
                   </p>
+                )}
+                {staffNameMap && client.assignedStaffIds && client.assignedStaffIds.length > 0 && (
+                  <div className="flex flex-wrap gap-0.5 mt-1">
+                    {client.assignedStaffIds.map((id) => {
+                      const name = staffNameMap[id];
+                      if (!name) return null;
+                      return (
+                        <span key={id} className="text-[8px] font-medium text-text-tertiary bg-surface-elevated px-1 py-0.5 rounded">
+                          {name.split(' ')[0]}
+                        </span>
+                      );
+                    })}
+                  </div>
                 )}
               </motion.div>
             );

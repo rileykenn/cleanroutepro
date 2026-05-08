@@ -17,8 +17,8 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
 
   return (
     <div className="flex items-center gap-2 px-1">
-      {/* View All tab — only show when 2+ teams */}
-      {teams.length >= 2 && (
+      {/* View All tab — only show when 2+ teams AND in week view */}
+      {teams.length >= 2 && state.viewMode === 'week' && (
         <motion.div
           onClick={() => onSelectTeam('all')}
           className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"

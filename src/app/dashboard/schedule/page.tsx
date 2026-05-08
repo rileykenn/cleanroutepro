@@ -113,6 +113,15 @@ export default function SchedulePage() {
       }
 
       const allTeamMaps = new Map<string, Map<string, DaySchedule>>();
+
+      // Load all client colors for this org
+      const { data: clientColorRows } = await supabase.from('clients').select('id, color').eq('org_id', orgId);
+      const clientColorMap = new Map<string, string>();
+      if (clientColorRows) {
+        for (const row of clientColorRows) {
+          if (row.color) clientColorMap.set(row.id, row.color);
+        }
+      }
       const newPublished = new Set<string>();
 
       for (const team of teamsList) {
@@ -163,6 +172,7 @@ export default function SchedulePage() {
                   notes: (j.notes as string) || undefined,
                   savedClientId: (j.client_id as string) || undefined,
                   assignedStaffIds: assignedIds,
+                  clientColor: j.client_id ? clientColorMap.get(j.client_id as string) || undefined : undefined,
                 });
               }
             }

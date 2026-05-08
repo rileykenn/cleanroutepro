@@ -10,6 +10,7 @@ export interface SavedClient {
   default_duration_minutes: number; default_staff_count: number;
   notes: string; checklist_template_id: string | null;
   custom_checklist_items: { id: string; text: string }[] | null;
+  color: string | null;
   created_at: string;
 }
 

@@ -28,6 +28,7 @@ export interface Client {
   email?: string;
   phone?: string;
   assignedStaffIds?: string[];
+  clientColor?: string;
 }
 
 export interface TravelSegment {
@@ -174,6 +175,18 @@ export function getNextColorIndex(usedColorIndices: number[]): number {
   // All 8 colors used — wrap around to next available
   return usedColorIndices.length % TEAM_COLORS.length;
 }
+
+/** Manual client color tags */
+export const CLIENT_COLORS = [
+  { name: 'Red', value: '#EF4444' },
+  { name: 'Orange', value: '#F97316' },
+  { name: 'Yellow', value: '#EAB308' },
+  { name: 'Green', value: '#22C55E' },
+  { name: 'Blue', value: '#3B82F6' },
+  { name: 'Purple', value: '#8B5CF6' },
+  { name: 'Pink', value: '#EC4899' },
+  { name: 'Teal', value: '#14B8A6' },
+];
 
 export type ScheduleAction =
   | { type: 'SET_ACTIVE_TEAM'; teamId: string }

@@ -72,7 +72,12 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
                   )}
                   <span className="text-[9px] text-text-tertiary">{client.jobDurationMinutes}m</span>
                 </div>
-                <p className="text-[11px] font-medium text-text-primary leading-tight truncate">{client.name || 'Unnamed'}</p>
+                <div className="flex items-center gap-1">
+                  {client.clientColor && (
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: client.clientColor }} />
+                  )}
+                  <p className="text-[11px] font-medium text-text-primary leading-tight truncate">{client.name || 'Unnamed'}</p>
+                </div>
                 {client.startTime && client.endTime && (
                   <p className="text-[9px] text-text-tertiary mt-0.5">
                     {formatTimeDisplay(client.startTime)} – {formatTimeDisplay(client.endTime)}

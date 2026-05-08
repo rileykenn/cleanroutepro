@@ -144,6 +144,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
       notes: saved.notes || undefined,
       email: saved.email || undefined,
       phone: saved.phone || undefined,
+      clientColor: saved.color || undefined,
     };
 
     dispatch({ type: 'ADD_CLIENT', teamId, client });
@@ -271,7 +272,10 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
                             onClick={() => addSavedClient(client)}
                             className="w-full text-left px-3 py-2.5 hover:bg-surface-elevated transition-colors border-b border-border-light last:border-b-0"
                           >
-                            <div className="text-sm font-medium text-text-primary">{client.name}</div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="text-sm font-medium text-text-primary">{client.name}</div>
+                              {client.color && <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: client.color }} />}
+                            </div>
                             <div className="text-xs text-text-tertiary truncate mt-0.5">{client.address}</div>
                             <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary">
                               <span>{client.default_duration_minutes} min</span>

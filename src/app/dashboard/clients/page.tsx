@@ -30,7 +30,7 @@ export default function ClientsPage() {
   const filtered = searchQuery.trim() ? searchFn(searchQuery) : clients;
 
   const handleAdd = async () => {
-    await addClient({ ...form, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null });
+    await addClient({ ...form, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null, color: null });
     setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' });
     setShowAdd(false);
   };
@@ -127,7 +127,10 @@ export default function ClientsPage() {
               className="card p-4 group">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-sm font-bold text-text-primary">{client.name}</h4>
+                  <div className="flex items-center gap-1.5">
+                    {client.color && <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: client.color }} />}
+                    <h4 className="text-sm font-bold text-text-primary">{client.name}</h4>
+                  </div>
                   <p className="text-xs text-text-tertiary truncate mt-0.5">{client.address}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-text-secondary flex-wrap">
                     <span>{client.default_duration_minutes} min</span>

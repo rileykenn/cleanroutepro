@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import { formatTimeDisplay, parseTime } from '@/lib/timeUtils';
-import { Client, Location, ScheduleAction, TeamSchedule, StaffMember } from '@/lib/types';
+import { Client, Location, ScheduleAction, TeamSchedule, StaffMember, CLIENT_COLORS } from '@/lib/types';
 
 export type StaffBusyPeriod = { start: number; end: number; teamName: string; clientName: string; clientId: string };
 
@@ -29,9 +29,11 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const [editingStartTime, setEditingStartTime] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const placesLib = useMapsLibrary('places');
   const pickerRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
 
   // Close staff picker on outside click
   useEffect(() => {
@@ -45,6 +47,18 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showStaffPicker]);
+
+  // Close color picker on outside click
+  useEffect(() => {
+    if (!showColorPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setShowColorPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showColorPicker]);
 
   const resolveAddress = useCallback(async (text: string): Promise<Location | null> => {
     if (!placesLib) return null;
@@ -120,9 +134,49 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative" style={{ backgroundColor: team.color.primary }}>
-            {index + 1}
-            {client.isLocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px]">🔒</div>}
+          <div className="relative">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative cursor-pointer" style={{ backgroundColor: team.color.primary }} onClick={() => setShowColorPicker(!showColorPicker)}>
+              {index + 1}
+              {client.isLocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px]">🔒</div>}
+              {client.clientColor && (
+                <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ backgroundColor: client.clientColor }} />
+              )}
+            </div>
+            {/* Color picker dropdown */}
+            <AnimatePresence>
+              {showColorPicker && (
+                <motion.div
+                  ref={colorPickerRef}
+                  initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute top-full left-0 mt-1.5 z-30 bg-white rounded-xl shadow-lg border border-border-light p-2"
+                >
+                  <div className="text-[9px] font-bold text-text-tertiary uppercase tracking-wider px-1 pb-1.5">Tag Colour</div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {CLIENT_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => {
+                          dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { clientColor: c.value } });
+                          setShowColorPicker(false);
+                        }}
+                        className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${client.clientColor === c.value ? 'border-gray-800 scale-110' : 'border-transparent'}`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                      />
+                    ))}
+                  </div>
+                  {client.clientColor && (
+                    <button
+                      onClick={() => { dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { clientColor: undefined } }); setShowColorPicker(false); }}
+                      className="w-full text-[10px] text-text-tertiary hover:text-danger mt-1.5 pt-1.5 border-t border-border-light transition-colors"
+                    >Clear colour</button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <input type="text" value={client.name} onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { name: e.target.value } })}
             className="font-semibold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors" placeholder="Client name" />

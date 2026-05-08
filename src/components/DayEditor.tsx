@@ -131,6 +131,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           assigned_staff_ids: c.assignedStaffIds || [],
         }));
         await supabase.from('schedule_jobs').insert(rows);
+
+        // Sync client colors back to saved clients table
+        for (const c of team.clients) {
+          if (c.savedClientId) {
+            await supabase.from('clients').update({ color: c.clientColor || null }).eq('id', c.savedClientId);
+          }
+        }
       }
     }
   }, [orgId, supabase]);
@@ -150,7 +157,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address, dur: c.jobDurationMinutes,
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
-          assignedStaff: c.assignedStaffIds,
+          assignedStaff: c.assignedStaffIds, color: c.clientColor,
         })),
         breaks: t.breaks,
       }))

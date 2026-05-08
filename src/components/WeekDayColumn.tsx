@@ -9,9 +9,11 @@ interface WeekDayColumnProps {
   teamColor: TeamColor;
   isActive: boolean;
   onDayClick: () => void;
+  /** Per-client color override (used in All Teams mode) */
+  clientColorMap?: Record<string, string>;
 }
 
-export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick }: WeekDayColumnProps) {
+export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, clientColorMap }: WeekDayColumnProps) {
   const today = isToday(daySchedule.date);
   const clients = daySchedule.clients;
   const hasJobs = clients.length > 0;
@@ -51,31 +53,34 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
             <p className="text-[10px] text-text-tertiary">No jobs</p>
           </div>
         ) : (
-          clients.map((client, i) => (
-            <motion.div
-              key={client.id}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.02 }}
-              className="rounded-lg p-2 border border-border-light hover:border-border transition-colors"
-              style={{ borderLeftWidth: 3, borderLeftColor: teamColor.primary }}
-            >
-              <div className="flex items-center justify-between gap-1 mb-0.5">
-                {client.startTime && (
-                  <span className="text-[10px] font-bold text-text-secondary">
-                    {formatTimeDisplay(client.startTime)}
-                  </span>
+          clients.map((client, i) => {
+            const borderColor = clientColorMap?.[client.id] || teamColor.primary;
+            return (
+              <motion.div
+                key={client.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.02 }}
+                className="rounded-lg p-2 border border-border-light hover:border-border transition-colors"
+                style={{ borderLeftWidth: 3, borderLeftColor: borderColor }}
+              >
+                <div className="flex items-center justify-between gap-1 mb-0.5">
+                  {client.startTime && (
+                    <span className="text-[10px] font-bold text-text-secondary">
+                      {formatTimeDisplay(client.startTime)}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-text-tertiary">{client.jobDurationMinutes}m</span>
+                </div>
+                <p className="text-[11px] font-medium text-text-primary leading-tight truncate">{client.name || 'Unnamed'}</p>
+                {client.startTime && client.endTime && (
+                  <p className="text-[9px] text-text-tertiary mt-0.5">
+                    {formatTimeDisplay(client.startTime)} – {formatTimeDisplay(client.endTime)}
+                  </p>
                 )}
-                <span className="text-[9px] text-text-tertiary">{client.jobDurationMinutes}m</span>
-              </div>
-              <p className="text-[11px] font-medium text-text-primary leading-tight truncate">{client.name || 'Unnamed'}</p>
-              {client.startTime && client.endTime && (
-                <p className="text-[9px] text-text-tertiary mt-0.5">
-                  {formatTimeDisplay(client.startTime)} – {formatTimeDisplay(client.endTime)}
-                </p>
-              )}
-            </motion.div>
-          ))
+              </motion.div>
+            );
+          })
         )}
       </div>
 

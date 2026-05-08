@@ -305,6 +305,10 @@ export default function SchedulePage() {
   }, [state.focusedDate]);
 
   const handleDayClick = (date: string) => {
+    // Day editor only supports single team — if in "all" mode, switch to first team
+    if (state.activeTeamId === 'all' && state.teams.length > 0) {
+      dispatch({ type: 'SET_ACTIVE_TEAM', teamId: state.teams[0].id });
+    }
     dispatch({ type: 'SET_FOCUSED_DATE', date });
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' });
     loadDayForEdit(date);
@@ -725,6 +729,9 @@ export default function SchedulePage() {
               teamColor={activeTeam?.color || TEAM_COLORS[0]}
               activeDate={state.focusedDate}
               onDayClick={handleDayClick}
+              allTeamsMode={state.activeTeamId === 'all'}
+              allTeams={state.teams}
+              allTeamSchedules={weekSchedules}
             />
           ) : (
             <DayEditor

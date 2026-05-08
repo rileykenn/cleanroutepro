@@ -17,6 +17,35 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
 
   return (
     <div className="flex items-center gap-2 px-1">
+      {/* View All tab — only show when 2+ teams */}
+      {teams.length >= 2 && (
+        <motion.div
+          onClick={() => onSelectTeam('all')}
+          className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
+          style={{
+            backgroundColor: activeTeamId === 'all' ? '#F3F4F6' : 'transparent',
+            color: activeTeamId === 'all' ? '#111827' : '#6B7280',
+            border: activeTeamId === 'all' ? '1px solid #E5E7EB' : '1px solid transparent',
+          }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+            <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+          </svg>
+          <span>All</span>
+          {(() => {
+            const totalClients = teams.reduce((s, t) => s + t.clients.length, 0);
+            return totalClients > 0 ? (
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{
+                backgroundColor: activeTeamId === 'all' ? '#374151' : '#E5E7EB',
+                color: activeTeamId === 'all' ? 'white' : '#6B7280',
+              }}>{totalClients}</span>
+            ) : null;
+          })()}
+        </motion.div>
+      )}
       {teams.map((team, index) => {
         const isActive = team.id === activeTeamId;
         const assignedStaff = teamStaffMap?.get(team.id) || [];

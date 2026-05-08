@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { TeamSchedule, TEAM_COLORS, TravelSegment } from '@/lib/types';
+import { TeamSchedule, TEAM_COLORS, TravelSegment, getNextColorIndex } from '@/lib/types';
 
 interface DbTeam {
   id: string; org_id: string; name: string; color_index: number;
@@ -25,6 +25,7 @@ export function useTeams(authOrgId: string | null) {
   const dbToTeam = useCallback((row: DbTeam): TeamSchedule => ({
     id: row.id, name: row.name,
     color: TEAM_COLORS[row.color_index % TEAM_COLORS.length],
+    colorIndex: row.color_index % TEAM_COLORS.length,
     baseAddress: row.base_address ? { address: row.base_address, lat: row.base_lat || 0, lng: row.base_lng || 0, placeId: row.base_place_id || undefined } : null,
     returnAddress: row.return_disabled ? 'none' : row.return_address ? { address: row.return_address, lat: row.return_lat || 0, lng: row.return_lng || 0, placeId: row.return_place_id || undefined } : null,
     clients: [], travelSegments: new Map<string, TravelSegment>(),
@@ -54,7 +55,8 @@ export function useTeams(authOrgId: string | null) {
 
   const addTeam = useCallback(async () => {
     if (!orgId) return null;
-    const colorIndex = teams.length % TEAM_COLORS.length;
+    const usedIndices = teams.map(t => t.colorIndex);
+    const colorIndex = getNextColorIndex(usedIndices);
     const { data, error } = await supabase.from('teams').insert({
       org_id: orgId, name: `Team ${teams.length + 1}`, color_index: colorIndex, sort_order: teams.length,
       ...(teams[0]?.baseAddress ? { base_address: teams[0].baseAddress.address, base_lat: teams[0].baseAddress.lat, base_lng: teams[0].baseAddress.lng, base_place_id: teams[0].baseAddress.placeId || null } : {}),

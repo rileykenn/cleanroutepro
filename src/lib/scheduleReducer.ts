@@ -1,11 +1,12 @@
-import { AppState, ScheduleAction, TeamSchedule, TEAM_COLORS, TravelSegment } from './types';
+import { AppState, ScheduleAction, TeamSchedule, TEAM_COLORS, TravelSegment, getNextColorIndex } from './types';
 import { generateId, getTodayISO } from './timeUtils';
 
-function createDefaultTeam(index: number): TeamSchedule {
+function createDefaultTeam(colorIndex: number): TeamSchedule {
   return {
     id: generateId(),
-    name: `Team ${index + 1}`,
-    color: TEAM_COLORS[index % TEAM_COLORS.length],
+    name: `Team ${colorIndex + 1}`,
+    color: TEAM_COLORS[colorIndex % TEAM_COLORS.length],
+    colorIndex,
     baseAddress: null,
     returnAddress: null,
     clients: [],
@@ -44,7 +45,9 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'SET_HOURLY_RATE':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, hourlyRate: action.rate } : t) };
     case 'ADD_TEAM': {
-      const nt = createDefaultTeam(state.teams.length);
+      const usedIndices = state.teams.map(t => t.colorIndex);
+      const nextIdx = getNextColorIndex(usedIndices);
+      const nt = createDefaultTeam(nextIdx);
       if (state.teams.length > 0 && state.teams[0].baseAddress) nt.baseAddress = { ...state.teams[0].baseAddress };
       return { ...state, teams: [...state.teams, nt], activeTeamId: nt.id };
     }

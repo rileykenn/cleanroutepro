@@ -51,6 +51,7 @@ export interface TeamSchedule {
   id: string;
   name: string;
   color: TeamColor;
+  colorIndex: number;
   baseAddress: Location | null;
   returnAddress: Location | null | 'none';
   clients: Client[];
@@ -160,6 +161,19 @@ export const TEAM_COLORS: TeamColor[] = [
     marker: '#EA580C',
   },
 ];
+
+/**
+ * Find the first color index not already used by the given teams.
+ * Falls back to (teams.length % total) if all colors are exhausted.
+ */
+export function getNextColorIndex(usedColorIndices: number[]): number {
+  const used = new Set(usedColorIndices);
+  for (let i = 0; i < TEAM_COLORS.length; i++) {
+    if (!used.has(i)) return i;
+  }
+  // All 8 colors used — wrap around to next available
+  return usedColorIndices.length % TEAM_COLORS.length;
+}
 
 export type ScheduleAction =
   | { type: 'SET_ACTIVE_TEAM'; teamId: string }

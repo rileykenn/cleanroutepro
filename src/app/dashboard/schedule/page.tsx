@@ -6,7 +6,7 @@ import { AnimatePresence } from 'framer-motion';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays } from '@/lib/timeUtils';
-import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember } from '@/lib/types';
+import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex } from '@/lib/types';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 
@@ -53,6 +53,7 @@ export default function SchedulePage() {
       id: row.id as string,
       name: row.name as string,
       color: TEAM_COLORS[(row.color_index as number) % TEAM_COLORS.length],
+      colorIndex: (row.color_index as number) % TEAM_COLORS.length,
       baseAddress: row.base_address ? {
         address: row.base_address as string,
         lat: (row.base_lat as number) || 0,
@@ -86,7 +87,7 @@ export default function SchedulePage() {
         const { data: newTeam } = await supabase.from('teams').insert({ org_id: orgId, name: 'Team 1', color_index: 0, sort_order: 0 }).select().single();
         if (newTeam) {
           const defaultTeam: TeamSchedule = {
-            id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0],
+            id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0], colorIndex: 0,
             baseAddress: null, returnAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
             breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
           };
@@ -468,7 +469,8 @@ export default function SchedulePage() {
   // ─── Team handlers ───
   const handleAddTeam = useCallback(async () => {
     if (!orgId) return;
-    const colorIndex = state.teams.length % TEAM_COLORS.length;
+    const usedIndices = state.teams.map(t => t.colorIndex);
+    const colorIndex = getNextColorIndex(usedIndices);
     const baseAddr = state.teams[0]?.baseAddress;
     const { data } = await supabase.from('teams').insert({
       org_id: orgId, name: `Team ${state.teams.length + 1}`, color_index: colorIndex, sort_order: state.teams.length,
@@ -476,7 +478,7 @@ export default function SchedulePage() {
     }).select().single();
     if (data) {
       const newTeam: TeamSchedule = {
-        id: data.id, name: data.name, color: TEAM_COLORS[colorIndex],
+        id: data.id, name: data.name, color: TEAM_COLORS[colorIndex], colorIndex,
         baseAddress: baseAddr ? { ...baseAddr } : null, returnAddress: null,
         clients: [], travelSegments: new Map(), dayStartTime: '08:00',
         breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,

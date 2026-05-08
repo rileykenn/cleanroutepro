@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { useClients, SavedClient } from '@/lib/hooks/useClients';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { generateId } from '@/lib/timeUtils';
+import { CLIENT_COLORS } from '@/lib/types';
 
 interface ChecklistTemplate { id: string; name: string; items: { id: string; text: string }[]; }
 
@@ -144,6 +145,27 @@ export default function ClientsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  {/* Color tag picker */}
+                  <div className="flex items-center gap-1 mr-1">
+                    {CLIENT_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => updateClient(client.id, { color: client.color === c.value ? null : c.value } as Partial<SavedClient>)}
+                        className={`w-5 h-5 rounded-full border-2 transition-all hover:scale-110 ${client.color === c.value ? 'border-gray-700 scale-110 shadow-sm' : 'border-transparent opacity-50 hover:opacity-100'}`}
+                        style={{ backgroundColor: c.value }}
+                        title={c.name}
+                      />
+                    ))}
+                    {client.color && (
+                      <button
+                        onClick={() => updateClient(client.id, { color: null } as Partial<SavedClient>)}
+                        className="w-5 h-5 rounded-full border border-border-light flex items-center justify-center text-text-tertiary hover:text-danger hover:border-danger transition-colors"
+                        title="Clear colour"
+                      >
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      </button>
+                    )}
+                  </div>
                   {templates.length > 0 && (
                     <select value={client.checklist_template_id || ''} onChange={(e) => assignTemplate(client.id, e.target.value || null)}
                       className="text-xs bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none">

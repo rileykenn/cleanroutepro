@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
+const ClientInfoPanel = lazy(() => import('./ClientInfoPanel'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
@@ -9,7 +10,7 @@ import { Client, Location, ScheduleAction, TeamSchedule, StaffMember } from '@/l
 
 export type StaffBusyPeriod = { start: number; end: number; teamName: string; clientName: string; clientId: string };
 
-const StaffChecklistView = lazy(() => import('./StaffChecklistView'));
+
 
 interface ClientCardProps {
   client: Client;
@@ -27,7 +28,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const [isResolving, setIsResolving] = useState(false);
   const [addressVersion, setAddressVersion] = useState(0);
   const [editingStartTime, setEditingStartTime] = useState(false);
-  const [showChecklist, setShowChecklist] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
   const placesLib = useMapsLibrary('places');
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -140,8 +141,8 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <button onClick={() => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { isLocked: !client.isLocked } })} className={`p-1.5 rounded-lg transition-colors ${client.isLocked ? 'bg-amber-50 text-amber-600' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Lock position">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{client.isLocked ? <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
           </button>
-          <button onClick={() => setShowChecklist(true)} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-emerald-600 transition-colors" title="Checklist">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <button onClick={() => setShowInfo(true)} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Client info, checklist & media">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           </button>
           <a href={mapsNavUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Navigate">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
@@ -321,7 +322,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       )}
 
       <AnimatePresence>
-        {showChecklist && <Suspense fallback={null}><StaffChecklistView clientId={client.savedClientId || client.id} clientName={client.name} scheduleJobId={client.id} onClose={() => setShowChecklist(false)} /></Suspense>}
+        {showInfo && <Suspense fallback={null}><ClientInfoPanel clientId={client.savedClientId || client.id} clientName={client.name} scheduleJobId={client.id} onClose={() => setShowInfo(false)} /></Suspense>}
       </AnimatePresence>
     </motion.div>
   );

@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { Suspense, lazy } from 'react';
 
-const StaffChecklistView = lazy(() => import('@/components/StaffChecklistView'));
+const ClientInfoPanel = lazy(() => import('@/components/ClientInfoPanel'));
 
 interface JobInfo {
   id: string;
@@ -66,9 +66,9 @@ export default function StaffViewPage() {
   const [weekData, setWeekData] = useState<DayData[]>([]);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checklistClientId, setChecklistClientId] = useState<string | null>(null);
-  const [checklistClientName, setChecklistClientName] = useState('');
-  const [checklistJobId, setChecklistJobId] = useState<string | null>(null);
+  const [infoClientId, setInfoClientId] = useState<string | null>(null);
+  const [infoClientName, setInfoClientName] = useState('');
+  const [infoJobId, setInfoJobId] = useState<string | null>(null);
   const [allStaff, setAllStaff] = useState<{ id: string; name: string }[]>([]);
 
   // Generate week dates (Mon–Sun)
@@ -279,9 +279,9 @@ export default function StaffViewPage() {
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {job.client_id && (
-                            <button onClick={() => { setChecklistClientId(job.client_id!); setChecklistClientName(job.name); setChecklistJobId(job.id); }}
-                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-text-tertiary hover:text-emerald-600 transition-colors" title="Checklist">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                            <button onClick={() => { setInfoClientId(job.client_id!); setInfoClientName(job.name); setInfoJobId(job.id); }}
+                              className="p-1.5 rounded-lg hover:bg-primary-light text-text-tertiary hover:text-primary transition-colors" title="Client info & media">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                             </button>
                           )}
                           <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.address)}&destination_place_id=${job.place_id || ''}`}
@@ -387,14 +387,14 @@ export default function StaffViewPage() {
         )}
       </AnimatePresence>
 
-      {/* Checklist Modal */}
-      {checklistClientId && (
+      {/* Client Info Panel */}
+      {infoClientId && (
         <Suspense fallback={null}>
-          <StaffChecklistView
-            clientId={checklistClientId}
-            clientName={checklistClientName}
-            scheduleJobId={checklistJobId || undefined}
-            onClose={() => { setChecklistClientId(null); setChecklistJobId(null); }}
+          <ClientInfoPanel
+            clientId={infoClientId}
+            clientName={infoClientName}
+            scheduleJobId={infoJobId || undefined}
+            onClose={() => { setInfoClientId(null); setInfoJobId(null); }}
           />
         </Suspense>
       )}

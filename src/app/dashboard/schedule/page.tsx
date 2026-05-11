@@ -646,14 +646,27 @@ export default function SchedulePage() {
     const teamId = pendingDeleteTeam.id;
     const targetDate = pendingDeleteTeam.date;
     setPendingDeleteTeam(null);
-    // Only delete the schedule for this SPECIFIC DAY — no other days are touched
+    // Delete the schedule for this SPECIFIC DAY
     const { data: daySched } = await supabase
       .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
     if (daySched) {
       await supabase.from('schedule_jobs').delete().eq('schedule_id', daySched.id);
       await supabase.from('schedules').delete().eq('id', daySched.id);
     }
-    // Reload week to refresh (the team may still appear on other days)
+    // Also clean up any empty schedule rows (zero jobs) for this team in the week
+    // These may have been created by autosave when the team was visible but had no clients
+    const { data: weekScheds } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
+    if (weekScheds) {
+      for (const s of weekScheds) {
+        const { count } = await supabase
+          .from('schedule_jobs').select('id', { count: 'exact', head: true }).eq('schedule_id', s.id);
+        if (!count || count === 0) {
+          await supabase.from('schedules').delete().eq('id', s.id);
+        }
+      }
+    }
+    // Reload week to refresh
     loadWeekSchedules(weekDates);
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 

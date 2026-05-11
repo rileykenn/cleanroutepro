@@ -87,6 +87,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       };
       await supabase.from('teams').update(teamUpdate).eq('id', team.id);
 
+      // Check if this team has any content for today
+      const hasClients = team.clients.length > 0;
+      const { data: existingSched } = await supabase
+        .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
+
+      // Skip teams with no clients and no existing schedule —
+      // this prevents empty schedule rows from leaking across days
+      if (!hasClients && !existingSched) continue;
+
       // Build per-day schedule record with base addresses
       const scheduleData: Record<string, unknown> = {
         org_id: orgId, team_id: team.id, schedule_date: today,
@@ -122,10 +131,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       }
 
       let scheduleId: string;
-      const { data: existing } = await supabase
-        .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
-      if (existing) {
-        scheduleId = existing.id;
+      if (existingSched) {
+        scheduleId = existingSched.id;
         await supabase.from('schedules').update(scheduleData).eq('id', scheduleId);
       } else {
         const { data: created } = await supabase

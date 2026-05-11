@@ -33,7 +33,7 @@ export default function SchedulePage() {
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
   activeTeamIdRef.current = state.activeTeamId;
-  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; weekJobCount: number } | null>(null);
+  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; date: string; dayJobCount: number } | null>(null);
   const allOrgTeamsRef = useRef<TeamSchedule[]>([]);
 
   const { profile } = useAuth();
@@ -609,13 +609,13 @@ export default function SchedulePage() {
       allOrgTeamsRef.current = [...allOrgTeamsRef.current, teamToAdd];
     }
 
-    // Create an empty schedule row for the first day of the current week
-    // so this team appears in the week view
-    const firstDate = weekDates[0];
+    // Create an empty schedule row for the SELECTED DATE only
+    // (not the whole week — teams are per-day)
+    const targetDate = state.selectedDate;
     const { data: existingSched } = await supabase
-      .from('schedules').select('id').eq('team_id', teamToAdd.id).eq('schedule_date', firstDate).maybeSingle();
+      .from('schedules').select('id').eq('team_id', teamToAdd.id).eq('schedule_date', targetDate).maybeSingle();
     if (!existingSched) {
-      await supabase.from('schedules').insert({ org_id: orgId, team_id: teamToAdd.id, schedule_date: firstDate });
+      await supabase.from('schedules').insert({ org_id: orgId, team_id: teamToAdd.id, schedule_date: targetDate });
     }
 
     // Add to UI immediately
@@ -627,36 +627,35 @@ export default function SchedulePage() {
   const handleRemoveTeam = useCallback(async (teamId: string) => {
     if (state.teams.length <= 1) return;
     const team = state.teams.find(t => t.id === teamId);
-    // Count jobs for this team in the CURRENT WEEK only
-    let weekJobCount = 0;
-    const { data: weekScheds } = await supabase
-      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
-    if (weekScheds && weekScheds.length > 0) {
-      const schedIds = weekScheds.map((s: { id: string }) => s.id);
+    // Count jobs for this team on the SELECTED DAY only
+    const targetDate = state.selectedDate;
+    let dayJobCount = 0;
+    const { data: daySched } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
+    if (daySched) {
       const { count } = await supabase
         .from('schedule_jobs').select('id', { count: 'exact', head: true })
-        .in('schedule_id', schedIds).eq('is_break', false);
-      weekJobCount = count || 0;
+        .eq('schedule_id', daySched.id).eq('is_break', false);
+      dayJobCount = count || 0;
     }
-    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', weekJobCount });
-  }, [state.teams, supabase, weekDates]);
+    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', date: targetDate, dayJobCount });
+  }, [state.teams, state.selectedDate, supabase]);
 
   const confirmDeleteTeam = useCallback(async () => {
     if (!pendingDeleteTeam) return;
     const teamId = pendingDeleteTeam.id;
+    const targetDate = pendingDeleteTeam.date;
     setPendingDeleteTeam(null);
-    // Only delete schedules for the CURRENT WEEK — not all weeks
-    const { data: weekScheds } = await supabase
-      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
-    if (weekScheds) {
-      for (const s of weekScheds) await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
-      for (const s of weekScheds) await supabase.from('schedules').delete().eq('id', s.id);
+    // Only delete the schedule for this SPECIFIC DAY — no other days are touched
+    const { data: daySched } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
+    if (daySched) {
+      await supabase.from('schedule_jobs').delete().eq('schedule_id', daySched.id);
+      await supabase.from('schedules').delete().eq('id', daySched.id);
     }
-    // Clear team clients in the UI for this week but keep the team entity
-    dispatch({ type: 'LOAD_STATE', teams: state.teams.map(t => t.id === teamId ? { ...t, clients: [], travelSegments: new Map(), breaks: [] } : t), activeTeamId: state.teams.find(t => t.id !== teamId)?.id || state.activeTeamId, selectedDate: state.selectedDate });
-    // Reload week to refresh
+    // Reload week to refresh (the team may still appear on other days)
     loadWeekSchedules(weekDates);
-  }, [supabase, pendingDeleteTeam, weekDates, state.teams, state.activeTeamId, state.selectedDate, loadWeekSchedules]);
+  }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 
   // ─── Week template loading ───
   const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>) => {
@@ -1052,13 +1051,13 @@ export default function SchedulePage() {
         )}
         {pendingDeleteTeam && (
           <ConfirmModal
-            title={`Clear ${pendingDeleteTeam.name} this week?`}
+            title={`Clear ${pendingDeleteTeam.name} on ${new Date(pendingDeleteTeam.date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })}?`}
             message={
-              pendingDeleteTeam.weekJobCount > 0
-                ? `This will remove ${pendingDeleteTeam.weekJobCount} scheduled job${pendingDeleteTeam.weekJobCount !== 1 ? 's' : ''} for ${pendingDeleteTeam.name} this week only. Other weeks will not be affected.`
-                : `This will clear ${pendingDeleteTeam.name} from the current week. Other weeks will not be affected.`
+              pendingDeleteTeam.dayJobCount > 0
+                ? `This will remove ${pendingDeleteTeam.dayJobCount} scheduled job${pendingDeleteTeam.dayJobCount !== 1 ? 's' : ''} for ${pendingDeleteTeam.name} on this day only. All other days remain unaffected.`
+                : `This will clear ${pendingDeleteTeam.name} from this day. All other days remain unaffected.`
             }
-            confirmLabel="Clear This Week"
+            confirmLabel="Clear This Day"
             onConfirm={confirmDeleteTeam}
             onCancel={() => setPendingDeleteTeam(null)}
             danger

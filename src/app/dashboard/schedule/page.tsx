@@ -320,23 +320,27 @@ export default function SchedulePage() {
   // ─── Load specific day into reducer for Day View ───
   const loadDayForEdit = useCallback(async (date: string) => {
     if (!orgId) return;
-    // Use the currently visible teams (already filtered per-week) instead of ALL teams
-    const currentTeams = state.teams.length > 0 ? state.teams : allOrgTeamsRef.current;
-    if (!currentTeams || currentTeams.length === 0) return;
+    // Query ALL org teams so we can check which ones have schedules on this day
+    const allTeams = allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : (await loadTeams() || []);
+    if (allTeams.length === 0) return;
 
-    // Clone teams so we can mutate them
-    const teamsList = currentTeams.map(t => ({
-      ...t,
-      clients: [] as Client[],
-      travelSegments: new Map<string, TravelSegment>(),
-      breaks: [] as typeof t.breaks,
-    }));
+    // Clone teams so we can mutate them; track which have schedules on this day
+    const teamsList: TeamSchedule[] = [];
+    const teamsWithSchedule = new Set<string>();
 
-    for (const team of teamsList) {
+    for (const t of allTeams) {
+      const team = {
+        ...t,
+        clients: [] as Client[],
+        travelSegments: new Map<string, TravelSegment>(),
+        breaks: [] as typeof t.breaks,
+      };
+
       const { data: schedule } = await supabase
         .from('schedules').select('id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
         .eq('team_id', team.id).eq('schedule_date', date).maybeSingle();
       if (schedule) {
+        teamsWithSchedule.add(team.id);
         // Per-day base address override
         const hasStartBase = schedule.has_start_base !== false;
         const hasReturnBase = schedule.has_return_base !== false;
@@ -382,9 +386,16 @@ export default function SchedulePage() {
             });
         }
       }
+      teamsList.push(team);
     }
-    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
-  }, [orgId, supabase, state.teams]);
+
+    // Only show teams that have a schedule on THIS specific day
+    const visibleTeams = teamsList.filter(t => teamsWithSchedule.has(t.id));
+    // Always show at least one team (first team as fallback)
+    const finalTeams = visibleTeams.length > 0 ? visibleTeams : [teamsList[0]];
+
+    dispatch({ type: 'LOAD_STATE', teams: finalTeams, activeTeamId: finalTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id, selectedDate: date });
+  }, [orgId, supabase, loadTeams]);
 
   // ─── Week Navigation ───
   const goToPrevWeek = () => {

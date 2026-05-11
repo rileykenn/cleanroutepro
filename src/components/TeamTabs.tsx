@@ -93,8 +93,8 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
               </span>
             )}
 
-            {/* Remove team button */}
-            {teams.length > 1 && isActive && (
+            {/* Remove team button — only in day view (teams are per-day) */}
+            {teams.length > 1 && isActive && state.viewMode === 'day' && (
               <span
                 role="button"
                 tabIndex={0}
@@ -111,7 +111,7 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
                   }
                 }}
                 className="ml-1 p-0.5 rounded hover:bg-white/60 text-current opacity-50 hover:opacity-100 transition-opacity"
-                title="Remove team"
+                title="Remove team from this day"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M18 6L6 18M6 6l12 12" />
@@ -122,20 +122,22 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
         );
       })}
 
-      {/* Add team button — unlimited teams per scope */}
-      <motion.button
-        onClick={() => { if (onAddTeam) onAddTeam(); else dispatch({ type: 'ADD_TEAM' }); }}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-text-tertiary
-                 hover:text-text-secondary hover:bg-surface-hover transition-all cursor-pointer"
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        Add Team
-      </motion.button>
+      {/* Add team button — only in day view (teams are per-day) */}
+      {state.viewMode === 'day' && (
+        <motion.button
+          onClick={() => { if (onAddTeam) onAddTeam(); else dispatch({ type: 'ADD_TEAM' }); }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-text-tertiary
+                   hover:text-text-secondary hover:bg-surface-hover transition-all cursor-pointer"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Add Team
+        </motion.button>
+      )}
     </div>
   );
 }

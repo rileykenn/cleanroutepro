@@ -142,6 +142,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           duration_minutes: c.jobDurationMinutes, staff_count: c.staffCount || 1,
           is_locked: c.isLocked || false, is_break: false, notes: c.notes || '',
           start_time: c.startTime || null, end_time: c.endTime || null,
+          fixed_start_time: c.fixedStartTime || null,
           assigned_staff_ids: c.assignedStaffIds || [],
         }));
         await supabase.from('schedule_jobs').insert(rows);
@@ -193,15 +194,16 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
   const routeKey = useMemo(() => {
     const base = activeTeam.baseAddress ? `${activeTeam.baseAddress.lat},${activeTeam.baseAddress.lng}` : 'none';
+    const ret = activeTeam.returnAddress === 'none' ? 'no-return' : (activeTeam.returnAddress ? `${activeTeam.returnAddress.lat},${activeTeam.returnAddress.lng}` : 'default');
     const clients = activeTeam.clients.map((c) => `${c.id}:${c.location.lat},${c.location.lng}`).join('|');
-    return `${activeTeam.id}::${base}::${clients}`;
-  }, [activeTeam.id, activeTeam.baseAddress, activeTeam.clients]);
+    return `${activeTeam.id}::${base}::${ret}::${clients}`;
+  }, [activeTeam.id, activeTeam.baseAddress, activeTeam.returnAddress, activeTeam.clients]);
 
   const activeTeamRef = useRef(activeTeam);
   activeTeamRef.current = activeTeam;
 
   useEffect(() => {
-    if (!directionsService || !activeTeamRef.current.baseAddress || activeTeamRef.current.clients.length === 0) return;
+    if (!directionsService || activeTeamRef.current.clients.length === 0) return;
     const teamId = activeTeamRef.current.id;
     dispatch({ type: 'CLEAR_TRAVEL', teamId });
     const timer = setTimeout(async () => {
@@ -391,12 +393,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             {/* Client Cards */}
             <AnimatePresence mode="popLayout">
               {activeTeam.clients.map((client, index) => {
-                const prevId = index === 0 ? 'base' : activeTeam.clients[index - 1].id;
-                const segment = getTravelSegment(prevId, client.id);
+                const hasBase = activeTeam.baseAddress && activeTeam.baseAddress.lat !== 0;
+                const prevId = index === 0 ? (hasBase ? 'base' : null) : activeTeam.clients[index - 1].id;
+                const segment = prevId ? getTravelSegment(prevId, client.id) : undefined;
                 const breakAfterThis = activeTeam.breaks.find((b) => b.afterClientId === client.id);
                 return (
                   <motion.div key={client.id} layout>
-                    {activeTeam.baseAddress && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
+                    {segment && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
                       staffBusyPeriods={staffBusyPeriods} />
@@ -454,11 +457,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             </AnimatePresence>
 
             {/* Return destination */}
-            {activeTeam.clients.length > 0 && activeTeam.baseAddress && activeTeam.returnAddress !== 'none' && (
+            {activeTeam.clients.length > 0 && activeTeam.returnAddress !== 'none' && (
               <>
-                <TravelSegmentComponent
-                  segment={getTravelSegment(activeTeam.clients[activeTeam.clients.length - 1].id, 'base-return')}
-                  teamColor={activeTeam.color.primary} />
+                {activeTeam.baseAddress && (
+                  <TravelSegmentComponent
+                    segment={getTravelSegment(activeTeam.clients[activeTeam.clients.length - 1].id, 'base-return')}
+                    teamColor={activeTeam.color.primary} />
+                )}
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -489,7 +494,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                       });
                     }}
                   />
-                  {activeTeam.returnAddress && (
+                  {activeTeam.returnAddress && activeTeam.baseAddress && (
                     <button
                       onClick={() => dispatch({ type: 'SET_RETURN_ADDRESS', teamId: activeTeam.id, location: activeTeam.baseAddress! })}
                       className="mt-2 text-[11px] text-text-tertiary hover:text-primary transition-colors"
@@ -508,6 +513,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   onClick={() => {
                     if (activeTeam.baseAddress) {
                       dispatch({ type: 'SET_RETURN_ADDRESS', teamId: activeTeam.id, location: activeTeam.baseAddress });
+                    } else {
+                      // No base — set return with empty address so the autocomplete appears
+                      dispatch({ type: 'SET_RETURN_ADDRESS', teamId: activeTeam.id, location: { address: '', lat: 0, lng: 0 } });
                     }
                   }}
                   className="flex items-center gap-1.5 text-xs font-medium text-text-tertiary hover:text-primary transition-colors px-3 py-2 rounded-lg hover:bg-surface-hover border border-dashed border-border-light"

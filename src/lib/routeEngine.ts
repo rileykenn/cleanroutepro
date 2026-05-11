@@ -46,14 +46,17 @@ export async function calculateAllTravel(
   team: TeamSchedule,
   onUpdate: (segment: TravelSegment) => void
 ): Promise<void> {
-  if (!team.baseAddress || team.clients.length === 0) return;
+  if (team.clients.length === 0) return;
+  // If no base, still calculate travel between consecutive clients
+  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
   // Determine return destination: custom address, base address, or none
   const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
   const stops = [
-    { id: 'base', lat: team.baseAddress.lat, lng: team.baseAddress.lng },
+    ...(hasBase ? [{ id: 'base', lat: team.baseAddress!.lat, lng: team.baseAddress!.lng }] : []),
     ...team.clients.map((c) => ({ id: c.id, lat: c.location.lat, lng: c.location.lng })),
-    ...(returnAddr ? [{ id: 'base-return', lat: returnAddr.lat, lng: returnAddr.lng }] : []),
+    ...(hasBase && returnAddr ? [{ id: 'base-return', lat: returnAddr.lat, lng: returnAddr.lng }] : []),
   ];
+  if (stops.length < 2) return;
   const today = new Date();
   const [startH, startM] = team.dayStartTime.split(':').map(Number);
   let currentMinutes = startH * 60 + startM;
@@ -67,8 +70,11 @@ export async function calculateAllTravel(
     if (result) {
       onUpdate({ fromId: from.id, toId: to.id, ...result, isCalculating: false });
       currentMinutes += result.durationMinutes;
-      if (i < team.clients.length) {
-        currentMinutes += team.clients[i].jobDurationMinutes / (team.clients[i].staffCount || 1);
+      // Advance time by job duration for correct departure estimate on next leg
+      const clientIndex = hasBase ? i : i; // index into stops vs clients
+      const clientForThisLeg = team.clients.find(c => c.id === to.id);
+      if (clientForThisLeg) {
+        currentMinutes += clientForThisLeg.jobDurationMinutes / (clientForThisLeg.staffCount || 1);
       }
     }
     if (i < stops.length - 2) await new Promise((r) => setTimeout(r, 200));
@@ -82,39 +88,101 @@ export interface ScheduleTimesResult {
 }
 
 export function calculateScheduleTimes(team: TeamSchedule): ScheduleTimesResult {
-  if (!team.baseAddress || team.clients.length === 0) {
+  if (team.clients.length === 0) {
     return { clients: team.clients, baseDepartureTime: team.dayStartTime };
   }
-  let currentTime = parseTime(team.dayStartTime);
-  let baseDepartureTime = team.dayStartTime;
-  const updatedClients: Client[] = [];
-  for (let i = 0; i < team.clients.length; i++) {
-    const client = team.clients[i];
-    const prevId = i === 0 ? 'base' : team.clients[i - 1].id;
-    const segment = team.travelSegments.get(`${prevId}->${client.id}`);
-    if (segment && !segment.isCalculating) currentTime += segment.durationMinutes;
-    if (i > 0) {
-      const brk = team.breaks.find((b) => b.afterClientId === team.clients[i - 1].id);
-      if (brk) currentTime += brk.durationMinutes;
-    }
-    let startTime: string;
-    if (client.fixedStartTime) {
-      startTime = client.fixedStartTime;
-      // Back-calculate base departure for the first client
-      if (i === 0 && segment && !segment.isCalculating) {
-        const fixedMin = parseTime(client.fixedStartTime);
-        baseDepartureTime = minutesToTime(fixedMin - segment.durationMinutes);
-      } else if (i === 0) {
-        baseDepartureTime = client.fixedStartTime;
-      }
-      currentTime = parseTime(client.fixedStartTime);
-    } else {
-      startTime = minutesToTime(currentTime);
-    }
-    const effectiveDuration = client.jobDurationMinutes / (client.staffCount || 1);
-    currentTime += effectiveDuration;
-    updatedClients.push({ ...client, startTime, endTime: minutesToTime(currentTime) });
+  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
+  const clients = team.clients;
+  const n = clients.length;
+
+  // Helper: get travel segment between two stops
+  const getTravel = (fromId: string | null, toId: string): number => {
+    if (!fromId) return 0;
+    const seg = team.travelSegments.get(`${fromId}->${toId}`);
+    return (seg && !seg.isCalculating) ? seg.durationMinutes : 0;
+  };
+  const getBreakAfter = (clientId: string): number => {
+    const brk = team.breaks.find(b => b.afterClientId === clientId);
+    return brk ? brk.durationMinutes : 0;
+  };
+  const effectiveDur = (c: Client): number => c.jobDurationMinutes / (c.staffCount || 1);
+
+  // Find the last client with a fixedStartTime (anchor for backward calculation)
+  let lastAnchorIdx = -1;
+  for (let i = n - 1; i >= 0; i--) {
+    if (clients[i].fixedStartTime) { lastAnchorIdx = i; break; }
   }
+
+  // Build result arrays
+  const startTimes: number[] = new Array(n);
+  const endTimes: number[] = new Array(n);
+
+  // --- BACKWARD PASS: from each anchor, work backwards to set times for preceding clients ---
+  // We process the first anchor found (scanning from end) and backward-fill everything before it.
+  if (lastAnchorIdx >= 0) {
+    // Set the anchor point
+    const anchorTime = parseTime(clients[lastAnchorIdx].fixedStartTime!);
+    startTimes[lastAnchorIdx] = anchorTime;
+    endTimes[lastAnchorIdx] = anchorTime + effectiveDur(clients[lastAnchorIdx]);
+
+    // Walk backward from anchor to set all preceding clients
+    for (let i = lastAnchorIdx - 1; i >= 0; i--) {
+      // The client after this one starts at startTimes[i+1].
+      // We need: endTimes[i] + break_after_i + travel(i→i+1) = startTimes[i+1]
+      // So: endTimes[i] = startTimes[i+1] - travel(i→i+1) - break_after_i
+      // But if client[i] also has its own fixedStartTime, use that instead
+      if (clients[i].fixedStartTime) {
+        startTimes[i] = parseTime(clients[i].fixedStartTime!);
+        endTimes[i] = startTimes[i] + effectiveDur(clients[i]);
+      } else {
+        const travelToNext = getTravel(clients[i].id, clients[i + 1].id);
+        const breakAfter = getBreakAfter(clients[i].id);
+        endTimes[i] = startTimes[i + 1] - travelToNext - breakAfter;
+        startTimes[i] = endTimes[i] - effectiveDur(clients[i]);
+      }
+    }
+
+    // --- FORWARD PASS: from anchor onward ---
+    let currentTime = endTimes[lastAnchorIdx];
+    for (let i = lastAnchorIdx + 1; i < n; i++) {
+      const travelTo = getTravel(clients[i - 1].id, clients[i].id);
+      const breakBefore = getBreakAfter(clients[i - 1].id);
+      currentTime += travelTo + breakBefore;
+
+      if (clients[i].fixedStartTime) {
+        currentTime = parseTime(clients[i].fixedStartTime!);
+      }
+      startTimes[i] = currentTime;
+      currentTime += effectiveDur(clients[i]);
+      endTimes[i] = currentTime;
+    }
+  } else {
+    // --- No anchors: pure forward pass from dayStartTime ---
+    let currentTime = parseTime(team.dayStartTime);
+    for (let i = 0; i < n; i++) {
+      const prevId = i === 0 ? (hasBase ? 'base' : null) : clients[i - 1].id;
+      currentTime += getTravel(prevId, clients[i].id);
+      if (i > 0) currentTime += getBreakAfter(clients[i - 1].id);
+      startTimes[i] = currentTime;
+      currentTime += effectiveDur(clients[i]);
+      endTimes[i] = currentTime;
+    }
+  }
+
+  // --- Back-calculate base departure time ---
+  let baseDepartureTime = team.dayStartTime;
+  if (n > 0) {
+    const firstTravel = getTravel(hasBase ? 'base' : null, clients[0].id);
+    baseDepartureTime = minutesToTime(startTimes[0] - firstTravel);
+  }
+
+  // Build updated clients
+  const updatedClients: Client[] = clients.map((c, i) => ({
+    ...c,
+    startTime: minutesToTime(startTimes[i]),
+    endTime: minutesToTime(endTimes[i]),
+  }));
+
   return { clients: updatedClients, baseDepartureTime };
 }
 
@@ -152,15 +220,16 @@ export function getRouteWaypoints(team: TeamSchedule) {
 }
 
 export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary, staffNames?: string[]): string {
+  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
   const h = ['Stop','Client','Address','Start','End','Duration','Staff','Effective Duration','Travel To (min)','Distance To (km)'];
-  const rows: string[][] = [['0','Base',team.baseAddress?.address||'',team.dayStartTime,'','','','','','']];
+  const rows: string[][] = hasBase ? [['0','Base',team.baseAddress?.address||'',team.dayStartTime,'','','','','','']] : [];
   team.clients.forEach((c, i) => {
-    const prevId = i === 0 ? 'base' : team.clients[i-1].id;
-    const seg = team.travelSegments.get(`${prevId}->${c.id}`);
+    const prevId = i === 0 ? (hasBase ? 'base' : null) : team.clients[i-1].id;
+    const seg = prevId ? team.travelSegments.get(`${prevId}->${c.id}`) : null;
     const eff = c.jobDurationMinutes / (c.staffCount || 1);
     rows.push([String(i+1),c.name,c.location.address,c.startTime||'',c.endTime||'',`${c.jobDurationMinutes} min`,String(c.staffCount||1),`${eff.toFixed(0)} min`,seg?String(seg.durationMinutes):'',seg?String(seg.distanceKm):'']);
   });
-  if (team.clients.length > 0) {
+  if (team.clients.length > 0 && hasBase) {
     const last = team.clients[team.clients.length-1];
     const ret = team.travelSegments.get(`${last.id}->base-return`);
     rows.push([String(team.clients.length+1),'Return to Base',team.baseAddress?.address||'',last.endTime||'','','','','',ret?String(ret.durationMinutes):'',ret?String(ret.distanceKm):'']);

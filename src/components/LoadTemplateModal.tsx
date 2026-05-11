@@ -12,6 +12,7 @@ interface TeamTemplateData {
   teamId: string;
   dayStartTime?: string;
   baseAddress?: unknown;
+  breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[];
   clients: Client[];
 }
 

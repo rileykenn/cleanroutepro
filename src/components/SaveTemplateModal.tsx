@@ -50,11 +50,11 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
     setSaving(true);
 
     // Build week_data: keyed by day index (0=Mon, 6=Sun), each containing team data
-    const weekData: Record<string, { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; clients: Partial<Client>[] }[]> = {};
+    const weekData: Record<string, { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; breaks: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Partial<Client>[] }[]> = {};
 
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       const date = weekDates[dayIdx];
-      const dayTeams: { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; clients: Partial<Client>[] }[] = [];
+      const dayTeams: { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; breaks: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Partial<Client>[] }[] = [];
 
       for (const team of teams) {
         const teamDayData = weekSchedules.get(team.id)?.get(date);
@@ -65,6 +65,15 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
             teamId: team.id,
             dayStartTime: team.dayStartTime,
             baseAddress: team.baseAddress,
+            breaks: team.breaks.map(b => {
+              // Map afterClientId to client index for stable matching across save/load
+              const clientIdx = clients.findIndex(c => c.id === b.afterClientId);
+              return {
+                afterClientIndex: clientIdx,
+                durationMinutes: b.durationMinutes,
+                label: b.label,
+              };
+            }).filter(b => b.afterClientIndex >= 0),
             clients: clients.map((c) => ({
               name: c.name,
               location: c.location,
@@ -74,6 +83,7 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
               fixedStartTime: c.fixedStartTime,
               savedClientId: c.savedClientId,
               notes: c.notes,
+              assignedStaffIds: c.assignedStaffIds,
             })),
           });
         }

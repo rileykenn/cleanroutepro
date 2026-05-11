@@ -33,7 +33,8 @@ export default function SchedulePage() {
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
   activeTeamIdRef.current = state.activeTeamId;
-  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; clientCount: number } | null>(null);
+  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; weekJobCount: number } | null>(null);
+  const allOrgTeamsRef = useRef<TeamSchedule[]>([]);
 
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
@@ -194,6 +195,7 @@ export default function SchedulePage() {
                   jobDurationMinutes: Number(j.duration_minutes) || 90,
                   staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
                   isLocked: (j.is_locked as boolean) || false,
+                  fixedStartTime: (j.fixed_start_time as string) || undefined,
                   startTime: (j.start_time as string) || undefined,
                   endTime: (j.end_time as string) || undefined,
                   notes: (j.notes as string) || undefined,
@@ -227,9 +229,25 @@ export default function SchedulePage() {
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
 
+      // Store ALL org teams for the add-team feature
+      allOrgTeamsRef.current = teamsList;
+
+      // Filter to only teams that have at least one schedule row this week
+      const teamsWithSchedules = teamsList.filter((team: TeamSchedule) => {
+        const teamMap = allTeamMaps.get(team.id);
+        if (!teamMap) return false;
+        for (const [, dayData] of teamMap) {
+          if (dayData.scheduleId !== null) return true;
+        }
+        return false;
+      });
+
+      // Always show at least one team (first team as default)
+      const visibleTeams = teamsWithSchedules.length > 0 ? teamsWithSchedules : [teamsList[0]];
+
       // Load the active day into the reducer
       const today = state.selectedDate;
-      const teamsWithClients = teamsList.map((team: TeamSchedule) => {
+      const teamsWithClients = visibleTeams.map((team: TeamSchedule) => {
         const teamMap = allTeamMaps.get(team.id);
         const dayData = teamMap?.get(today);
         return {
@@ -302,8 +320,17 @@ export default function SchedulePage() {
   // ─── Load specific day into reducer for Day View ───
   const loadDayForEdit = useCallback(async (date: string) => {
     if (!orgId) return;
-    const teamsList = await loadTeams();
-    if (!teamsList) return;
+    // Use the currently visible teams (already filtered per-week) instead of ALL teams
+    const currentTeams = state.teams.length > 0 ? state.teams : allOrgTeamsRef.current;
+    if (!currentTeams || currentTeams.length === 0) return;
+
+    // Clone teams so we can mutate them
+    const teamsList = currentTeams.map(t => ({
+      ...t,
+      clients: [] as Client[],
+      travelSegments: new Map<string, TravelSegment>(),
+      breaks: [] as typeof t.breaks,
+    }));
 
     for (const team of teamsList) {
       const { data: schedule } = await supabase
@@ -345,6 +372,7 @@ export default function SchedulePage() {
                 jobDurationMinutes: Number(j.duration_minutes) || 90,
                 staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
                 isLocked: (j.is_locked as boolean) || false,
+                fixedStartTime: (j.fixed_start_time as string) || undefined,
                 startTime: (j.start_time as string) || undefined,
                 endTime: (j.end_time as string) || undefined,
                 notes: (j.notes as string) || undefined,
@@ -356,7 +384,7 @@ export default function SchedulePage() {
       }
     }
     dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
-  }, [orgId, supabase, loadTeams]);
+  }, [orgId, supabase, state.teams]);
 
   // ─── Week Navigation ───
   const goToPrevWeek = () => {
@@ -552,45 +580,86 @@ export default function SchedulePage() {
   // ─── Team handlers ───
   const handleAddTeam = useCallback(async () => {
     if (!orgId) return;
-    const usedIndices = state.teams.map(t => t.colorIndex);
-    const colorIndex = getNextColorIndex(usedIndices);
-    const baseAddr = state.teams[0]?.baseAddress;
-    const { data } = await supabase.from('teams').insert({
-      org_id: orgId, name: `Team ${state.teams.length + 1}`, color_index: colorIndex, sort_order: state.teams.length,
-      ...(baseAddr ? { base_address: baseAddr.address, base_lat: baseAddr.lat, base_lng: baseAddr.lng, base_place_id: baseAddr.placeId || null } : {}),
-    }).select().single();
-    if (data) {
-      const newTeam: TeamSchedule = {
+
+    // Check if there are existing teams not currently shown this week
+    const shownTeamIds = new Set(state.teams.map(t => t.id));
+    const unusedTeam = allOrgTeamsRef.current.find(t => !shownTeamIds.has(t.id));
+
+    let teamToAdd: TeamSchedule;
+
+    if (unusedTeam) {
+      // Reuse an existing team that's not in this week
+      teamToAdd = unusedTeam;
+    } else {
+      // Create a brand new team
+      const usedIndices = state.teams.map(t => t.colorIndex);
+      const colorIndex = getNextColorIndex(usedIndices);
+      const baseAddr = state.teams[0]?.baseAddress;
+      const { data } = await supabase.from('teams').insert({
+        org_id: orgId, name: `Team ${allOrgTeamsRef.current.length + 1}`, color_index: colorIndex, sort_order: allOrgTeamsRef.current.length,
+        ...(baseAddr ? { base_address: baseAddr.address, base_lat: baseAddr.lat, base_lng: baseAddr.lng, base_place_id: baseAddr.placeId || null } : {}),
+      }).select().single();
+      if (!data) return;
+      teamToAdd = {
         id: data.id, name: data.name, color: TEAM_COLORS[colorIndex], colorIndex,
         baseAddress: baseAddr ? { ...baseAddr } : null, returnAddress: null,
         clients: [], travelSegments: new Map(), dayStartTime: '08:00',
         breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
       };
-      dispatch({ type: 'LOAD_STATE', teams: [...state.teams, newTeam], activeTeamId: newTeam.id, selectedDate: state.selectedDate });
+      allOrgTeamsRef.current = [...allOrgTeamsRef.current, teamToAdd];
     }
-  }, [orgId, supabase, state.teams, state.selectedDate]);
 
-  const handleRemoveTeam = useCallback((teamId: string) => {
+    // Create an empty schedule row for the first day of the current week
+    // so this team appears in the week view
+    const firstDate = weekDates[0];
+    const { data: existingSched } = await supabase
+      .from('schedules').select('id').eq('team_id', teamToAdd.id).eq('schedule_date', firstDate).maybeSingle();
+    if (!existingSched) {
+      await supabase.from('schedules').insert({ org_id: orgId, team_id: teamToAdd.id, schedule_date: firstDate });
+    }
+
+    // Add to UI immediately
+    dispatch({ type: 'LOAD_STATE', teams: [...state.teams, { ...teamToAdd, clients: [], travelSegments: new Map(), breaks: [] }], activeTeamId: teamToAdd.id, selectedDate: state.selectedDate });
+    // Reload to sync fully
+    loadWeekSchedules(weekDates);
+  }, [orgId, supabase, state.teams, state.selectedDate, weekDates, loadWeekSchedules]);
+
+  const handleRemoveTeam = useCallback(async (teamId: string) => {
     if (state.teams.length <= 1) return;
     const team = state.teams.find(t => t.id === teamId);
-    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', clientCount: team?.clients.length || 0 });
-  }, [state.teams]);
+    // Count jobs for this team in the CURRENT WEEK only
+    let weekJobCount = 0;
+    const { data: weekScheds } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
+    if (weekScheds && weekScheds.length > 0) {
+      const schedIds = weekScheds.map((s: { id: string }) => s.id);
+      const { count } = await supabase
+        .from('schedule_jobs').select('id', { count: 'exact', head: true })
+        .in('schedule_id', schedIds).eq('is_break', false);
+      weekJobCount = count || 0;
+    }
+    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', weekJobCount });
+  }, [state.teams, supabase, weekDates]);
 
   const confirmDeleteTeam = useCallback(async () => {
     if (!pendingDeleteTeam) return;
     const teamId = pendingDeleteTeam.id;
     setPendingDeleteTeam(null);
-    const { data: schedules } = await supabase.from('schedules').select('id').eq('team_id', teamId);
-    if (schedules) {
-      for (const s of schedules) await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
-      await supabase.from('schedules').delete().eq('team_id', teamId);
+    // Only delete schedules for the CURRENT WEEK — not all weeks
+    const { data: weekScheds } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
+    if (weekScheds) {
+      for (const s of weekScheds) await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
+      for (const s of weekScheds) await supabase.from('schedules').delete().eq('id', s.id);
     }
-    await supabase.from('teams').delete().eq('id', teamId);
-    dispatch({ type: 'REMOVE_TEAM', teamId });
-  }, [supabase, pendingDeleteTeam]);
+    // Clear team clients in the UI for this week but keep the team entity
+    dispatch({ type: 'LOAD_STATE', teams: state.teams.map(t => t.id === teamId ? { ...t, clients: [], travelSegments: new Map(), breaks: [] } : t), activeTeamId: state.teams.find(t => t.id !== teamId)?.id || state.activeTeamId, selectedDate: state.selectedDate });
+    // Reload week to refresh
+    loadWeekSchedules(weekDates);
+  }, [supabase, pendingDeleteTeam, weekDates, state.teams, state.activeTeamId, state.selectedDate, loadWeekSchedules]);
 
   // ─── Week template loading ───
-  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; clients: Client[] }[]>) => {
+  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>) => {
     // First save any pending day edits
     if (daySaveRef.current) await daySaveRef.current();
 
@@ -612,6 +681,11 @@ export default function SchedulePage() {
 
         if (!matchedTeam) continue;
 
+        // Restore dayStartTime from template if present
+        if (templateTeam.dayStartTime) {
+          await supabase.from('teams').update({ day_start_time: templateTeam.dayStartTime }).eq('id', matchedTeam.id);
+        }
+
         // Ensure schedule row exists for this team+date
         let scheduleId: string;
         const { data: existing } = await supabase
@@ -625,21 +699,54 @@ export default function SchedulePage() {
           scheduleId = created.id;
         }
 
-        // Delete existing jobs for this schedule and insert template clients
+        // Delete existing jobs for this schedule and insert template clients + breaks
         await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
 
+        const rows: Record<string, unknown>[] = [];
+        let position = 0;
+
         if (templateTeam.clients.length > 0) {
-          const rows = templateTeam.clients.map((c: Client, i: number) => ({
-            schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
-            position: i, name: c.name, address: c.location?.address || '',
-            lat: c.location?.lat || 0, lng: c.location?.lng || 0,
-            place_id: c.location?.placeId || null,
-            duration_minutes: c.jobDurationMinutes || 90,
-            staff_count: c.staffCount || 1,
-            is_locked: c.isLocked || false, is_break: false,
-            notes: c.notes || '',
-            assigned_staff_ids: c.assignedStaffIds || [],
-          }));
+          // Build a set of client indices that have breaks after them
+          const breakByIndex = new Map<number, { durationMinutes: number; label: string }>();
+          if (templateTeam.breaks) {
+            for (const b of templateTeam.breaks) {
+              breakByIndex.set(b.afterClientIndex, { durationMinutes: b.durationMinutes, label: b.label });
+            }
+          }
+
+          for (let ci = 0; ci < templateTeam.clients.length; ci++) {
+            const c = templateTeam.clients[ci] as Client;
+            rows.push({
+              schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
+              position, name: c.name, address: c.location?.address || '',
+              lat: c.location?.lat || 0, lng: c.location?.lng || 0,
+              place_id: c.location?.placeId || null,
+              duration_minutes: c.jobDurationMinutes || 90,
+              staff_count: c.staffCount || 1,
+              is_locked: c.isLocked || false, is_break: false,
+              notes: c.notes || '',
+              assigned_staff_ids: c.assignedStaffIds || [],
+              fixed_start_time: c.fixedStartTime || null,
+            });
+            position++;
+
+            // Insert break after this client if the template had one at this index
+            const breakData = breakByIndex.get(ci);
+            if (breakData) {
+              rows.push({
+                schedule_id: scheduleId, org_id: orgId, client_id: null,
+                position, name: breakData.label || 'Break', address: '',
+                lat: 0, lng: 0, place_id: null,
+                duration_minutes: breakData.durationMinutes,
+                staff_count: 1,
+                is_locked: false, is_break: true, break_label: breakData.label || 'Break',
+                notes: '',
+                assigned_staff_ids: [],
+              });
+              position++;
+            }
+          }
+
           await supabase.from('schedule_jobs').insert(rows);
         }
       }
@@ -945,13 +1052,13 @@ export default function SchedulePage() {
         )}
         {pendingDeleteTeam && (
           <ConfirmModal
-            title={`Delete ${pendingDeleteTeam.name}?`}
+            title={`Clear ${pendingDeleteTeam.name} this week?`}
             message={
-              pendingDeleteTeam.clientCount > 0
-                ? `This will permanently delete all ${pendingDeleteTeam.clientCount} scheduled job${pendingDeleteTeam.clientCount !== 1 ? 's' : ''} and travel data for this team. This action cannot be undone.`
-                : 'All scheduling data for this team will be permanently deleted. This action cannot be undone.'
+              pendingDeleteTeam.weekJobCount > 0
+                ? `This will remove ${pendingDeleteTeam.weekJobCount} scheduled job${pendingDeleteTeam.weekJobCount !== 1 ? 's' : ''} for ${pendingDeleteTeam.name} this week only. Other weeks will not be affected.`
+                : `This will clear ${pendingDeleteTeam.name} from the current week. Other weeks will not be affected.`
             }
-            confirmLabel="Delete Team"
+            confirmLabel="Clear This Week"
             onConfirm={confirmDeleteTeam}
             onCancel={() => setPendingDeleteTeam(null)}
             danger

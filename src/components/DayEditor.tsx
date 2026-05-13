@@ -285,34 +285,34 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       <MapsInitializer onServiceReady={setDirectionsService} />
       <div className="flex-1 flex min-h-0 h-full">
         {/* Schedule Panel */}
-        <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light bg-white/50`}>
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border-light bg-white">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-text-primary">{formatDateDisplay(state.selectedDate)}</span>
-              {dbLoaded && <span className="text-[10px] text-text-tertiary">· Auto-saving</span>}
+        <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[460px] lg:w-[500px] shrink-0 border-r border-border-light bg-white/50`}>
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-light bg-white">
+            <div className="flex items-center gap-3">
+              <span className="text-[14px] font-semibold text-text-primary">{formatDateDisplay(state.selectedDate)}</span>
+              {dbLoaded && <span className="text-[11px] text-text-tertiary">· Auto-saving</span>}
             </div>
             <button onClick={() => setMobileShowMap(!mobileShowMap)} className="md:hidden btn-ghost">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
                 <line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" />
               </svg>
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-3">
             {/* Base Address */}
             {activeTeam.baseAddress !== null ? (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-4">
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ backgroundColor: activeTeam.color.light }}>🏠</div>
-                    <span className="text-xs font-bold text-text-primary">Start Base</span>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: activeTeam.color.light }}>🏠</div>
+                    <span className="text-[13px] font-bold text-text-primary">Start Base</span>
                   </div>
                   <button
                     onClick={() => dispatch({ type: 'CLEAR_BASE_ADDRESS', teamId: activeTeam.id })}
-                    className="p-1.5 rounded-lg hover:bg-red-50 text-text-tertiary hover:text-red-500 transition-colors"
+                    className="p-2 rounded-lg hover:bg-red-50 text-text-tertiary hover:text-red-500 transition-colors"
                     title="Remove start base — day starts at first client"
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
                   </button>
                 </div>
                 <PlacesAutocomplete
@@ -335,7 +335,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     location: { address: '', lat: 0, lng: 0 },
                   });
                 }}
-                className="w-full card p-3 text-center border-dashed border-2 border-border-light text-text-tertiary hover:text-primary hover:border-primary transition-colors text-xs font-medium"
+                className="w-full card p-4 text-center border-dashed border-2 border-border-light text-text-tertiary hover:text-primary hover:border-primary transition-colors text-[13px] font-semibold"
               >
                 + Add Start Base
               </motion.button>
@@ -343,20 +343,20 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
             {/* Start Time */}
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-              className="card p-3">
+              className="card p-4">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Day starts at</span>
+                <span className="text-[13px] text-text-secondary font-medium">Day starts at</span>
                 <input type="time" value={activeTeam.dayStartTime}
                   onChange={(e) => dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value })}
-                  className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary" />
+                  className="text-[14px] font-semibold bg-surface-elevated border border-border-light rounded-xl px-4 py-2 outline-none focus:border-primary" />
               </div>
               {baseDepartureTime !== activeTeam.dayStartTime && (
-                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-light">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary shrink-0">
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border-light">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary shrink-0">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                   </svg>
-                  <span className="text-[11px] text-text-secondary">Leave base at</span>
-                  <span className="text-[11px] font-bold text-primary ml-auto">{baseDepartureTime}</span>
+                  <span className="text-[12px] text-text-secondary">Leave base at</span>
+                  <span className="text-[12px] font-bold text-primary ml-auto">{baseDepartureTime}</span>
                 </div>
               )}
             </motion.div>
@@ -364,18 +364,18 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             {/* Available staff summary */}
             {availableStaff.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-                className="card p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
+                className="card p-4">
+                <div className="flex items-center gap-2.5 mb-2.5">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
                     <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
                   </svg>
-                  <span className="text-xs font-bold text-text-primary">Available Today</span>
-                  <span className="text-[10px] text-text-tertiary">{availableStaff.length} staff</span>
+                  <span className="text-[13px] font-bold text-text-primary">Available Today</span>
+                  <span className="text-[11px] text-text-tertiary">{availableStaff.length} staff</span>
                 </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {availableStaff.map((s) => (
-                    <span key={s.id} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-surface-elevated text-text-secondary">
+                    <span key={s.id} className="text-[12px] font-medium px-2.5 py-1 rounded-lg bg-surface-elevated text-text-secondary">
                       {s.name}
                     </span>
                   ))}
@@ -386,9 +386,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             {/* Optimize */}
             {activeTeam.clients.length >= 2 && activeTeam.baseAddress && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
-                <button onClick={optimizeRoute} className="btn-secondary text-xs flex-1"
+                <button onClick={optimizeRoute} className="btn-secondary text-[13px] flex-1"
                   style={{ borderColor: `${activeTeam.color.primary}30`, color: activeTeam.color.primary }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M16 3h5v5" /><path d="M8 3H3v5" /><path d="M21 3l-7 7" /><path d="M3 3l7 7" />
                     <path d="M16 21h5v-5" /><path d="M8 21H3v-5" /><path d="M21 21l-7-7" /><path d="M3 21l7-7" />
                   </svg>

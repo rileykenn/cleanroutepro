@@ -145,14 +145,14 @@ function Inner({ children }: { children: React.ReactNode }) {
   if (!hasOrg) {
     return (
       <div className="h-full flex flex-col">
-        <div className="shrink-0 h-14 border-b border-border-light flex items-center justify-between px-4 bg-white">
+        <div className="shrink-0 h-[60px] border-b border-border-light flex items-center justify-between px-5 bg-white">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                 <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/>
               </svg>
             </div>
-            <span className="text-sm font-bold text-text-primary">CleanRoute Pro</span>
+            <span className="text-[15px] font-bold text-text-primary">CleanRoute Pro</span>
           </div>
           <div className="flex items-center gap-2">
             {pendingCount > 0 && (
@@ -202,22 +202,22 @@ function Inner({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[260px] bg-white border-r border-border-light flex flex-col transform transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[280px] bg-white border-r border-border-light flex flex-col transform transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         {/* Org Switcher Header */}
-        <div className="p-4 border-b border-border-light">
+        <div className="p-5 border-b border-border-light">
           <OrgSwitcher orgs={orgs} activeOrgId={profile?.org_id || ''} activeOrgName={profile?.org_name || ''}
             onSwitch={handleSwitch} onCreate={handleCreate} switching={switching}
             onDelete={(orgId, orgName) => setShowDelete({ orgId, orgName })} />
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <a key={item.href} href={item.href} onClick={(e) => { e.preventDefault(); router.push(item.href); setSidebarOpen(false); }}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive ? 'bg-primary-light text-primary border border-primary-border' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary border border-transparent'}`}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={isActive ? 'text-primary' : 'text-text-tertiary'}>
+                className={`flex items-center gap-3.5 px-4 py-3 rounded-xl text-[14px] font-semibold transition-all ${isActive ? 'bg-primary-light text-primary border border-primary-border' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary border border-transparent'}`}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={isActive ? 'text-primary' : 'text-text-tertiary'}>
                   <path d={item.d}/>
                 </svg>
                 {item.label}
@@ -227,35 +227,35 @@ function Inner({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* User footer */}
-        <div className="p-4 border-t border-border-light">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-primary-light flex items-center justify-center text-sm font-bold text-primary shrink-0">
+        <div className="p-5 border-t border-border-light">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-primary-light flex items-center justify-center text-sm font-bold text-primary shrink-0">
               {(profile?.full_name || profile?.email || '?').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-text-primary truncate">{profile?.full_name || profile?.email}</p>
-              <p className="text-xs text-text-tertiary capitalize">{userRole}</p>
+              <p className="text-[14px] font-semibold text-text-primary truncate">{profile?.full_name || profile?.email}</p>
+              <p className="text-[13px] text-text-tertiary capitalize">{userRole}</p>
             </div>
             {/* Notification bell */}
             {pendingCount > 0 && (
-              <button onClick={() => setShowInvites(true)} className="relative p-1.5 rounded-lg hover:bg-surface-hover">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <button onClick={() => setShowInvites(true)} className="relative p-2 rounded-lg hover:bg-surface-hover">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
                 </svg>
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center">{pendingCount}</span>
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-danger text-white text-[10px] font-bold rounded-full flex items-center justify-center">{pendingCount}</span>
               </button>
             )}
           </div>
           {/* Delete org (admin only) */}
           {userRole === 'admin' && (
             <button onClick={() => setShowDelete({ orgId: profile?.org_id || '', orgName: profile?.org_name || '' })}
-              className="w-full text-left px-3 py-2 rounded-lg text-xs text-text-tertiary hover:bg-surface-hover hover:text-danger transition-colors mb-1">
+              className="w-full text-left px-3 py-2.5 rounded-xl text-[13px] text-text-tertiary hover:bg-surface-hover hover:text-danger transition-colors mb-1">
               Delete Organisation
             </button>
           )}
           <button onClick={async () => { await signOut(); window.location.href = '/login'; }}
-            className="w-full text-left px-3 py-2 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-danger transition-colors flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            className="w-full text-left px-3 py-2.5 rounded-xl text-[14px] text-text-secondary hover:bg-surface-hover hover:text-danger transition-colors flex items-center gap-3">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
             </svg>
             Sign out
@@ -265,14 +265,14 @@ function Inner({ children }: { children: React.ReactNode }) {
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         {/* Mobile header */}
-        <div className="lg:hidden shrink-0 h-14 border-b border-border-light flex items-center justify-between px-4 bg-white">
+        <div className="lg:hidden shrink-0 h-[60px] border-b border-border-light flex items-center justify-between px-5 bg-white">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 rounded-lg hover:bg-surface-hover text-text-secondary">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <button onClick={() => setSidebarOpen(true)} className="p-2.5 -ml-2 rounded-xl hover:bg-surface-hover text-text-secondary">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
               </svg>
             </button>
-            <span className="text-sm font-bold text-text-primary">{profile?.org_name}</span>
+            <span className="text-[15px] font-bold text-text-primary">{profile?.org_name}</span>
           </div>
           {pendingCount > 0 && (
             <button onClick={() => setShowInvites(true)} className="relative p-2 rounded-lg hover:bg-surface-hover">

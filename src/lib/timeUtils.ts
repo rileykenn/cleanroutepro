@@ -1,3 +1,5 @@
+import { getTodayInTimezone, formatDateInTimezone } from './timezone';
+
 /**
  * Format minutes into human-readable string
  * e.g. 90 => "1h 30m", 45 => "45m"
@@ -69,11 +71,10 @@ export function generateId(): string {
 }
 
 /**
- * Get today's date as ISO string (YYYY-MM-DD)
+ * Get today's date as ISO string (YYYY-MM-DD) in the configured timezone.
  */
 export function getTodayISO(): string {
-  const now = new Date();
-  return now.toISOString().split('T')[0];
+  return getTodayInTimezone();
 }
 
 /**
@@ -187,7 +188,7 @@ export function getMonthCalendarDates(year: number, month: number): string[][] {
   while (current <= lastDay || current.getDay() !== 1) {
     const week: string[] = [];
     for (let i = 0; i < 7; i++) {
-      week.push(current.toISOString().split('T')[0]);
+      week.push(formatDateInTimezone(current));
       current.setDate(current.getDate() + 1);
     }
     weeks.push(week);

@@ -16,12 +16,12 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
   const { teams, activeTeamId } = state;
 
   return (
-    <div className="flex items-center gap-2.5 px-1">
+    <div className="flex items-center gap-2 px-1">
       {/* View All tab — only show when 2+ teams AND in week view */}
       {teams.length >= 2 && state.viewMode === 'week' && (
         <motion.div
           onClick={() => onSelectTeam('all')}
-          className="relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[14px] font-semibold transition-all cursor-pointer"
+          className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
           style={{
             backgroundColor: activeTeamId === 'all' ? '#F3F4F6' : 'transparent',
             color: activeTeamId === 'all' ? '#111827' : '#6B7280',
@@ -30,7 +30,7 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
             <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
           </svg>
@@ -38,7 +38,7 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
           {(() => {
             const totalClients = teams.reduce((s, t) => s + t.clients.length, 0);
             return totalClients > 0 ? (
-              <span className="text-[12px] px-2 py-0.5 rounded-full font-bold" style={{
+              <span className="text-xs px-1.5 py-0.5 rounded-full font-bold" style={{
                 backgroundColor: activeTeamId === 'all' ? '#374151' : '#E5E7EB',
                 color: activeTeamId === 'all' ? 'white' : '#6B7280',
               }}>{totalClients}</span>
@@ -53,11 +53,11 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
           <motion.div
             key={team.id}
             onClick={() => onSelectTeam(team.id)}
-            className="relative flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-[14px] font-semibold transition-all cursor-pointer"
+            className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
             style={{
               backgroundColor: isActive ? team.color.light : 'transparent',
               color: isActive ? team.color.text : '#6B7280',
-              border: isActive ? `1.5px solid ${team.color.border}` : '1.5px solid transparent',
+              border: isActive ? `1px solid ${team.color.border}` : '1px solid transparent',
             }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -69,7 +69,7 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
             <span>Team {index + 1}</span>
             {team.clients.length > 0 && (
               <span
-                className="text-[12px] px-2 py-0.5 rounded-full font-bold"
+                className="text-xs px-1.5 py-0.5 rounded-full font-bold"
                 style={{
                   backgroundColor: isActive ? team.color.primary : '#E5E7EB',
                   color: isActive ? 'white' : '#6B7280',
@@ -82,7 +82,7 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
             {/* Staff headcount from roster */}
             {assignedStaff.length > 0 && (
               <span
-                className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                 style={{
                   backgroundColor: isActive ? `${team.color.primary}20` : '#F3F4F6',
                   color: isActive ? team.color.text : '#9CA3AF',
@@ -110,10 +110,10 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
                     else dispatch({ type: 'REMOVE_TEAM', teamId: team.id });
                   }
                 }}
-                className="ml-1 p-1 rounded-lg hover:bg-white/60 text-current opacity-50 hover:opacity-100 transition-opacity"
+                className="ml-1 p-0.5 rounded hover:bg-white/60 text-current opacity-50 hover:opacity-100 transition-opacity"
                 title="Remove team from this day"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </span>
@@ -126,12 +126,12 @@ export default function TeamTabs({ state, dispatch, onSelectTeam, onAddTeam, onR
       {state.viewMode === 'day' && (
         <motion.button
           onClick={() => { if (onAddTeam) onAddTeam(); else dispatch({ type: 'ADD_TEAM' }); }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[14px] font-semibold text-text-tertiary
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-text-tertiary
                    hover:text-text-secondary hover:bg-surface-hover transition-all cursor-pointer"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>

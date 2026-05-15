@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
+import { getAppTimezone, setAppTimezone, TIMEZONE_OPTIONS } from '@/lib/timezone';
 
 export default function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
@@ -11,6 +12,16 @@ export default function SettingsPage() {
   const [orgName, setOrgName] = useState(profile?.org_name || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Timezone state — initialized from the global module (which was set by auth hook)
+  const [timezone, setTimezone] = useState(getAppTimezone());
+  const [tzSaving, setTzSaving] = useState(false);
+  const [tzSaved, setTzSaved] = useState(false);
+
+  // Sync timezone state when profile loads
+  useEffect(() => {
+    setTimezone(getAppTimezone());
+  }, [profile]);
 
   const handleSaveOrg = async () => {
     if (!profile?.org_id) return;
@@ -20,6 +31,24 @@ export default function SettingsPage() {
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
+
+  const handleSaveTimezone = async () => {
+    if (!profile?.org_id) return;
+    setTzSaving(true);
+    await supabase.from('organizations').update({ timezone }).eq('id', profile.org_id);
+    setAppTimezone(timezone);
+    await refreshProfile();
+    setTzSaving(false); setTzSaved(true);
+    setTimeout(() => setTzSaved(false), 2000);
+  };
+
+  // Detect browser timezone for the label
+  const browserTz = useMemo(() => {
+    if (typeof Intl !== 'undefined') {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+    return 'Unknown';
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar">
@@ -35,6 +64,37 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2">
             <button onClick={handleSaveOrg} disabled={saving} className="btn-primary text-sm">{saving ? 'Saving...' : 'Save Changes'}</button>
             {saved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
+          </div>
+        </div>
+
+        {/* Timezone Setting */}
+        <div className="card-elevated p-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-text-primary">Timezone</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">All dates and times across the app will display in this timezone.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Business Timezone</label>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="input-field text-sm w-full"
+            >
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-text-tertiary mt-1.5">
+              Your browser timezone: <span className="font-medium text-text-secondary">{browserTz}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleSaveTimezone} disabled={tzSaving} className="btn-primary text-sm">
+              {tzSaving ? 'Saving...' : 'Save Timezone'}
+            </button>
+            {tzSaved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
           </div>
         </div>
 

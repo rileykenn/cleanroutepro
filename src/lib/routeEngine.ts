@@ -206,16 +206,31 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
 }
 
 export function getRouteWaypoints(team: TeamSchedule) {
-  if (!team.baseAddress || team.clients.length === 0) return null;
+  if (team.clients.length === 0) return null;
+  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
   const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
-  const lastClient = team.clients[team.clients.length - 1];
-  const destination = returnAddr
-    ? { lat: returnAddr.lat, lng: returnAddr.lng }
-    : { lat: lastClient.location.lat, lng: lastClient.location.lng };
+
+  if (hasBase) {
+    const destination = returnAddr
+      ? { lat: returnAddr.lat, lng: returnAddr.lng }
+      : { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng };
+    return {
+      origin: { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng },
+      destination,
+      waypoints: team.clients.map((c) => ({ location: { lat: c.location.lat, lng: c.location.lng }, stopover: true })),
+    };
+  }
+
+  // No base: route from first client to last
+  if (team.clients.length < 2) return null;
+  const first = team.clients[0];
+  const last = team.clients[team.clients.length - 1];
   return {
-    origin: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
-    destination,
-    waypoints: team.clients.map((c) => ({ location: { lat: c.location.lat, lng: c.location.lng }, stopover: true })),
+    origin: { lat: first.location.lat, lng: first.location.lng },
+    destination: returnAddr
+      ? { lat: returnAddr.lat, lng: returnAddr.lng }
+      : { lat: last.location.lat, lng: last.location.lng },
+    waypoints: team.clients.slice(1, -1).map((c) => ({ location: { lat: c.location.lat, lng: c.location.lng }, stopover: true })),
   };
 }
 

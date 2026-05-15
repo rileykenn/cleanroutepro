@@ -17,18 +17,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
       let orgName = '';
       let subscriptionStatus = 'trialing';
       let subscriptionTier = 'pro';
+      let orgTimezone: string | null = null;
 
       // Only fetch org if they have one
       if (profileData.org_id) {
         const { data: orgData } = await supabase
           .from('organizations')
-          .select('name, subscription_status, subscription_tier')
+          .select('name, subscription_status, subscription_tier, timezone')
           .eq('id', profileData.org_id)
           .single();
 
         orgName = orgData?.name || '';
         subscriptionStatus = orgData?.subscription_status || 'trialing';
         subscriptionTier = orgData?.subscription_tier || 'pro';
+        orgTimezone = orgData?.timezone || null;
       }
 
       serverProfile = {
@@ -42,6 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         org_name: orgName,
         subscription_status: subscriptionStatus,
         subscription_tier: subscriptionTier,
+        timezone: orgTimezone,
       };
     }
   }

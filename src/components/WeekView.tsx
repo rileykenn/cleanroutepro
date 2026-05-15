@@ -19,7 +19,7 @@ interface WeekViewProps {
 
 export default function WeekView({ weekDates, daySchedules, teamColor, activeDate, onDayClick, allTeamsMode, allTeams, allTeamSchedules, staffNameMap }: WeekViewProps) {
   return (
-    <div className="flex gap-3 h-full overflow-x-auto custom-scrollbar p-4 lg:p-5">
+    <div className="flex gap-2 h-full overflow-x-auto custom-scrollbar p-3 lg:p-4">
       {weekDates.map((date) => {
         if (allTeamsMode && allTeams && allTeamSchedules) {
           // Merge all teams' clients into one DaySchedule with color info

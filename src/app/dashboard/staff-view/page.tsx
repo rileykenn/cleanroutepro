@@ -6,6 +6,9 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { Suspense, lazy } from 'react';
 
+import { getTodayISO } from '@/lib/timeUtils';
+import { formatDateInTimezone } from '@/lib/timezone';
+
 const ClientInfoPanel = lazy(() => import('@/components/ClientInfoPanel'));
 
 interface JobInfo {
@@ -71,9 +74,11 @@ export default function StaffViewPage() {
   const [infoJobId, setInfoJobId] = useState<string | null>(null);
   const [allStaff, setAllStaff] = useState<{ id: string; name: string }[]>([]);
 
-  // Generate week dates (Mon–Sun)
+  // Generate week dates (Mon–Sun) — timezone-aware
   const weekDates = useMemo(() => {
-    const today = new Date();
+    const todayISO = getTodayISO();
+    const parts = todayISO.split('-').map(Number);
+    const today = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
     const day = today.getDay();
     const monday = new Date(today);
     monday.setDate(today.getDate() - ((day + 6) % 7) + weekOffset * 7);
@@ -82,12 +87,13 @@ export default function StaffViewPage() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
+      const dateStr = formatDateInTimezone(d);
       days.push({
-        date: d.toISOString().split('T')[0],
+        date: dateStr,
         dayName: d.toLocaleDateString('en-AU', { weekday: 'short' }),
         dayNum: d.getDate(),
         monthName: d.toLocaleDateString('en-AU', { month: 'short' }),
-        isToday: d.toISOString().split('T')[0] === new Date().toISOString().split('T')[0],
+        isToday: dateStr === todayISO,
       });
     }
     return days;

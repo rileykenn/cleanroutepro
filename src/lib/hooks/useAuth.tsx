@@ -2,6 +2,7 @@
 
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { setAppTimezone } from '@/lib/timezone';
 import type { User } from '@supabase/supabase-js';
 
 export interface UserProfile {
@@ -15,6 +16,7 @@ export interface UserProfile {
   org_name: string;
   subscription_status: string;
   subscription_tier: string;
+  timezone: string | null;
 }
 
 interface AuthContextType {
@@ -62,12 +64,16 @@ export function AuthProvider({ children, serverProfile }: { children: React.Reac
       if (profileData.org_id) {
         const { data: orgData } = await supabase
           .from('organizations')
-          .select('name, subscription_status, subscription_tier')
+          .select('name, subscription_status, subscription_tier, timezone')
           .eq('id', profileData.org_id)
           .single();
         orgName = orgData?.name || '';
         subscriptionStatus = orgData?.subscription_status || 'trialing';
         subscriptionTier = orgData?.subscription_tier || 'pro';
+        // Apply org timezone globally (null = browser default, already set)
+        if (orgData?.timezone) {
+          setAppTimezone(orgData.timezone);
+        }
       }
 
       setProfile({
@@ -81,6 +87,7 @@ export function AuthProvider({ children, serverProfile }: { children: React.Reac
         org_name: orgName,
         subscription_status: subscriptionStatus,
         subscription_tier: subscriptionTier,
+        timezone: null, // Will be populated from org data above
       });
     } catch (err) {
       console.error('[Auth] Unexpected error loading profile:', err);

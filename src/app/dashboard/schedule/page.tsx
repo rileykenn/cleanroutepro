@@ -33,6 +33,8 @@ export default function SchedulePage() {
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
   activeTeamIdRef.current = state.activeTeamId;
+  const viewModeRef = useRef(state.viewMode);
+  viewModeRef.current = state.viewMode;
   const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; date: string; dayJobCount: number } | null>(null);
   const allOrgTeamsRef = useRef<TeamSchedule[]>([]);
 
@@ -245,25 +247,30 @@ export default function SchedulePage() {
       // Always show at least one team (first team as default)
       const visibleTeams = teamsWithSchedules.length > 0 ? teamsWithSchedules : [teamsList[0]];
 
-      // Load the active day into the reducer
-      const today = state.selectedDate;
-      const teamsWithClients = visibleTeams.map((team: TeamSchedule) => {
-        const teamMap = allTeamMaps.get(team.id);
-        const dayData = teamMap?.get(today);
-        return {
-          ...team,
-          clients: dayData?.clients || [],
-          // Per-day base address override
-          baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
-          returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
-        };
-      });
-      dispatch({
-        type: 'LOAD_STATE',
-        teams: teamsWithClients,
-        activeTeamId: teamsWithClients.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
-        selectedDate: today,
-      });
+      // Only dispatch LOAD_STATE if we're NOT in day view.
+      // Day view manages its own state via loadDayForEdit/loadDayFromCache.
+      // Overwriting it here would cause jobs to disappear and base addresses to flash.
+      if (viewModeRef.current !== 'day') {
+        // Load the active day into the reducer
+        const today = state.selectedDate;
+        const teamsWithClients = visibleTeams.map((team: TeamSchedule) => {
+          const teamMap = allTeamMaps.get(team.id);
+          const dayData = teamMap?.get(today);
+          return {
+            ...team,
+            clients: dayData?.clients || [],
+            // Per-day base address override
+            baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
+            returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
+          };
+        });
+        dispatch({
+          type: 'LOAD_STATE',
+          teams: teamsWithClients,
+          activeTeamId: teamsWithClients.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
+          selectedDate: today,
+        });
+      }
       setDbLoaded(true);
     } catch (err) {
       console.error('[Schedule] Failed to load week schedules:', err);
@@ -317,14 +324,48 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.teams, allStaff]);
 
-  // ─── Load specific day into reducer for Day View ───
+  // ─── Load specific day into reducer for Day View (bulk queries) ───
   const loadDayForEdit = useCallback(async (date: string) => {
     if (!orgId) return;
-    // Query ALL org teams so we can check which ones have schedules on this day
     const allTeams = allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : (await loadTeams() || []);
     if (allTeams.length === 0) return;
 
-    // Clone teams so we can mutate them; track which have schedules on this day
+    const teamIds = allTeams.map((t: TeamSchedule) => t.id);
+
+    // ── 1 bulk query: all schedules for these teams on this date ──
+    const { data: schedules } = await supabase
+      .from('schedules')
+      .select('id, team_id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
+      .eq('schedule_date', date)
+      .in('team_id', teamIds);
+
+    const scheduleByTeam = new Map<string, Record<string, unknown>>();
+    const scheduleIds: string[] = [];
+    if (schedules) {
+      for (const s of schedules) {
+        scheduleByTeam.set(s.team_id as string, s as Record<string, unknown>);
+        scheduleIds.push(s.id as string);
+      }
+    }
+
+    // ── 1 bulk query: all jobs for those schedules ──
+    const jobsBySchedule = new Map<string, Record<string, unknown>[]>();
+    if (scheduleIds.length > 0) {
+      const { data: jobs } = await supabase
+        .from('schedule_jobs').select('*')
+        .in('schedule_id', scheduleIds)
+        .order('position');
+      if (jobs) {
+        for (const j of jobs as Record<string, unknown>[]) {
+          const sid = j.schedule_id as string;
+          const list = jobsBySchedule.get(sid) || [];
+          list.push(j);
+          jobsBySchedule.set(sid, list);
+        }
+      }
+    }
+
+    // ── Build teams from bulk results ──
     const teamsList: TeamSchedule[] = [];
     const teamsWithSchedule = new Set<string>();
 
@@ -336,12 +377,9 @@ export default function SchedulePage() {
         breaks: [] as typeof t.breaks,
       };
 
-      const { data: schedule } = await supabase
-        .from('schedules').select('id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
-        .eq('team_id', team.id).eq('schedule_date', date).maybeSingle();
+      const schedule = scheduleByTeam.get(team.id);
       if (schedule) {
         teamsWithSchedule.add(team.id);
-        // Per-day base address override
         const hasStartBase = schedule.has_start_base !== false;
         const hasReturnBase = schedule.has_return_base !== false;
 
@@ -362,40 +400,78 @@ export default function SchedulePage() {
           };
         }
 
-        const { data: jobs } = await supabase
-          .from('schedule_jobs').select('*')
-          .eq('schedule_id', schedule.id).order('position');
-        if (jobs) {
-          team.clients = jobs
-            .filter((j: Record<string, unknown>) => !j.is_break)
-            .map((j: Record<string, unknown>): Client => {
-              const assignedIds = (j.assigned_staff_ids as string[]) || [];
-              return {
-                id: j.id as string, name: (j.name as string) || '',
-                location: { address: (j.address as string) || '', lat: (j.lat as number) || 0, lng: (j.lng as number) || 0, placeId: (j.place_id as string) || undefined },
-                jobDurationMinutes: Number(j.duration_minutes) || 90,
-                staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
-                isLocked: (j.is_locked as boolean) || false,
-                fixedStartTime: (j.fixed_start_time as string) || undefined,
-                startTime: (j.start_time as string) || undefined,
-                endTime: (j.end_time as string) || undefined,
-                notes: (j.notes as string) || undefined,
-                savedClientId: (j.client_id as string) || undefined,
-                assignedStaffIds: assignedIds,
-              };
-            });
-        }
+        const jobs = jobsBySchedule.get(schedule.id as string) || [];
+        team.clients = jobs
+          .filter((j) => !j.is_break)
+          .map((j): Client => {
+            const assignedIds = (j.assigned_staff_ids as string[]) || [];
+            return {
+              id: j.id as string, name: (j.name as string) || '',
+              location: { address: (j.address as string) || '', lat: (j.lat as number) || 0, lng: (j.lng as number) || 0, placeId: (j.place_id as string) || undefined },
+              jobDurationMinutes: Number(j.duration_minutes) || 90,
+              staffCount: assignedIds.length > 0 ? assignedIds.length : ((j.staff_count as number) || 1),
+              isLocked: (j.is_locked as boolean) || false,
+              fixedStartTime: (j.fixed_start_time as string) || undefined,
+              startTime: (j.start_time as string) || undefined,
+              endTime: (j.end_time as string) || undefined,
+              notes: (j.notes as string) || undefined,
+              savedClientId: (j.client_id as string) || undefined,
+              assignedStaffIds: assignedIds,
+            };
+          });
       }
       teamsList.push(team);
     }
 
-    // Only show teams that have a schedule on THIS specific day
     const visibleTeams = teamsList.filter(t => teamsWithSchedule.has(t.id));
-    // Always show at least one team (first team as fallback)
     const finalTeams = visibleTeams.length > 0 ? visibleTeams : [teamsList[0]];
 
     dispatch({ type: 'LOAD_STATE', teams: finalTeams, activeTeamId: finalTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id, selectedDate: date });
   }, [orgId, supabase, loadTeams]);
+
+  // ─── Instant day switch from weekSchedules cache ───
+  const loadDayFromCache = useCallback((date: string): boolean => {
+    if (weekSchedules.size === 0) return false;
+    const allTeams = allOrgTeamsRef.current;
+    if (allTeams.length === 0) return false;
+
+    // Only use cache for dates within the currently loaded week
+    let hasDate = false;
+    for (const [, teamMap] of weekSchedules) {
+      if (teamMap.has(date)) { hasDate = true; break; }
+    }
+    if (!hasDate) return false;
+
+    const teamsWithClients = allTeams.map(team => {
+      const teamMap = weekSchedules.get(team.id);
+      const dayData = teamMap?.get(date);
+      return {
+        ...team,
+        clients: dayData?.clients || [],
+        travelSegments: new Map<string, TravelSegment>(),
+        breaks: [] as typeof team.breaks,
+        baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
+        returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
+      };
+    });
+
+    const teamsWithSchedule = teamsWithClients.filter(t => {
+      const teamMap = weekSchedules.get(t.id);
+      const dayData = teamMap?.get(date);
+      return dayData?.scheduleId != null;
+    });
+
+    const finalTeams = teamsWithSchedule.length > 0 ? teamsWithSchedule : [teamsWithClients[0]];
+
+    dispatch({
+      type: 'LOAD_STATE',
+      teams: finalTeams,
+      activeTeamId: finalTeams.find(t => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id,
+      selectedDate: date,
+    });
+
+    return true;
+  }, [weekSchedules]);
 
   // ─── Week Navigation ───
   const goToPrevWeek = () => {
@@ -407,18 +483,29 @@ export default function SchedulePage() {
     dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
   };
 
-  // ─── Day Navigation ───
+  // ─── Day Navigation (instant cache → fallback to bulk fetch) ───
+  const switchToDay = useCallback(async (newDate: string) => {
+    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
+    // Try instant load from weekSchedules cache
+    if (!loadDayFromCache(newDate)) {
+      // Cross-week or no cache: clear stale data immediately, then fetch
+      dispatch({
+        type: 'LOAD_STATE',
+        teams: state.teams.map(t => ({ ...t, clients: [], travelSegments: new Map<string, TravelSegment>(), breaks: [] as typeof t.breaks })),
+        activeTeamId: state.activeTeamId,
+        selectedDate: newDate,
+      });
+      await loadDayForEdit(newDate);
+    }
+  }, [loadDayFromCache, loadDayForEdit, state.teams, state.activeTeamId]);
+
   const goToPrevDay = async () => {
     if (daySaveRef.current) await daySaveRef.current();
-    const newDate = addDays(state.focusedDate, -1);
-    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
-    loadDayForEdit(newDate);
+    switchToDay(addDays(state.focusedDate, -1));
   };
   const goToNextDay = async () => {
     if (daySaveRef.current) await daySaveRef.current();
-    const newDate = addDays(state.focusedDate, 1);
-    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
-    loadDayForEdit(newDate);
+    switchToDay(addDays(state.focusedDate, 1));
   };
 
   const dayLabel = useMemo(() => {
@@ -428,19 +515,51 @@ export default function SchedulePage() {
   }, [state.focusedDate]);
 
   const handleDayClick = (date: string) => {
-    // Day editor only supports single team — if in "all" mode, switch to first team
     if (state.activeTeamId === 'all' && state.teams.length > 0) {
       dispatch({ type: 'SET_ACTIVE_TEAM', teamId: state.teams[0].id });
     }
-    dispatch({ type: 'SET_FOCUSED_DATE', date });
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' });
-    loadDayForEdit(date);
+    switchToDay(date);
   };
 
   const handleBackToWeek = async () => {
     // Flush pending save before switching views
     if (daySaveRef.current) await daySaveRef.current();
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'week' });
+
+    // Instantly restore all org teams with cached week data so tabs appear immediately
+    const allTeams = allOrgTeamsRef.current;
+    if (allTeams.length > 0 && weekSchedules.size > 0) {
+      const today = state.selectedDate;
+      const restoredTeams = allTeams.map((team: TeamSchedule) => {
+        const teamMap = weekSchedules.get(team.id);
+        const dayData = teamMap?.get(today);
+        return {
+          ...team,
+          clients: dayData?.clients || [],
+          travelSegments: new Map<string, TravelSegment>(),
+          breaks: [] as typeof team.breaks,
+          baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
+          returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
+        };
+      });
+      // Show teams that have any schedule this week
+      const teamsWithWeekSchedule = restoredTeams.filter((t: TeamSchedule) => {
+        const teamMap = weekSchedules.get(t.id);
+        if (!teamMap) return false;
+        for (const [, d] of teamMap) { if (d.scheduleId !== null) return true; }
+        return false;
+      });
+      const visibleTeams = teamsWithWeekSchedule.length > 0 ? teamsWithWeekSchedule : [restoredTeams[0]];
+      dispatch({
+        type: 'LOAD_STATE',
+        teams: visibleTeams,
+        activeTeamId: visibleTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || visibleTeams[0].id,
+        selectedDate: today,
+      });
+    }
+
+    // Background refresh to pick up any changes made during day editing
     loadWeekSchedules(weekDates);
   };
 
@@ -825,64 +944,64 @@ export default function SchedulePage() {
     <APIProvider apiKey={MAPS_KEY} libraries={['places', 'routes']}>
       <div className="h-full flex flex-col">
         {/* Header */}
-        <header className="shrink-0 z-20 px-5 lg:px-8 border-b border-border-light bg-white">
-          <div className="flex items-center justify-between h-[56px]">
+        <header className="shrink-0 z-20 px-4 lg:px-6 border-b border-border-light bg-white">
+          <div className="flex items-center justify-between h-14">
             {/* Date navigation */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               {state.viewMode === 'day' && (
-                <button onClick={handleBackToWeek} className="btn-ghost text-[13px] mr-1" title="Back to week view">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+                <button onClick={handleBackToWeek} className="btn-ghost text-xs mr-1" title="Back to week view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                   Week
                 </button>
               )}
-              <button onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek} className="p-2 rounded-xl hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
+              <button onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
-              <span className="text-[14px] font-bold text-text-primary min-w-[200px] text-center">
+              <span className="text-sm font-semibold text-text-primary min-w-[180px] text-center">
                 {state.viewMode === 'day' ? dayLabel : weekLabel}
               </span>
-              <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="p-2 rounded-xl hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+              <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {/* View mode toggle */}
-              <div className="hidden sm:flex items-center gap-1 bg-surface-elevated rounded-xl p-1">
+              <div className="hidden sm:flex items-center gap-0.5 bg-surface-elevated rounded-lg p-0.5">
                 <button
-                  onClick={async () => { if (state.viewMode === 'day' && daySaveRef.current) await daySaveRef.current(); dispatch({ type: 'SET_VIEW_MODE', viewMode: 'week' }); loadWeekSchedules(weekDates); }}
-                  className={`text-[13px] px-4 py-1.5 rounded-lg font-semibold transition-colors ${state.viewMode === 'week' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
+                  onClick={handleBackToWeek}
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${state.viewMode === 'week' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
                 >Week</button>
                 <button
                   onClick={() => { dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' }); loadDayForEdit(state.focusedDate); }}
-                  className={`text-[13px] px-4 py-1.5 rounded-lg font-semibold transition-colors ${state.viewMode === 'day' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${state.viewMode === 'day' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
                 >Day</button>
               </div>
 
-              <button onClick={() => setShowMonth(true)} className="btn-ghost text-[13px]" title="Month view">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+              <button onClick={() => setShowMonth(true)} className="btn-ghost text-xs" title="Month view">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
               </button>
 
               {state.viewMode === 'week' && !isStaff && (
                 <>
-                  <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-[13px]" title="Save week as template">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                  <button onClick={() => setShowSaveTemplate(true)} className="btn-ghost text-xs" title="Save week as template">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     Save
                   </button>
-                  <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-[13px]" title="Load week template">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-xs" title="Load week template">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                     Load
                   </button>
                 </>
               )}
 
               {state.viewMode === 'week' && !isStaff && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {weekIsPublished ? (
                     <button
                       onClick={handleUnpublishWeek}
-                      className="text-[13px] font-semibold px-4 py-2 rounded-xl transition-colors bg-success-light text-success hover:bg-red-50 hover:text-red-600 group"
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors bg-success-light text-success hover:bg-red-50 hover:text-red-600 group"
                     >
                       <span className="group-hover:hidden">✓ Published</span>
                       <span className="hidden group-hover:inline">Unpublish</span>
@@ -892,7 +1011,7 @@ export default function SchedulePage() {
                       onClick={handlePublishWeek}
                       disabled={!weekHasJobs}
                       title={!weekHasJobs ? 'Add jobs before publishing' : ''}
-                      className={`text-[13px] font-semibold px-4 py-2 rounded-xl transition-colors ${
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
                         !weekHasJobs
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : weekPartiallyPublished
@@ -907,14 +1026,14 @@ export default function SchedulePage() {
                   {/* Published Weeks button */}
                   <button
                     onClick={() => setShowPublishedWeeks(true)}
-                    className="text-[13px] font-semibold px-4 py-2 rounded-xl transition-colors bg-surface-elevated text-text-secondary hover:bg-surface-hover flex items-center gap-2"
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors bg-surface-elevated text-text-secondary hover:bg-surface-hover flex items-center gap-1.5"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                     </svg>
                     Published Weeks
                     {publishHistory.length > 0 && (
-                      <span className="bg-primary/10 text-primary text-[11px] font-bold px-2 py-0.5 rounded-full">{publishHistory.length}</span>
+                      <span className="bg-primary/10 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full">{publishHistory.length}</span>
                     )}
                   </button>
                 </div>
@@ -923,7 +1042,7 @@ export default function SchedulePage() {
           </div>
 
           {/* Team tabs */}
-          <div className="pb-4 -mx-1 overflow-x-auto">
+          <div className="pb-3 -mx-1 overflow-x-auto">
             <TeamTabs
               state={state}
               dispatch={dispatch}
@@ -992,7 +1111,7 @@ export default function SchedulePage() {
                   {publishHistory.map((week) => {
                     const isCurrent = week.weekStart === weekDates[0];
                     const isUnpublishing = unpublishingWeek === week.weekStart;
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = getTodayISO();
                     const isPast = week.weekEnd < today;
                     const isFuture = week.weekStart > today;
 

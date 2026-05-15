@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { TeamSchedule } from '@/lib/types';
 
@@ -13,6 +13,8 @@ export default function RouteMap({ team }: RouteMapProps) {
   const routesLibrary = useMapsLibrary('routes');
   const [renderer, setRenderer] = useState<google.maps.DirectionsRenderer | null>(null);
   const [service, setService] = useState<google.maps.DirectionsService | null>(null);
+  const lastBoundsRef = useRef<string>('');
+  const boundsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize services
   useEffect(() => {
@@ -52,17 +54,49 @@ export default function RouteMap({ team }: RouteMapProps) {
 
   // Calculate and render the route
   const renderRoute = useCallback(() => {
-    if (!service || !renderer || !map || !team.baseAddress || team.clients.length === 0) {
+    if (!service || !renderer || !map || team.clients.length === 0) {
       renderer?.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
       return;
     }
 
-    const origin = { lat: team.baseAddress.lat, lng: team.baseAddress.lng };
-    const destination = { lat: team.baseAddress.lat, lng: team.baseAddress.lng };
-    const waypoints: google.maps.DirectionsWaypoint[] = team.clients.map((c) => ({
-      location: { lat: c.location.lat, lng: c.location.lng },
-      stopover: true,
-    }));
+    const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
+    const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
+
+    let origin: google.maps.LatLngLiteral;
+    let destination: google.maps.LatLngLiteral;
+    let waypoints: google.maps.DirectionsWaypoint[];
+
+    if (hasBase) {
+      // Base → clients → return (or base)
+      origin = { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng };
+      destination = returnAddr
+        ? { lat: returnAddr.lat, lng: returnAddr.lng }
+        : { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng };
+      waypoints = team.clients.map((c) => ({
+        location: { lat: c.location.lat, lng: c.location.lng },
+        stopover: true,
+      }));
+    } else if (team.clients.length === 1) {
+      // Single client, no base — nothing to route
+      renderer?.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
+      return;
+    } else {
+      // No base: first client → intermediate clients → last client
+      const first = team.clients[0];
+      const last = team.clients[team.clients.length - 1];
+      origin = { lat: first.location.lat, lng: first.location.lng };
+      destination = returnAddr
+        ? { lat: returnAddr.lat, lng: returnAddr.lng }
+        : { lat: last.location.lat, lng: last.location.lng };
+      // Middle clients are waypoints (skip first, and skip last if no return)
+      const middleClients = returnAddr
+        ? team.clients.slice(1)  // all except first become waypoints
+        : team.clients.slice(1, -1); // skip first and last
+      waypoints = middleClients.map((c) => ({
+        location: { lat: c.location.lat, lng: c.location.lng },
+        stopover: true,
+      }));
+    }
 
     service.route(
       {
@@ -78,13 +112,13 @@ export default function RouteMap({ team }: RouteMapProps) {
         }
       }
     );
-  }, [service, renderer, map, team.baseAddress, team.clients]);
+  }, [service, renderer, map, team.baseAddress, team.returnAddress, team.clients]);
 
   useEffect(() => {
     renderRoute();
   }, [renderRoute]);
 
-  // Custom markers
+  // Custom markers — stable, no-animation positioning
   useEffect(() => {
     if (!map) return;
 
@@ -148,20 +182,45 @@ export default function RouteMap({ team }: RouteMapProps) {
       markers.push(marker);
     });
 
-    // Fit bounds
-    if (markers.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
-      markers.forEach((m) => {
-        const pos = m.getPosition();
-        if (pos) bounds.extend(pos);
-      });
-      map.fitBounds(bounds, { top: 60, right: 40, bottom: 40, left: 40 });
+    // Build a stable fingerprint of marker positions so we only refit when positions actually change
+    const boundsFingerprint = [
+      team.baseAddress ? `${team.baseAddress.lat},${team.baseAddress.lng}` : '',
+      ...team.clients.map(c => `${c.location.lat},${c.location.lng}`),
+    ].join('|');
+
+    // Only fit bounds if marker positions actually changed (not on every time/color re-render)
+    if (markers.length > 0 && boundsFingerprint !== lastBoundsRef.current) {
+      lastBoundsRef.current = boundsFingerprint;
+
+      // Debounce: wait for data to settle, then fit once with no animation
+      if (boundsTimerRef.current) clearTimeout(boundsTimerRef.current);
+      boundsTimerRef.current = setTimeout(() => {
+        const bounds = new google.maps.LatLngBounds();
+        markers.forEach((m) => {
+          const pos = m.getPosition();
+          if (pos) bounds.extend(pos);
+        });
+        // Use moveCamera for instant positioning — no animated panning
+        map.fitBounds(bounds, { top: 60, right: 40, bottom: 40, left: 40 });
+        // Immediately override with moveCamera to cancel any animation
+        const listener = google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+          const center = map.getCenter();
+          const zoom = map.getZoom();
+          if (center && zoom) {
+            map.moveCamera({ center, zoom });
+          }
+        });
+        // Safety cleanup
+        setTimeout(() => google.maps.event.removeListener(listener), 500);
+      }, 300);
     }
 
     return () => {
       markers.forEach((m) => m.setMap(null));
+      if (boundsTimerRef.current) clearTimeout(boundsTimerRef.current);
     };
   }, [map, team.baseAddress, team.clients, team.color.primary]);
 
   return null;
 }
+

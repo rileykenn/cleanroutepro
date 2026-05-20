@@ -17,6 +17,11 @@ export default function PlacesAutocomplete({ onPlaceSelect, onTextChange, defaul
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const placesLib = useMapsLibrary('places');
 
+  // Keep a stable ref to the latest onPlaceSelect so the Google listener
+  // never captures a stale closure when teams switch.
+  const onPlaceSelectRef = useRef(onPlaceSelect);
+  useEffect(() => { onPlaceSelectRef.current = onPlaceSelect; }, [onPlaceSelect]);
+
   useEffect(() => {
     if (!inputRef.current || !placesLib) return;
     if (autocompleteRef.current) return;
@@ -27,10 +32,11 @@ export default function PlacesAutocomplete({ onPlaceSelect, onTextChange, defaul
       fields: ['formatted_address', 'geometry', 'place_id', 'name'],
     });
 
+    // Always call via ref so we get the current team's handler, never a stale one.
     autocompleteRef.current.addListener('place_changed', () => {
       const place = autocompleteRef.current?.getPlace();
       if (place?.geometry?.location) {
-        onPlaceSelect({
+        onPlaceSelectRef.current({
           address: place.formatted_address || place.name || '',
           lat: place.geometry.location.lat(),
           lng: place.geometry.location.lng(),
@@ -38,7 +44,17 @@ export default function PlacesAutocomplete({ onPlaceSelect, onTextChange, defaul
         });
       }
     });
-  }, [placesLib, onPlaceSelect]);
+  }, [placesLib]);
+
+  // Sync the input's displayed value whenever the active team changes.
+  // We can't use a controlled <input> with Google Autocomplete (it fights over
+  // the value), so we imperatively update the DOM when defaultValue changes,
+  // but only when the input isn't currently focused (don't interrupt typing).
+  useEffect(() => {
+    if (inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.value = defaultValue;
+    }
+  }, [defaultValue]);
 
   return (
     <input

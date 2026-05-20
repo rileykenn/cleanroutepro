@@ -8,6 +8,7 @@ import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary, Schedu
 import { formatDateDisplay, generateId, parseTime } from '@/lib/timeUtils';
 import { TravelSegment, Client, AppState, ScheduleAction, StaffMember } from '@/lib/types';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { useClients } from '@/lib/hooks/useClients';
 
 import ClientCard from '@/components/ClientCard';
 import AddClientButton from '@/components/AddClientButton';
@@ -29,6 +30,9 @@ interface DayEditorProps {
 export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
+
+  // Saved client database — used for the swap-client feature on each card
+  const { clients: savedClients } = useClients(orgId ?? null);
 
   const activeTeam = useMemo(
     () => state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0],
@@ -89,12 +93,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
       // Check if this team has any content for today
       const hasClients = team.clients.length > 0;
+      const hasBaseAddress = team.baseAddress !== null;
+      const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
       const { data: existingSched } = await supabase
         .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
 
-      // Skip teams with no clients and no existing schedule —
-      // this prevents empty schedule rows from leaking across days
-      if (!hasClients && !existingSched) continue;
+      // Skip teams with no clients, no address config, and no existing schedule —
+      // this prevents empty schedule rows from leaking across days while still
+      // persisting address-only teams (e.g. base/return set before adding clients)
+      if (!hasClients && !hasBaseAddress && !hasReturnAddress && !existingSched) continue;
 
       // Build per-day schedule record with base addresses
       const scheduleData: Record<string, unknown> = {
@@ -158,18 +165,29 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   }, [orgId, supabase]);
 
   // Expose saveNow to parent
+  const saveNowRef = useRef(saveNow);
+  useEffect(() => { saveNowRef.current = saveNow; }, [saveNow]);
+
   useEffect(() => {
     if (saveRef) saveRef.current = saveNow;
     return () => { if (saveRef) saveRef.current = null; };
   }, [saveRef, saveNow]);
 
+  // Flush any pending debounced save when navigating away (sidebar, browser back, etc.)
+  // saveNow reads stateRef.current so it always has fresh data even in this closure.
+  useEffect(() => {
+    return () => { saveNowRef.current(); };
+  }, []);
+
   useEffect(() => {
     if (!dbLoaded || !orgId) return;
 
-    // Never autosave during transition states where all teams have been cleared.
+    // Never autosave during transition states where all teams have been completely cleared.
     // This happens briefly during switchToDay before real data loads.
+    // Only bail if teams are truly empty — no clients AND no addresses set.
     const totalClients = state.teams.reduce((sum, t) => sum + t.clients.length, 0);
-    if (totalClients === 0 && state.teams.length > 0) return;
+    const anyAddressSet = state.teams.some(t => t.baseAddress !== null || (t.returnAddress !== null && t.returnAddress !== 'none'));
+    if (totalClients === 0 && !anyAddressSet && state.teams.length > 0) return;
 
     const fingerprint = JSON.stringify(
       state.teams.map((t) => ({
@@ -325,6 +343,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   </button>
                 </div>
                 <PlacesAutocomplete
+                  key={`base-${activeTeam.id}`}
                   defaultValue={activeTeam.baseAddress?.address || ''}
                   onPlaceSelect={(place) => {
                     dispatch({
@@ -418,7 +437,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     {segment && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
-                      staffBusyPeriods={staffBusyPeriods} />
+                      staffBusyPeriods={staffBusyPeriods} savedClients={savedClients} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="mx-2 my-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">
@@ -497,6 +516,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     </button>
                   </div>
                   <PlacesAutocomplete
+                    key={`return-${activeTeam.id}`}
                     defaultValue={
                       activeTeam.returnAddress
                         ? activeTeam.returnAddress.address

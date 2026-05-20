@@ -23,15 +23,38 @@ function createDefaultTeam(colorIndex: number): TeamSchedule {
 export function createInitialState(): AppState {
   const team1 = createDefaultTeam(0);
   const today = getTodayISO();
-  return { teams: [team1], activeTeamId: team1.id, selectedDate: today, viewMode: 'week', focusedDate: today };
+
+  // Restore the last session's view context so navigating away and back
+  // returns the user to exactly where they left off.
+  let viewMode: 'day' | 'week' = 'week';
+  let focusedDate = today;
+  let activeTeamId = team1.id;
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('crp_schedule_view');
+      if (saved) {
+        const parsed = JSON.parse(saved) as { viewMode?: string; focusedDate?: string; activeTeamId?: string };
+        if (parsed.viewMode === 'day' || parsed.viewMode === 'week') viewMode = parsed.viewMode;
+        if (parsed.focusedDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.focusedDate)) focusedDate = parsed.focusedDate;
+        if (parsed.activeTeamId) activeTeamId = parsed.activeTeamId;
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { teams: [team1], activeTeamId, selectedDate: focusedDate, viewMode, focusedDate };
 }
 
 export function scheduleReducer(state: AppState, action: ScheduleAction): AppState {
   switch (action.type) {
     case 'SET_ACTIVE_TEAM':
       return { ...state, activeTeamId: action.teamId };
-    case 'SET_BASE_ADDRESS':
-      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, baseAddress: action.location, travelSegments: new Map() } : t) };
+    case 'SET_BASE_ADDRESS': {
+      return { ...state, teams: state.teams.map((t) => {
+        if (t.id !== action.teamId) return t;
+        const same = t.baseAddress && t.baseAddress.lat === action.location.lat && t.baseAddress.lng === action.location.lng;
+        return { ...t, baseAddress: action.location, travelSegments: same ? t.travelSegments : new Map() };
+      }) };
+    }
     case 'ADD_CLIENT':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: [...t.clients, action.client] } : t) };
     case 'REMOVE_CLIENT':
@@ -84,8 +107,16 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, focusedDate: action.date, selectedDate: action.date };
     case 'ASSIGN_STAFF_TO_JOB':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, action.staffIds.length) } : c) } : t) };
-    case 'SET_RETURN_ADDRESS':
-      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: action.location, travelSegments: new Map() } : t) };
+    case 'SET_RETURN_ADDRESS': {
+      return { ...state, teams: state.teams.map((t) => {
+        if (t.id !== action.teamId) return t;
+        const prev = t.returnAddress;
+        const same = prev && prev !== 'none' &&
+          (prev as { lat: number; lng: number }).lat === action.location.lat &&
+          (prev as { lat: number; lng: number }).lng === action.location.lng;
+        return { ...t, returnAddress: action.location, travelSegments: same ? t.travelSegments : new Map() };
+      }) };
+    }
     case 'CLEAR_RETURN_ADDRESS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: 'none', travelSegments: new Map() } : t) };
     case 'CLEAR_BASE_ADDRESS':

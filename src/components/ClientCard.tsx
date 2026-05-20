@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
 const ClientInfoPanel = lazy(() => import('./ClientInfoPanel'));
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import { formatTimeDisplay, parseTime } from '@/lib/timeUtils';
 import { Client, Location, ScheduleAction, TeamSchedule, StaffMember } from '@/lib/types';
+import { SavedClient } from '@/lib/hooks/useClients';
 
 export type StaffBusyPeriod = { start: number; end: number; teamName: string; clientName: string; clientId: string };
 
@@ -20,9 +21,10 @@ interface ClientCardProps {
   dispatch: React.Dispatch<ScheduleAction>;
   availableStaff?: StaffMember[];
   staffBusyPeriods?: Map<string, StaffBusyPeriod[]>;
+  savedClients?: SavedClient[];
 }
 
-export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, savedClients }: ClientCardProps) {
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
@@ -30,6 +32,9 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const [editingStartTime, setEditingStartTime] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
+  const [showSwap, setShowSwap] = useState(false);
+  const [swapQuery, setSwapQuery] = useState('');
+  const swapInputRef = useRef<HTMLInputElement>(null);
   const placesLib = useMapsLibrary('places');
   const pickerRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
@@ -113,6 +118,58 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
     dispatch({ type: 'ASSIGN_STAFF_TO_JOB', teamId: team.id, clientId: client.id, staffIds: newIds });
   };
 
+  // Focus swap search input when panel opens
+  useEffect(() => {
+    if (showSwap) {
+      setTimeout(() => swapInputRef.current?.focus(), 50);
+    } else {
+      setSwapQuery('');
+    }
+  }, [showSwap]);
+
+  // Filtered swap results
+  const swapResults = useMemo(() => {
+    if (!savedClients || swapQuery.trim().length < 1) return savedClients?.slice(0, 6) ?? [];
+    const q = swapQuery.toLowerCase();
+    return savedClients.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [swapQuery, savedClients]);
+
+  const handleSwapClient = (saved: SavedClient) => {
+    dispatch({
+      type: 'UPDATE_CLIENT',
+      teamId: team.id,
+      clientId: client.id,
+      updates: {
+        name: saved.name,
+        location: {
+          address: saved.address,
+          lat: saved.lat || 0,
+          lng: saved.lng || 0,
+          placeId: saved.place_id || undefined,
+        },
+        jobDurationMinutes: saved.default_duration_minutes || client.jobDurationMinutes,
+        staffCount: saved.default_staff_count || client.staffCount,
+        savedClientId: saved.id,
+        notes: saved.notes || undefined,
+        clientColor: saved.color || undefined,
+        assignedStaffIds: [],
+      },
+    });
+    setShowSwap(false);
+    setAddressVersion((v) => v + 1);
+
+    // Background geocode if coordinates are missing
+    if (!saved.lat || !saved.lng) {
+      resolveAddress(saved.address).then((resolved) => {
+        if (resolved) {
+          dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { location: resolved } });
+        }
+      });
+    }
+  };
+
   // Use client color if set, otherwise fall back to team color
   const cardColor = client.clientColor || team.color.primary;
 
@@ -126,7 +183,27 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       }}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Reorder arrows — stacked vertically to keep the right toolbar slim */}
+          <div className="flex flex-col gap-0.5 shrink-0">
+            <button
+              onClick={() => dispatch({ type: 'REORDER_CLIENTS', teamId: team.id, fromIndex: index, toIndex: index - 1 })}
+              disabled={index === 0}
+              className="p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-0 disabled:pointer-events-none"
+              title="Move up"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <button
+              onClick={() => dispatch({ type: 'REORDER_CLIENTS', teamId: team.id, fromIndex: index, toIndex: index + 1 })}
+              disabled={index === totalClients - 1}
+              className="p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-0 disabled:pointer-events-none"
+              title="Move down"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          {/* Index badge */}
           <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative" style={{ backgroundColor: cardColor }}>
             {index + 1}
             {client.isLocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px]">🔒</div>}
@@ -135,6 +212,21 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
             className="font-semibold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors" placeholder="Client name" />
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Swap client button */}
+          {savedClients && savedClients.length > 0 && (
+            <button
+              onClick={() => setShowSwap(!showSwap)}
+              className={`p-1.5 rounded-lg transition-colors ${
+                showSwap ? 'bg-primary/10 text-primary' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'
+              }`}
+              title="Swap client from database"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M7 16V4m0 0L3 8m4-4l4 4"/>
+                <path d="M17 8v12m0 0l4-4m-4 4l-4-4"/>
+              </svg>
+            </button>
+          )}
           <button onClick={() => setEditingStartTime(!editingStartTime)} className={`p-1.5 rounded-lg transition-colors ${client.fixedStartTime ? 'bg-indigo-50 text-primary' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Override start time">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </button>
@@ -147,11 +239,79 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <a href={mapsNavUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Navigate">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
           </a>
-          {index > 0 && <button onClick={() => dispatch({ type: 'REORDER_CLIENTS', teamId: team.id, fromIndex: index, toIndex: index - 1 })} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors" title="Move up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg></button>}
-          {index < totalClients - 1 && <button onClick={() => dispatch({ type: 'REORDER_CLIENTS', teamId: team.id, fromIndex: index, toIndex: index + 1 })} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors" title="Move down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg></button>}
           <button onClick={() => dispatch({ type: 'REMOVE_CLIENT', teamId: team.id, clientId: client.id })} className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors" title="Remove"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
       </div>
+
+      {/* Swap client panel */}
+      <AnimatePresence>
+        {showSwap && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden mb-3"
+          >
+            <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary shrink-0">
+                  <path d="M7 16V4m0 0L3 8m4-4l4 4"/><path d="M17 8v12m0 0l4-4m-4 4l-4-4"/>
+                </svg>
+                <span className="text-xs font-semibold text-primary">Swap Client</span>
+                <button onClick={() => setShowSwap(false)} className="ml-auto p-0.5 rounded hover:bg-red-50 text-text-tertiary hover:text-red-400 transition-colors">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+              {/* Search input */}
+              <div className="relative mb-2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  ref={swapInputRef}
+                  type="text"
+                  value={swapQuery}
+                  onChange={(e) => setSwapQuery(e.target.value)}
+                  placeholder={`Search ${savedClients?.length ?? 0} clients...`}
+                  className="input-field text-xs pl-8 py-2"
+                />
+              </div>
+              {/* Results */}
+              <div className="max-h-52 overflow-y-auto custom-scrollbar space-y-0.5">
+                {swapResults.length === 0 && swapQuery.length > 0 ? (
+                  <p className="text-xs text-text-tertiary text-center py-3">No clients found</p>
+                ) : (
+                  swapResults.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => handleSwapClient(c)}
+                      className={`w-full text-left px-2.5 py-2 rounded-lg hover:bg-white transition-colors border border-transparent hover:border-border-light group/swap ${
+                        c.id === client.savedClientId ? 'bg-white border-primary/20' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        {c.color && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />}
+                        <span className="text-xs font-semibold text-text-primary truncate flex-1">{c.name}</span>
+                        {c.id === client.savedClientId && (
+                          <span className="text-[10px] text-primary font-bold shrink-0">current</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-text-tertiary truncate mt-0.5">{c.address}</div>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-text-secondary">
+                        <span>{(c.default_duration_minutes / 60).toFixed(1)}h</span>
+                        <span>·</span>
+                        <span>{c.default_staff_count} staff</span>
+                        {c.phone && <><span>·</span><span>{c.phone}</span></>}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Fixed start time editor */}
       <AnimatePresence>
@@ -170,26 +330,38 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
 
       {/* Address */}
       <div className="mb-3">
-        <div className="flex items-center gap-1.5">
-          <div className="flex-1">
-            <PlacesAutocomplete key={`addr-${client.id}-${addressVersion}`}
-              onPlaceSelect={(loc) => { dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { location: loc } }); setHasEdited(false); setAddressText(''); }}
-              onTextChange={(text) => { setAddressText(text); setHasEdited(text !== client.location.address); }}
-              defaultValue={client.location.address} placeholder="Enter client address..." className="text-sm" />
+        {client.savedClientId ? (
+          // Saved client — address is locked to what's in the database
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated border border-border-light">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            <span className="text-sm text-text-secondary flex-1 truncate">{client.location.address}</span>
+            <span className="text-[10px] text-text-tertiary shrink-0 italic">Edit in Clients tab</span>
           </div>
-          <AnimatePresence>
-            {hasEdited && addressText.trim().length > 0 && (
-              <motion.div initial={{ opacity: 0, scale: 0.8, width: 0 }} animate={{ opacity: 1, scale: 1, width: 'auto' }} exit={{ opacity: 0, scale: 0.8, width: 0 }} className="flex items-center gap-1 shrink-0 overflow-hidden">
-                <button onClick={handleConfirmAddress} disabled={isResolving} className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-50" title="Confirm">
-                  {isResolving ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-                </button>
-                <button onClick={handleCancelEdit} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors" title="Cancel">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        ) : (
+          // Manual / unsaved client — allow address editing
+          <div className="flex items-center gap-1.5">
+            <div className="flex-1">
+              <PlacesAutocomplete key={`addr-${client.id}-${addressVersion}`}
+                onPlaceSelect={(loc) => { dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { location: loc } }); setHasEdited(false); setAddressText(''); }}
+                onTextChange={(text) => { setAddressText(text); setHasEdited(text !== client.location.address); }}
+                defaultValue={client.location.address} placeholder="Enter client address..." className="text-sm" />
+            </div>
+            <AnimatePresence>
+              {hasEdited && addressText.trim().length > 0 && (
+                <motion.div initial={{ opacity: 0, scale: 0.8, width: 0 }} animate={{ opacity: 1, scale: 1, width: 'auto' }} exit={{ opacity: 0, scale: 0.8, width: 0 }} className="flex items-center gap-1 shrink-0 overflow-hidden">
+                  <button onClick={handleConfirmAddress} disabled={isResolving} className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors disabled:opacity-50" title="Confirm">
+                    {isResolving ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </button>
+                  <button onClick={handleCancelEdit} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors" title="Cancel">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       {/* Duration + Staff Count + Times */}

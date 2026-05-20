@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CleanRoute Pro — Scope Amendment</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      color: #1a1a2e;
+      background: #ffffff;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 48px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 2px solid #4F46E5;
+    }
+
+    .header-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #4F46E5;
+      background: #EEF2FF;
+      padding: 6px 16px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: #6B7280;
+      font-size: 14px;
+    }
+
+    /* Section */
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+      margin-top: 40px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    h2 .section-num {
+      display: inline-block;
+      background: #4F46E5;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      width: 24px;
+      height: 24px;
+      line-height: 24px;
+      text-align: center;
+      border-radius: 6px;
+      margin-right: 10px;
+      vertical-align: middle;
+    }
+
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #374151;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    p,
+    li {
+      color: #374151;
+    }
+
+    p {
+      margin-bottom: 12px;
+    }
+
+    ul,
+    ol {
+      padding-left: 20px;
+      margin-bottom: 16px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Feature table */
+    .feature-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 24px;
+      font-size: 14px;
+    }
+
+    .feature-table th {
+      text-align: left;
+      padding: 10px 14px;
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      font-weight: 600;
+      color: #111827;
+      font-size: 13px;
+    }
+
+    .feature-table td {
+      padding: 10px 14px;
+      border: 1px solid #E5E7EB;
+      vertical-align: top;
+    }
+
+    .feature-table tr:nth-child(even) td {
+      background: #FAFBFC;
+    }
+
+    /* Pricing box */
+    .pricing-box {
+      background: #F9FAFB;
+      border: 2px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 28px;
+      margin: 20px 0;
+    }
+
+    .pricing-box .total {
+      font-size: 32px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+
+    .pricing-box .total-label {
+      font-size: 14px;
+      color: #6B7280;
+      margin-bottom: 16px;
+    }
+
+    .pricing-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-top: 1px solid #E5E7EB;
+      font-size: 14px;
+    }
+
+    .pricing-row .label {
+      color: #374151;
+    }
+
+    .pricing-row .amount {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    /* Exclusion */
+    .exclusion-box {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: #991B1B;
+    }
+
+    /* Context box */
+    .context-box {
+      background: #EEF2FF;
+      border: 1px solid #C7D2FE;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: #3730A3;
+    }
+
+    /* Signature */
+    .sig-section {
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 2px solid #111827;
+    }
+
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      margin-top: 24px;
+    }
+
+    .sig-block {
+      margin-bottom: 20px;
+    }
+
+    .sig-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .sig-field {
+      height: 48px;
+      border: 2px dashed #D1D5DB;
+      border-radius: 8px;
+      background: #F9FAFB;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #9CA3AF;
+      letter-spacing: 0.5px;
+    }
+
+    .sig-name {
+      font-size: 14px;
+      color: #111827;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid #E5E7EB;
+      text-align: center;
+      font-size: 12px;
+      color: #9CA3AF;
+    }
+
+    /* ========================================
+       PRINT STYLES
+       ======================================== */
+    @media print {
+      body {
+        font-size: 12px;
+        line-height: 1.6;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        padding: 0;
+        max-width: 100%;
+      }
+
+      @page {
+        margin: 15mm;
+      }
+
+      p,
+      li {
+        orphans: 3;
+        widows: 3;
+      }
+
+      h2,
+      h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+
+      .feature-table {
+        break-inside: auto;
+        page-break-inside: auto;
+      }
+
+      .feature-table thead {
+        display: table-header-group;
+      }
+
+      .feature-table tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .pricing-box,
+      .exclusion-box,
+      .context-box {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .print-group {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .sig-section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .sig-grid {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .header {
+        margin-bottom: 28px;
+        padding-bottom: 18px;
+      }
+
+      h2 {
+        margin-top: 24px;
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+
+      h3 {
+        margin-top: 14px;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .feature-table {
+        margin: 8px 0 16px;
+        font-size: 12px;
+      }
+
+      .feature-table th {
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+
+      .feature-table td {
+        padding: 6px 10px;
+      }
+
+      p {
+        margin-bottom: 8px;
+      }
+
+      li {
+        margin-bottom: 4px;
+      }
+
+      .pricing-box {
+        padding: 20px;
+        margin: 12px 0;
+      }
+
+      .pricing-box .total {
+        font-size: 26px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-badge">Scope Amendment</div>
+      <h1>CleanRoute Pro<br><span style="font-size: 20px; font-weight: 500; color: #6B7280;">Scope Amendment — Phase 2 Features</span></h1>
+      <p>Prepared by Riley Tech Studio for Sarah O'Connell &amp; The Cleaning Co Shellharbour</p>
+      <p style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">Document Date: 16 May 2026</p>
+    </div>
+
+    <!-- 1. Context -->
+    <h2><span class="section-num">1</span>Context</h2>
+    <p>
+      This document is an amendment to the original CleanRoute Pro Scope of Work (v4.0, dated 24 April 2026).
+      It covers two additional features requested during the testing phase that fall outside the original scope.
+    </p>
+    <div class="context-box">
+      <strong>Original Scope Reference:</strong> Section 2.10 (Checklists) covered basic tick-off checklist templates
+      with per-client customisation, staff mobile view, completion tracking, and email reporting. The features below
+      expand the checklist system into a full form builder with advanced field types, conditional logic, and media uploads.
+      The staff payroll export is a new feature not covered in the original scope.
+    </div>
+
+    <!-- 2. Features -->
+    <h2><span class="section-num">2</span>Additional Features</h2>
+
+    <div class="print-group">
+      <h3>2.1 Form &amp; Checklist Builder</h3>
+      <p>
+        A comprehensive form builder that extends the existing checklist system into a flexible, mobile-first
+        tool for on-site job reporting. Admins create templates with multiple field types; staff complete them on
+        their phones during jobs.
+      </p>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Form Structure</td>
+            <td>Heading/section titles with description fields. Sections and questions can be reordered via drag
+              and drop</td>
+          </tr>
+          <tr>
+            <td>Field Types</td>
+            <td>Open text input, Yes/No toggle, single-select dropdown, multi-select dropdown, date picker,
+              time picker, image upload, and video upload</td>
+          </tr>
+          <tr>
+            <td>Conditional Logic</td>
+            <td>Show or hide follow-up questions based on Yes/No responses (e.g. "Are there ceiling fans?" → If
+              YES → "Dust ceiling fans thoroughly")</td>
+          </tr>
+          <tr>
+            <td>Custom Dropdowns</td>
+            <td>Admin-defined dropdown options with support for multiple selection where needed</td>
+          </tr>
+          <tr>
+            <td>Required Fields</td>
+            <td>Mark any field as required so staff cannot submit the form without completing it</td>
+          </tr>
+          <tr>
+            <td>Not Applicable Option</td>
+            <td>Optional "N/A" toggle on fields so staff can mark items as not applicable for a particular visit</td>
+          </tr>
+          <tr>
+            <td>Master Templates</td>
+            <td>Save, duplicate, and manage reusable form templates. Assign templates to specific clients for
+              repeated use</td>
+          </tr>
+          <tr>
+            <td>Pre-filled Fields</td>
+            <td>Current date/time, staff name, and client name/address auto-populated from the booking when a form
+              is opened</td>
+          </tr>
+          <tr>
+            <td>Photo &amp; Video Uploads</td>
+            <td>Staff can attach photos and videos directly to form submissions from their mobile device</td>
+          </tr>
+          <tr>
+            <td>Auto-Save Drafts</td>
+            <td>In-progress forms are auto-saved so staff don't lose work if they navigate away or lose
+              connection briefly</td>
+          </tr>
+          <tr>
+            <td>Mobile-First Design</td>
+            <td>Optimised for fast on-site completion on mobile devices — large touch targets, smooth inputs, and
+              minimal scrolling</td>
+          </tr>
+          <tr>
+            <td>Email Report</td>
+            <td>Completed forms can be automatically emailed to the client and/or management as a job completion
+              report</td>
+          </tr>
+          <tr>
+            <td>PDF Export</td>
+            <td>Export any completed form as a downloadable PDF document for record keeping, client reporting, or
+              printing</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="print-group">
+      <h3>2.2 Staff Weekly Payroll Export</h3>
+      <p>
+        A dedicated view to isolate a single staff member's full week of work, providing all the data needed
+        to process payroll without switching between days or teams.
+      </p>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Staff Isolation View</td>
+            <td>Select any staff member and view their complete week at a glance — which teams they were on, which
+              jobs they worked, and when</td>
+          </tr>
+          <tr>
+            <td>Daily Breakdown</td>
+            <td>Per-day summary showing start time, finish time, jobs completed, travel time, and travel
+              distance</td>
+          </tr>
+          <tr>
+            <td>Weekly Totals</td>
+            <td>Aggregated totals for the week: total hours worked, total travel time, total distance, and total
+              breaks</td>
+          </tr>
+          <tr>
+            <td>Wage Calculation</td>
+            <td>Automatic wage output using the staff member's individual hourly rate. Displayed in both standard
+              format (e.g. 38h 15m) and decimal format (e.g. 38.25 hours) for payroll compatibility</td>
+          </tr>
+          <tr>
+            <td>Allowances</td>
+            <td>Per-kilometre and fuel allowance calculations included in the weekly summary</td>
+          </tr>
+          <tr>
+            <td>CSV Export</td>
+            <td>Export the staff member's weekly summary as a downloadable CSV file for easy import into payroll
+              systems</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. Excluded from this amendment -->
+    <h2><span class="section-num">3</span>Not Included in This Amendment</h2>
+    <p>The following were noted as future enhancements and are <strong>not</strong> part of this build:</p>
+    <div class="exclusion-box">
+      <ul style="margin-bottom: 0; padding-left: 18px;">
+        <li>Offline mode for form completion</li>
+        <li>Digital signature capture fields</li>
+        <li>Audit/history logs for form submissions</li>
+        <li>Advanced escalation workflows or notifications</li>
+        <li>Internal vs. client-visible note separation</li>
+        <li>Direct Xero integration</li>
+      </ul>
+    </div>
+
+    <!-- 4. Timeline -->
+    <h2><span class="section-num">4</span>Timeline</h2>
+    <table class="feature-table">
+      <thead>
+        <tr>
+          <th>Deliverable</th>
+          <th>Estimated Timeframe</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Form &amp; Checklist Builder</td>
+          <td>Friday 23 May 2026</td>
+        </tr>
+        <tr>
+          <td>Staff Weekly Payroll Export</td>
+          <td>Friday 23 May 2026</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 5. Investment -->
+    <h2><span class="section-num">5</span>Investment</h2>
+    <div class="pricing-box">
+      <div class="total">$500 AUD</div>
+      <div class="total-label">Bundled — Form Builder + Staff Payroll Export</div>
+      <div class="pricing-row">
+        <span class="label">Form &amp; Checklist Builder (Section 2.1)</span>
+        <span class="amount">Included</span>
+      </div>
+      <div class="pricing-row">
+        <span class="label">Staff Weekly Payroll Export (Section 2.2)</span>
+        <span class="amount">Included</span>
+      </div>
+      <div class="pricing-row">
+        <span class="label">Payment — due on sign-off</span>
+        <span class="amount">$500</span>
+      </div>
+    </div>
+    <p style="font-size: 13px; color: #6B7280;">
+      This is a one-off payment covering all development for the features listed above. All work is delivered
+      under the same terms and conditions as the original scope of work.
+    </p>
+
+    <!-- Signature -->
+    <div class="sig-section">
+      <h2 style="margin-top: 0; border-bottom: none; padding-bottom: 0;">Acceptance</h2>
+      <p>By signing below, both parties agree to the additional scope, timeline, and investment outlined in this
+        document. All other terms from the original Scope of Work (v4.0) remain in effect.</p>
+
+      <div class="sig-grid">
+        <div>
+          <div class="sig-name">Sarah O'Connell</div>
+          <div class="sig-block">
+            <div class="sig-label">Signature</div>
+            <div class="sig-field">Sign here</div>
+          </div>
+          <div class="sig-block">
+            <div class="sig-label">Date</div>
+            <div class="sig-field">DD / MM / YYYY</div>
+          </div>
+        </div>
+        <div>
+          <div class="sig-name">Riley Kennedy | Riley Tech Studio</div>
+          <div class="sig-block">
+            <div class="sig-label">Signature</div>
+            <div class="sig-field">Sign here</div>
+          </div>
+          <div class="sig-block">
+            <div class="sig-label">Date</div>
+            <div class="sig-field">DD / MM / YYYY</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      CleanRoute Pro Scope Amendment v1.0 | Riley Tech Studio | ABN: 82 944 887 387<br>
+      Document generated 16 May 2026. Amendment to original Scope of Work v4.0 (24 April 2026).
+    </div>
+
+  </div>
+</body>
+
+</html>

@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useMap } from '@vis.gl/react-google-maps';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import PlacesAutocomplete from './PlacesAutocomplete';
-import { JOB_DURATIONS, generateId } from '@/lib/timeUtils';
+import { generateId } from '@/lib/timeUtils';
 import { Client, Location, ScheduleAction } from '@/lib/types';
 import { useClients, SavedClient } from '@/lib/hooks/useClients';
 
@@ -17,72 +15,41 @@ interface AddClientButtonProps {
 
 export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: AddClientButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState<Location | null>(null);
-  const [addressText, setAddressText] = useState('');
-  const [duration, setDuration] = useState(90);
-  const [isResolving, setIsResolving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(true);
-  const map = useMap();
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Saved clients search
-  const { clients: savedClients, loading: clientsLoading } = useClients(orgId ?? null);
+  const { clients: savedClients } = useClients(orgId ?? null);
 
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) return [];
-    const q = searchQuery.toLowerCase();
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
     return savedClients.filter(
       (c) => c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q)
-    ).slice(0, 6);
+    ).slice(0, 8);
   }, [searchQuery, savedClients]);
 
-  // Geocode fallback — resolve raw text to a valid Google address
+  // Geocode a raw address string via the Places API best-match
   const geocodeAddress = useCallback(async (text: string): Promise<Location | null> => {
     if (!window.google?.maps) return null;
-    
-    const autocompleteService = new google.maps.places.AutocompleteService();
-    
+    const svc = new google.maps.places.AutocompleteService();
     return new Promise((resolve) => {
-      autocompleteService.getPlacePredictions(
-        {
-          input: text,
-          componentRestrictions: { country: 'au' },
-          types: ['address'],
-        },
+      svc.getPlacePredictions(
+        { input: text, componentRestrictions: { country: 'au' }, types: ['address'] },
         (predictions, status) => {
-          if (
-            status !== google.maps.places.PlacesServiceStatus.OK ||
-            !predictions ||
-            predictions.length === 0
-          ) {
-            resolve(null);
-            return;
-          }
-
-          const topPrediction = predictions[0];
-          const tempDiv = document.createElement('div');
-          const placesService = new google.maps.places.PlacesService(tempDiv);
-
-          placesService.getDetails(
-            {
-              placeId: topPrediction.place_id,
-              fields: ['formatted_address', 'geometry', 'place_id', 'name'],
-            },
-            (place, detailsStatus) => {
-              if (
-                detailsStatus === google.maps.places.PlacesServiceStatus.OK &&
-                place?.geometry?.location
-              ) {
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions?.length) { resolve(null); return; }
+          const div = document.createElement('div');
+          const ps = new google.maps.places.PlacesService(div);
+          ps.getDetails(
+            { placeId: predictions[0].place_id, fields: ['formatted_address', 'geometry', 'place_id'] },
+            (place, s) => {
+              if (s === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
                 resolve({
-                  address: place.formatted_address || place.name || topPrediction.description,
+                  address: place.formatted_address || text,
                   lat: place.geometry.location.lat(),
                   lng: place.geometry.location.lng(),
                   placeId: place.place_id,
                 });
-              } else {
-                resolve(null);
-              }
+              } else resolve(null);
             }
           );
         }
@@ -90,42 +57,8 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
     });
   }, []);
 
-  const handleSubmit = async () => {
-    if (location) {
-      addClient(location);
-      return;
-    }
-
-    const text = addressText.trim();
-    if (!text) return;
-
-    setIsResolving(true);
-    const resolved = await geocodeAddress(text);
-    setIsResolving(false);
-
-    if (resolved) {
-      addClient(resolved);
-    } else {
-      alert('Could not find that address. Please check the spelling or select from the dropdown suggestions.');
-    }
-  };
-
-  const addClient = (loc: Location, savedClientId?: string) => {
-    const client: Client = {
-      id: generateId(),
-      name: name || `Client`,
-      location: loc,
-      jobDurationMinutes: duration,
-      staffCount: 1,
-      isLocked: false,
-      savedClientId,
-    };
-
-    dispatch({ type: 'ADD_CLIENT', teamId, client });
-    resetForm();
-  };
-
   const addSavedClient = (saved: SavedClient) => {
+    const clientId = generateId();
     const loc: Location = {
       address: saved.address,
       lat: saved.lat || 0,
@@ -134,7 +67,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
     };
 
     const client: Client = {
-      id: generateId(),
+      id: clientId,
       name: saved.name,
       location: loc,
       jobDurationMinutes: saved.default_duration_minutes || 90,
@@ -142,40 +75,28 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
       isLocked: false,
       savedClientId: saved.id,
       notes: saved.notes || undefined,
-      email: saved.email || undefined,
-      phone: saved.phone || undefined,
       clientColor: saved.color || undefined,
     };
 
     dispatch({ type: 'ADD_CLIENT', teamId, client });
-    resetForm();
+    reset();
 
-    // If no lat/lng, resolve the address in background
+    // If the stored coordinates are missing or zero, resolve the address in the background
+    // and patch the card once we have real coordinates.
     if (!saved.lat || !saved.lng) {
       geocodeAddress(saved.address).then((resolved) => {
         if (resolved) {
-          dispatch({
-            type: 'UPDATE_CLIENT',
-            teamId,
-            clientId: client.id,
-            updates: { location: resolved },
-          });
+          dispatch({ type: 'UPDATE_CLIENT', teamId, clientId, updates: { location: resolved } });
         }
       });
     }
   };
 
-  const resetForm = () => {
+  const reset = () => {
     setIsOpen(false);
-    setName('');
-    setLocation(null);
-    setAddressText('');
-    setDuration(90);
     setSearchQuery('');
-    setShowSearch(true);
+    setIsFocused(false);
   };
-
-  const hasInput = !!location || addressText.trim().length > 0;
 
   return (
     <div>
@@ -188,10 +109,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
             exit={{ opacity: 0 }}
             onClick={() => setIsOpen(true)}
             className="w-full py-3 px-4 rounded-xl border-2 border-dashed transition-all text-sm font-medium flex items-center justify-center gap-2 cursor-pointer"
-            style={{
-              borderColor: `${teamColor}40`,
-              color: teamColor,
-            }}
+            style={{ borderColor: `${teamColor}40`, color: teamColor }}
             whileHover={{ scale: 1.01, borderColor: teamColor }}
             whileTap={{ scale: 0.99 }}
           >
@@ -207,173 +125,84 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
             initial={{ opacity: 0, y: 8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="card p-4"
             style={{ borderLeft: `3px solid ${teamColor}` }}
           >
+            {/* Header */}
             <div className="flex items-center gap-2 mb-3">
-              <div
-                className="w-6 h-6 rounded-md flex items-center justify-center"
-                style={{ backgroundColor: `${teamColor}15` }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={teamColor} strokeWidth="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
+              <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: `${teamColor}15` }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={teamColor} strokeWidth="2.5">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
               </div>
-              <span className="text-sm font-semibold text-text-primary">Add Client</span>
-              {/* Toggle between search and manual */}
-              {orgId && savedClients.length > 0 && (
-                <div className="ml-auto flex items-center gap-1 text-xs">
-                  <button
-                    onClick={() => setShowSearch(true)}
-                    className={`px-2 py-1 rounded-md transition-colors ${showSearch ? 'bg-primary-light text-primary font-semibold' : 'text-text-tertiary hover:text-text-secondary'}`}
-                  >
-                    Search
-                  </button>
-                  <button
-                    onClick={() => setShowSearch(false)}
-                    className={`px-2 py-1 rounded-md transition-colors ${!showSearch ? 'bg-primary-light text-primary font-semibold' : 'text-text-tertiary hover:text-text-secondary'}`}
-                  >
-                    Manual
-                  </button>
-                </div>
-              )}
+              <span className="text-sm font-semibold text-text-primary">Add from Client Database</span>
+              <button onClick={reset} className="ml-auto p-1 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
             </div>
 
-            <div className="space-y-3">
-              {/* Saved client search */}
-              {showSearch && orgId && savedClients.length > 0 && (
-                <div className="relative">
-                  <div className="relative">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
-                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={`Search ${savedClients.length} saved clients...`}
-                      className="input-field text-sm pl-9"
-                      autoFocus
-                    />
-                  </div>
-                  <AnimatePresence>
-                    {searchResults.length > 0 && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -4 }}
-                        className="mt-1.5 bg-white border border-border rounded-xl shadow-dropdown overflow-hidden max-h-[240px] overflow-y-auto custom-scrollbar"
-                      >
-                        {searchResults.map((client) => (
-                          <button
-                            key={client.id}
-                            onClick={() => addSavedClient(client)}
-                            className="w-full text-left px-3 py-2.5 hover:bg-surface-elevated transition-colors border-b border-border-light last:border-b-0"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <div className="text-sm font-medium text-text-primary">{client.name}</div>
-                              {client.color && <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: client.color }} />}
-                            </div>
-                            <div className="text-xs text-text-tertiary truncate mt-0.5">{client.address}</div>
-                            <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary">
-                              <span>{client.default_duration_minutes} min</span>
-                              <span>·</span>
-                              <span>{client.default_staff_count} staff</span>
-                              {client.email && <><span>·</span><span>{client.email}</span></>}
-                            </div>
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  {searchQuery.length >= 2 && searchResults.length === 0 && (
-                    <p className="text-xs text-text-tertiary mt-1.5 pl-1">No matching clients. Try manual entry below.</p>
-                  )}
-                </div>
-              )}
+            {/* Search input */}
+            <div className="relative mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setTimeout(() => setIsFocused(false), 150)}
+                placeholder={`Search ${savedClients.length} clients...`}
+                className="input-field text-sm"
+                style={{ paddingLeft: '2.25rem' }}
+                autoFocus
+              />
+            </div>
 
-              {/* Manual entry fields — always visible if showSearch is off, or as fallback */}
-              {(!showSearch || !orgId || savedClients.length === 0) && (
-                <>
-                  {/* Client name */}
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Client name (optional)"
-                    className="input-field text-sm"
-                    autoFocus={!showSearch}
-                  />
-
-                  {/* Address */}
-                  <PlacesAutocomplete
-                    onPlaceSelect={(loc) => {
-                      setLocation(loc);
-                      setAddressText(loc.address);
-                    }}
-                    onTextChange={(text) => {
-                      setAddressText(text);
-                      if (location && text !== location.address) {
-                        setLocation(null);
-                      }
-                    }}
-                    placeholder="Enter client address..."
-                    className="text-sm"
-                  />
-
-                  {/* Duration */}
-                  <div className="flex items-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    <select
-                      value={duration}
-                      onChange={(e) => setDuration(Number(e.target.value))}
-                      className="text-sm bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none 
-                               focus:border-primary cursor-pointer flex-1"
-                    >
-                      {JOB_DURATIONS.map((d) => (
-                        <option key={d.value} value={d.value}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 pt-1">
+            {/* Results — only when focused and query has content */}
+            <AnimatePresence>
+              {savedClients.length === 0 ? (
+                <p className="text-xs text-text-tertiary text-center py-4">
+                  No clients in database yet.{' '}
+                  <span className="text-primary">Add them in the Clients tab.</span>
+                </p>
+              ) : isFocused && searchQuery.trim().length > 0 && searchResults.length === 0 ? (
+                <p className="text-xs text-text-tertiary text-center py-4">
+                  No match — try a different name or{' '}
+                  <span className="text-primary">add them in the Clients tab.</span>
+                </p>
+              ) : isFocused && searchResults.length > 0 ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white border border-border rounded-xl shadow-dropdown overflow-hidden max-h-[240px] overflow-y-auto custom-scrollbar"
+                >
+                  {searchResults.map((client) => (
                     <button
-                      onClick={handleSubmit}
-                      disabled={!hasInput || isResolving}
-                      className="btn-primary flex-1 text-sm py-2.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-                      style={{
-                        backgroundColor: hasInput && !isResolving ? teamColor : undefined,
-                      }}
+                      key={client.id}
+                      onClick={() => addSavedClient(client)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-surface-elevated transition-colors border-b border-border-light last:border-b-0"
                     >
-                      {isResolving ? 'Finding address...' : 'Add to Schedule'}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-text-primary">{client.name}</span>
+                        {client.color && <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: client.color }} />}
+                      </div>
+                      <div className="text-xs text-text-tertiary truncate mt-0.5">{client.address}</div>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary">
+                        <span>{client.default_duration_minutes} min</span>
+                        <span>·</span>
+                        <span>{client.default_staff_count} staff</span>
+                        {client.email && <><span>·</span><span>{client.email}</span></>}
+                      </div>
                     </button>
-                    <button onClick={resetForm} className="btn-ghost text-sm">
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Cancel button when in search mode */}
-              {showSearch && orgId && savedClients.length > 0 && (
-                <div className="flex items-center gap-2 pt-1">
-                  <button onClick={() => setShowSearch(false)} className="btn-secondary flex-1 text-sm py-2.5">
-                    Manual Entry
-                  </button>
-                  <button onClick={resetForm} className="btn-ghost text-sm">
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
+                  ))}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

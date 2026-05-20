@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice — CleanRoute Pro Milestone 2</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      color: #1a1a2e;
+      background: #ffffff;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 48px;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 2px solid #4F46E5;
+    }
+
+    .header-left h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+
+    .header-left p {
+      color: #6B7280;
+      font-size: 14px;
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    .invoice-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #4F46E5;
+      background: #EEF2FF;
+      padding: 6px 16px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+    }
+
+    .invoice-number {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .invoice-date {
+      font-size: 13px;
+      color: #6B7280;
+      margin-top: 2px;
+    }
+
+    /* Parties */
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      margin-bottom: 40px;
+    }
+
+    .party-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #9CA3AF;
+      margin-bottom: 8px;
+    }
+
+    .party-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+
+    .party-detail {
+      font-size: 14px;
+      color: #6B7280;
+      line-height: 1.6;
+    }
+
+    /* Table */
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 32px;
+      font-size: 14px;
+    }
+
+    .invoice-table th {
+      text-align: left;
+      padding: 12px 14px;
+      background: #F9FAFB;
+      border: 1px solid #E5E7EB;
+      font-weight: 600;
+      color: #111827;
+      font-size: 13px;
+    }
+
+    .invoice-table th:last-child {
+      text-align: right;
+    }
+
+    .invoice-table td {
+      padding: 14px;
+      border: 1px solid #E5E7EB;
+      vertical-align: top;
+    }
+
+    .invoice-table td:last-child {
+      text-align: right;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .invoice-table tr:nth-child(even) td {
+      background: #FAFBFC;
+    }
+
+    .item-desc {
+      font-size: 13px;
+      color: #6B7280;
+      margin-top: 4px;
+    }
+
+    /* Totals */
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 40px;
+    }
+
+    .totals-box {
+      width: 280px;
+    }
+
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      font-size: 14px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+
+    .totals-row .label {
+      color: #6B7280;
+    }
+
+    .totals-row .amount {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .totals-row.total {
+      border-bottom: 2px solid #111827;
+      padding: 14px 0;
+    }
+
+    .totals-row.total .label {
+      font-weight: 700;
+      color: #111827;
+      font-size: 16px;
+    }
+
+    .totals-row.total .amount {
+      font-weight: 700;
+      color: #111827;
+      font-size: 16px;
+    }
+
+    /* Payment info */
+    .payment-section {
+      background: #F9FAFB;
+      border: 2px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin: 32px 0;
+    }
+
+    .payment-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 12px;
+    }
+
+    .payment-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 14px;
+    }
+
+    .payment-row .label {
+      color: #6B7280;
+    }
+
+    .payment-row .value {
+      color: #111827;
+      font-weight: 500;
+    }
+
+    /* Status */
+    .status-badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: #FEF3C7;
+      color: #92400E;
+    }
+
+    /* Payment history */
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 0;
+      font-size: 13px;
+    }
+
+    .history-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #F3F4F6;
+      border: 1px solid #E5E7EB;
+      font-weight: 600;
+      color: #374151;
+      font-size: 12px;
+    }
+
+    .history-table td {
+      padding: 8px 12px;
+      border: 1px solid #E5E7EB;
+      color: #374151;
+    }
+
+    .paid {
+      color: #059669;
+      font-weight: 600;
+    }
+
+    .pending {
+      color: #D97706;
+      font-weight: 600;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid #E5E7EB;
+      text-align: center;
+      font-size: 12px;
+      color: #9CA3AF;
+    }
+
+    /* Print */
+    @media print {
+      body {
+        font-size: 12px;
+        line-height: 1.6;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        padding: 0;
+        max-width: 100%;
+      }
+
+      @page {
+        margin: 15mm;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <h1>Riley Tech Studio</h1>
+        <p>Riley Kennedy</p>
+        <p style="font-size: 13px; color: #9CA3AF;">ABN: 82 944 887 387</p>
+      </div>
+      <div class="header-right">
+        <div class="invoice-badge">Invoice</div>
+        <div class="invoice-number">INV-CRP-002</div>
+        <div class="invoice-date">16 May 2026</div>
+        <div style="margin-top: 8px;">
+          <span class="status-badge">Payment Due</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parties -->
+    <div class="parties">
+      <div>
+        <div class="party-label">From</div>
+        <div class="party-name">Riley Tech Studio</div>
+        <div class="party-detail">
+          Riley Kennedy<br>
+          ABN: 82 944 887 387
+        </div>
+      </div>
+      <div>
+        <div class="party-label">Bill To</div>
+        <div class="party-name">Sarah O'Connell</div>
+        <div class="party-detail">
+          The Cleaning Co Shellharbour
+        </div>
+      </div>
+    </div>
+
+    <!-- Project reference -->
+    <div style="margin-bottom: 32px; padding: 16px 20px; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; font-size: 14px; color: #3730A3;">
+      <strong>Project:</strong> CleanRoute Pro — Custom Route Scheduling &amp; Optimisation Platform<br>
+      <strong>Reference:</strong> Scope of Work v4.0 (24 April 2026) — Milestone 2
+    </div>
+
+    <!-- Line items -->
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <strong>Milestone 2 — Working Staging Version</strong>
+            <div class="item-desc">
+              30% of total project investment ($6,500 AUD), due upon delivery of working staging version for review and testing.
+              Staging environment has been live and under active testing since early May 2026.
+            </div>
+          </td>
+          <td>$1,950.00</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals">
+      <div class="totals-box">
+        <div class="totals-row">
+          <span class="label">Subtotal</span>
+          <span class="amount">$1,950.00</span>
+        </div>
+        <div class="totals-row">
+          <span class="label">GST</span>
+          <span class="amount">N/A</span>
+        </div>
+        <div class="totals-row total">
+          <span class="label">Total Due</span>
+          <span class="amount">$1,950.00 AUD</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment schedule overview -->
+    <div class="payment-section">
+      <h3>Payment Schedule — Original Scope ($6,500 AUD)</h3>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Milestone</th>
+            <th>Description</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Milestone 1</td>
+            <td>Deposit (40%) — due on sign-off</td>
+            <td>$2,600.00</td>
+            <td><span class="paid">Paid ✓</span></td>
+          </tr>
+          <tr>
+            <td>Milestone 2</td>
+            <td>Working staging version (30%)</td>
+            <td>$1,950.00</td>
+            <td><span class="pending">Due Now</span></td>
+          </tr>
+          <tr>
+            <td>Milestone 3</td>
+            <td>Completion &amp; delivery (30%)</td>
+            <td>$1,950.00</td>
+            <td>Upcoming</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Payment details -->
+    <div class="payment-section">
+      <h3>Payment Details</h3>
+      <div class="payment-row">
+        <span class="label">Bank Transfer (preferred)</span>
+        <span class="value"></span>
+      </div>
+      <div class="payment-row">
+        <span class="label">Account Name</span>
+        <span class="value">Riley Kennedy</span>
+      </div>
+      <div class="payment-row">
+        <span class="label">BSB</span>
+        <span class="value">—</span>
+      </div>
+      <div class="payment-row">
+        <span class="label">Account Number</span>
+        <span class="value">—</span>
+      </div>
+      <div class="payment-row">
+        <span class="label">Reference</span>
+        <span class="value">INV-CRP-002</span>
+      </div>
+    </div>
+
+    <p style="font-size: 13px; color: #6B7280; margin-top: 24px;">
+      Payment is due within 7 days of invoice date. Please use the invoice reference when making payment.
+      If you have any questions about this invoice, please don't hesitate to get in touch.
+    </p>
+
+    <!-- Footer -->
+    <div class="footer">
+      Riley Tech Studio | ABN: 82 944 887 387<br>
+      Invoice INV-CRP-002 | Generated 16 May 2026
+    </div>
+
+  </div>
+</body>
+
+</html>

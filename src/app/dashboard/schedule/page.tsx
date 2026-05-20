@@ -318,6 +318,36 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekDates[0]]);
 
+  // Persist view context to localStorage so navigating away and back restores the same day/view
+  useEffect(() => {
+    try {
+      localStorage.setItem('crp_schedule_view', JSON.stringify({
+        viewMode: state.viewMode,
+        focusedDate: state.focusedDate,
+        activeTeamId: state.activeTeamId,
+      }));
+    } catch { /* ignore */ }
+  }, [state.viewMode, state.focusedDate, state.activeTeamId]);
+
+  // If the page mounts restored to day view (from localStorage), trigger a fresh DB load
+  // for that day once the initial week load completes. Patch activeTeamIdRef before the call
+  // so loadDayForEdit selects the right team (it already uses activeTeamIdRef.current).
+  const didRestoreDayView = useRef(false);
+  useEffect(() => {
+    if (dbLoaded && state.viewMode === 'day' && !didRestoreDayView.current) {
+      didRestoreDayView.current = true;
+      try {
+        const saved = localStorage.getItem('crp_schedule_view');
+        if (saved) {
+          const { activeTeamId } = JSON.parse(saved) as { activeTeamId?: string };
+          if (activeTeamId) activeTeamIdRef.current = activeTeamId;
+        }
+      } catch { /* ignore */ }
+      loadDayForEdit(state.focusedDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbLoaded]);
+
   // Derive team badges when teams or staff change
   useEffect(() => {
     if (dbLoaded && allStaff.length > 0) deriveTeamStaffMap();
@@ -458,7 +488,10 @@ export default function SchedulePage() {
     const teamsWithSchedule = teamsWithClients.filter(t => {
       const teamMap = weekSchedules.get(t.id);
       const dayData = teamMap?.get(date);
-      return dayData?.scheduleId != null;
+      // Include if they have a saved schedule row, OR if they have address config
+      // set for this day (the schedule row may not exist yet if it was just created
+      // by autosave and the week cache hasn't refreshed yet)
+      return dayData?.scheduleId != null || dayData?.baseAddress != null || (dayData?.returnAddress != null && dayData?.returnAddress !== 'none');
     });
 
     const finalTeams = teamsWithSchedule.length > 0 ? teamsWithSchedule : [teamsWithClients[0]];
@@ -519,7 +552,13 @@ export default function SchedulePage() {
       dispatch({ type: 'SET_ACTIVE_TEAM', teamId: state.teams[0].id });
     }
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' });
-    switchToDay(date);
+    dispatch({ type: 'SET_FOCUSED_DATE', date });
+    // Always do a fresh DB read when entering day view from week view.
+    // The week cache (weekSchedules) is stale at this point — handleBackToWeek
+    // fires loadWeekSchedules in the background, so it may not have finished
+    // by the time the user clicks a day cell. loadDayForEdit reads the DB
+    // directly and will have any data that saveNow flushed before leaving day view.
+    loadDayForEdit(date);
   };
 
   const handleBackToWeek = async () => {
@@ -776,6 +815,8 @@ export default function SchedulePage() {
     const teamId = pendingDeleteTeam.id;
     const targetDate = pendingDeleteTeam.date;
     setPendingDeleteTeam(null);
+    // Remove from local state immediately so the UI reflects the deletion right away
+    dispatch({ type: 'REMOVE_TEAM', teamId });
     // Delete the schedule for this SPECIFIC DAY
     const { data: daySched } = await supabase
       .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();

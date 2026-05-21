@@ -255,6 +255,53 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state, dbLoaded, orgId, saveNow]);
 
+  // ─── Background geocoding for zero-coordinate clients ───
+  // When clients load from DB with lat=0/lng=0 (ocean pin), resolve their
+  // address via Google Places and patch the location in state + save.
+  const geocodedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!dbLoaded || !window.google?.maps) return;
+    for (const team of state.teams) {
+      for (const client of team.clients) {
+        if (geocodedIdsRef.current.has(client.id)) continue;
+        if (client.location.lat !== 0 || client.location.lng !== 0) continue;
+        if (!client.location.address) continue;
+        geocodedIdsRef.current.add(client.id);
+        const address = client.location.address;
+        const clientId = client.id;
+        const teamId = team.id;
+        // Resolve best-match address via Places API
+        const svc = new google.maps.places.AutocompleteService();
+        svc.getPlacePredictions(
+          { input: address, componentRestrictions: { country: 'au' }, types: ['address'] },
+          (predictions, status) => {
+            if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions?.length) return;
+            const div = document.createElement('div');
+            const ps = new google.maps.places.PlacesService(div);
+            ps.getDetails(
+              { placeId: predictions[0].place_id, fields: ['formatted_address', 'geometry', 'place_id'] },
+              (place, s) => {
+                if (s === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
+                  dispatch({
+                    type: 'UPDATE_CLIENT', teamId, clientId,
+                    updates: {
+                      location: {
+                        address: place.formatted_address || address,
+                        lat: place.geometry.location.lat(),
+                        lng: place.geometry.location.lng(),
+                        placeId: place.place_id,
+                      },
+                    },
+                  });
+                }
+              }
+            );
+          }
+        );
+      }
+    }
+  }, [dbLoaded, state.teams, dispatch]);
+
   // ─── Schedule calculations ───
   const scheduleResult = useMemo(() => calculateScheduleTimes(activeTeam), [activeTeam]);
   const baseDepartureTime = scheduleResult.baseDepartureTime;

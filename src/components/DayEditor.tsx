@@ -84,90 +84,99 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   useEffect(() => { justLoadedRef.current = true; }, [state.selectedDate]);
 
 
+  const isSavingRef = useRef(false);
+  const needsSaveRef = useRef(false);
+
   const saveNow = useCallback(async () => {
-    if (!orgId) return;
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
-    const currentState = stateRef.current;
-    const today = currentState.selectedDate;
-    for (const team of currentState.teams) {
-      const teamUpdate: Record<string, unknown> = {
-        name: team.name, day_start_time: team.dayStartTime,
-        hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
-        fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
-      };
-      await supabase.from('teams').update(teamUpdate).eq('id', team.id);
 
-      // Check if this team has any content for today
-      const hasClients = team.clients.length > 0;
-      const hasBaseAddress = team.baseAddress !== null;
-      const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
-      const { data: existingSched } = await supabase
-        .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
-
-      // Skip teams with no clients, no address config, and no existing schedule —
-      // this prevents empty schedule rows from leaking across days while still
-      // persisting address-only teams (e.g. base/return set before adding clients)
-      if (!hasClients && !hasBaseAddress && !hasReturnAddress && !existingSched) continue;
-
-      // Build per-day schedule record with base addresses
-      const scheduleData: Record<string, unknown> = {
-        org_id: orgId, team_id: team.id, schedule_date: today,
-        has_start_base: team.baseAddress !== null,
-        has_return_base: team.returnAddress !== 'none',
-      };
-      if (team.baseAddress) {
-        scheduleData.base_address = team.baseAddress.address;
-        scheduleData.base_lat = team.baseAddress.lat;
-        scheduleData.base_lng = team.baseAddress.lng;
-        scheduleData.base_place_id = team.baseAddress.placeId || null;
-      } else {
-        scheduleData.base_address = null;
-        scheduleData.base_lat = null;
-        scheduleData.base_lng = null;
-        scheduleData.base_place_id = null;
-      }
-      if (team.returnAddress === 'none') {
-        scheduleData.return_address = null;
-        scheduleData.return_lat = null;
-        scheduleData.return_lng = null;
-        scheduleData.return_place_id = null;
-      } else if (team.returnAddress) {
-        scheduleData.return_address = team.returnAddress.address;
-        scheduleData.return_lat = team.returnAddress.lat;
-        scheduleData.return_lng = team.returnAddress.lng;
-        scheduleData.return_place_id = team.returnAddress.placeId || null;
-      } else {
-        scheduleData.return_address = null;
-        scheduleData.return_lat = null;
-        scheduleData.return_lng = null;
-        scheduleData.return_place_id = null;
-      }
-
-      let scheduleId: string;
-      if (existingSched) {
-        scheduleId = existingSched.id;
-        await supabase.from('schedules').update(scheduleData).eq('id', scheduleId);
-      } else {
-        const { data: created } = await supabase
-          .from('schedules').insert(scheduleData).select('id').single();
-        if (!created) continue;
-        scheduleId = created.id;
-      }
-      await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
-      if (team.clients.length > 0) {
-        const rows = team.clients.map((c, i) => ({
-          schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
-          position: i, name: c.name, address: c.location.address,
-          lat: c.location.lat, lng: c.location.lng, place_id: c.location.placeId || null,
-          duration_minutes: c.jobDurationMinutes, staff_count: c.staffCount || 1,
-          is_locked: c.isLocked || false, is_break: false, notes: c.notes || '',
-          start_time: c.startTime || null, end_time: c.endTime || null,
-          fixed_start_time: c.fixedStartTime || null,
-          assigned_staff_ids: c.assignedStaffIds || [],
-        }));
-        await supabase.from('schedule_jobs').insert(rows);
-      }
+    // If a save is already running, flag it and return — the running save will
+    // loop again with the latest state once it finishes.
+    if (isSavingRef.current) {
+      needsSaveRef.current = true;
+      return;
     }
+
+    do {
+      needsSaveRef.current = false;
+      isSavingRef.current = true;
+      try {
+        if (!orgId) break;
+        const currentState = stateRef.current;
+        const today = currentState.selectedDate;
+        for (const team of currentState.teams) {
+          const teamUpdate: Record<string, unknown> = {
+            name: team.name, day_start_time: team.dayStartTime,
+            hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
+            fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
+          };
+          await supabase.from('teams').update(teamUpdate).eq('id', team.id);
+
+          const hasClients = team.clients.length > 0;
+          const hasBaseAddress = team.baseAddress !== null;
+          const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
+          const { data: existingSched } = await supabase
+            .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
+
+          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !existingSched) continue;
+
+          const scheduleData: Record<string, unknown> = {
+            org_id: orgId, team_id: team.id, schedule_date: today,
+            has_start_base: team.baseAddress !== null,
+            has_return_base: team.returnAddress !== 'none',
+          };
+          if (team.baseAddress) {
+            scheduleData.base_address = team.baseAddress.address;
+            scheduleData.base_lat = team.baseAddress.lat;
+            scheduleData.base_lng = team.baseAddress.lng;
+            scheduleData.base_place_id = team.baseAddress.placeId || null;
+          } else {
+            scheduleData.base_address = null; scheduleData.base_lat = null;
+            scheduleData.base_lng = null; scheduleData.base_place_id = null;
+          }
+          if (team.returnAddress === 'none') {
+            scheduleData.return_address = null; scheduleData.return_lat = null;
+            scheduleData.return_lng = null; scheduleData.return_place_id = null;
+          } else if (team.returnAddress) {
+            scheduleData.return_address = team.returnAddress.address;
+            scheduleData.return_lat = team.returnAddress.lat;
+            scheduleData.return_lng = team.returnAddress.lng;
+            scheduleData.return_place_id = team.returnAddress.placeId || null;
+          } else {
+            scheduleData.return_address = null; scheduleData.return_lat = null;
+            scheduleData.return_lng = null; scheduleData.return_place_id = null;
+          }
+
+          let scheduleId: string;
+          if (existingSched) {
+            scheduleId = existingSched.id;
+            await supabase.from('schedules').update(scheduleData).eq('id', scheduleId);
+          } else {
+            const { data: created } = await supabase
+              .from('schedules').insert(scheduleData).select('id').single();
+            if (!created) continue;
+            scheduleId = created.id;
+          }
+          await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
+          if (team.clients.length > 0) {
+            const rows = team.clients.map((c, i) => ({
+              schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
+              position: i, name: c.name, address: c.location.address,
+              lat: c.location.lat, lng: c.location.lng, place_id: c.location.placeId || null,
+              duration_minutes: c.jobDurationMinutes, staff_count: c.staffCount || 1,
+              is_locked: c.isLocked || false, is_break: false, notes: c.notes || '',
+              start_time: c.startTime || null, end_time: c.endTime || null,
+              fixed_start_time: c.fixedStartTime || null,
+              assigned_staff_ids: c.assignedStaffIds || [],
+            }));
+            await supabase.from('schedule_jobs').insert(rows);
+          }
+        }
+      } finally {
+        isSavingRef.current = false;
+      }
+    // If another save was requested while this one was running, loop with the latest state
+    } while (needsSaveRef.current);
   }, [orgId, supabase]);
 
   // Expose saveNow to parent

@@ -87,68 +87,69 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
 
       <div className="space-y-2">
         {/* ── Time breakdown ── */}
-
-        {/* 1. Job total */}
-        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs font-medium text-text-secondary">Job Total</div>
-          <div className="flex items-center gap-3">
-            <span className="text-base font-bold text-text-primary">{formatDuration(summary.totalJobMinutes)}</span>
-            <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalJobMinutes / 60).toFixed(2)} hrs</span>
-          </div>
-        </div>
-
-        {/* 2. Job split per staff — only shown when avg staffCount > 1 */}
         {(() => {
-          const jobSplitMins = summary.payableMinutes - summary.totalTravelMinutes;
-          const divisor = summary.totalJobMinutes > 0 && jobSplitMins > 0
-            ? Math.round(summary.totalJobMinutes / jobSplitMins)
+          const effectiveJobMins = summary.payableMinutes - summary.totalTravelMinutes;
+          const divisor = summary.totalJobMinutes > 0 && effectiveJobMins > 0
+            ? Math.round(summary.totalJobMinutes / effectiveJobMins)
             : 1;
-          if (divisor <= 1) return null;
+
           return (
-            <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
-              <div className="text-xs font-medium text-text-secondary flex items-center gap-1.5">
-                Job Split
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-border-light text-text-tertiary">÷{divisor}</span>
+            <>
+              {/* 1. Job total */}
+              <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+                <div className="text-xs font-medium text-text-secondary">Job Total</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-base font-bold text-text-primary">{formatDuration(summary.totalJobMinutes)}</span>
+                  <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalJobMinutes / 60).toFixed(2)} hrs</span>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-base font-bold text-text-primary">{formatDuration(jobSplitMins)}</span>
-                <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(jobSplitMins / 60).toFixed(2)} hrs</span>
+
+              {/* 2. Per staff split — always shown, badge shows ÷1 / ÷2 / ÷3 etc */}
+              <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+                <div className="text-xs font-medium text-text-secondary flex items-center gap-1.5">
+                  Per Staff
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-white border border-border-light text-text-tertiary">÷{divisor}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-base font-bold text-text-primary">{formatDuration(effectiveJobMins)}</span>
+                  <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(effectiveJobMins / 60).toFixed(2)} hrs</span>
+                </div>
               </div>
-            </div>
+
+              {/* 3. Travel */}
+              <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+                <div className="text-xs font-medium text-text-secondary">Travel</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDuration(summary.totalTravelMinutes)}</span>
+                  <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalTravelMinutes / 60).toFixed(2)} hrs</span>
+                </div>
+              </div>
+
+              {/* Break (if any) */}
+              {summary.totalBreakMinutes > 0 && (
+                <div className="flex items-center justify-between bg-amber-50 rounded-xl p-3 border border-amber-100">
+                  <div className="text-xs font-medium text-amber-700">Break <span className="text-[10px] font-normal text-amber-500">(excl. payroll)</span></div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-base font-bold text-amber-700">{formatDuration(summary.totalBreakMinutes)}</span>
+                    <span className="text-xs text-amber-500 bg-white px-2 py-0.5 rounded-md border border-amber-100">{(summary.totalBreakMinutes / 60).toFixed(2)} hrs</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Divider */}
+              <div className="border-t border-border-light" />
+
+              {/* 4. Job split + Travel — payable total per person */}
+              <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
+                <div className="text-xs font-bold" style={{ color: team.color.text }}>Job Split + Travel</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-bold" style={{ color: team.color.text }}>{formatDuration(summary.payableMinutes)}</span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white/60" style={{ color: team.color.text }}>{(summary.payableMinutes / 60).toFixed(2)} hrs</span>
+                </div>
+              </div>
+            </>
           );
         })()}
-
-        {/* 3. Travel */}
-        <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
-          <div className="text-xs font-medium text-text-secondary">Travel</div>
-          <div className="flex items-center gap-3">
-            <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDuration(summary.totalTravelMinutes)}</span>
-            <span className="text-xs text-text-tertiary bg-white px-2 py-0.5 rounded-md border border-border-light">{(summary.totalTravelMinutes / 60).toFixed(2)} hrs</span>
-          </div>
-        </div>
-
-        {/* Break (if any) */}
-        {summary.totalBreakMinutes > 0 && (
-          <div className="flex items-center justify-between bg-amber-50 rounded-xl p-3 border border-amber-100">
-            <div className="text-xs font-medium text-amber-700">Break <span className="text-[10px] font-normal text-amber-500">(excl. payroll)</span></div>
-            <div className="flex items-center gap-3">
-              <span className="text-base font-bold text-amber-700">{formatDuration(summary.totalBreakMinutes)}</span>
-              <span className="text-xs text-amber-500 bg-white px-2 py-0.5 rounded-md border border-amber-100">{(summary.totalBreakMinutes / 60).toFixed(2)} hrs</span>
-            </div>
-          </div>
-        )}
-
-        {/* Divider */}
-        <div className="border-t border-border-light" />
-
-        {/* 4. Job split + Travel — payable total per person */}
-        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
-          <div className="text-xs font-bold" style={{ color: team.color.text }}>Job Split + Travel</div>
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-bold" style={{ color: team.color.text }}>{formatDuration(summary.payableMinutes)}</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white/60" style={{ color: team.color.text }}>{(summary.payableMinutes / 60).toFixed(2)} hrs</span>
-          </div>
-        </div>
 
         {/* Driver Km */}
         <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">

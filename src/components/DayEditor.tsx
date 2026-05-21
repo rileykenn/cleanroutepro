@@ -75,8 +75,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   // ─── Auto-save ───
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStateRef = useRef<string>('');
+  const prevClientCountRef = useRef<number>(-1);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // After a day load (date changes), the first effect run should just initialize
+  // the baseline refs without triggering a save.
+  const justLoadedRef = useRef(true);
+  useEffect(() => { justLoadedRef.current = true; }, [state.selectedDate]);
+
 
   const saveNow = useCallback(async () => {
     if (!orgId) return;
@@ -182,13 +188,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   useEffect(() => {
     if (!dbLoaded || !orgId) return;
 
-    // Never autosave during transition states where all teams have been completely cleared.
-    // This happens briefly during switchToDay before real data loads.
-    // Only bail if teams are truly empty — no clients AND no addresses set.
     const totalClients = state.teams.reduce((sum, t) => sum + t.clients.length, 0);
-    const anyAddressSet = state.teams.some(t => t.baseAddress !== null || (t.returnAddress !== null && t.returnAddress !== 'none'));
-    if (totalClients === 0 && !anyAddressSet && state.teams.length > 0) return;
-
     const fingerprint = JSON.stringify(
       state.teams.map((t) => ({
         id: t.id, name: t.name, base: t.baseAddress, ret: t.returnAddress, start: t.dayStartTime,
@@ -201,10 +201,29 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         breaks: t.breaks,
       }))
     );
+
+    // First run after a day load — just record the baseline, don't save.
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      prevStateRef.current = fingerprint;
+      prevClientCountRef.current = totalClients;
+      return;
+    }
+
     if (fingerprint === prevStateRef.current) return;
     prevStateRef.current = fingerprint;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => { saveNow(); }, 2000);
+
+    // Structural change (client added/removed) → save immediately.
+    // Detail change (duration, staff, etc.) → short debounce.
+    const isStructural = totalClients !== prevClientCountRef.current;
+    prevClientCountRef.current = totalClients;
+
+    if (isStructural) {
+      saveNow();
+    } else {
+      saveTimerRef.current = setTimeout(() => { saveNow(); }, 800);
+    }
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state, dbLoaded, orgId, saveNow]);
 

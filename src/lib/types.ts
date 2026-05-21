@@ -246,3 +246,97 @@ export interface AppState {
   viewMode: 'week' | 'day';
   focusedDate: string;
 }
+
+// ─── Checklist / Form Builder Types ───────────────────────────────────────────
+
+export type FormFieldType =
+  | 'section_heading'
+  | 'text'
+  | 'yes_no'
+  | 'dropdown'
+  | 'multi_select'
+  | 'date'
+  | 'time'
+  | 'image'
+  | 'video';
+
+export interface FormFieldConditional {
+  /** ID of the yes_no parent field */
+  parentId: string;
+  /** Only show this field when parent answer equals this value */
+  showWhen: 'yes' | 'no';
+}
+
+export interface FormField {
+  id: string;
+  type: FormFieldType;
+  /** Label / question text */
+  label: string;
+  /** Optional description / sub-instruction shown below label */
+  description?: string;
+  /** Whether staff must answer before submitting */
+  required?: boolean;
+  /** Options for dropdown / multi_select */
+  options?: string[];
+  /** Conditional visibility rule */
+  conditional?: FormFieldConditional;
+}
+
+/** Legacy simple checklist item — auto-upgraded to yes_no on read */
+export interface LegacyChecklistItem {
+  id: string;
+  text: string;
+}
+
+/** Union stored in checklist_templates.items */
+export type AnyFormField = FormField | LegacyChecklistItem;
+
+/** Normalise a raw item from DB into a FormField */
+export function normaliseField(raw: AnyFormField): FormField {
+  if ('type' in raw) return raw as FormField;
+  // Legacy text item → treat as yes_no checkbox
+  return {
+    id: (raw as LegacyChecklistItem).id,
+    type: 'yes_no',
+    label: (raw as LegacyChecklistItem).text,
+    required: false,
+  };
+}
+
+/** Answer values stored in checklist_completions.items */
+export interface FieldAnswer {
+  fieldId: string;
+  value: string | string[] | boolean | null;
+  /** true if staff marked this N/A */
+  na?: boolean;
+}
+
+/** Per-field media URLs stored in checklist_completions.media_urls */
+export type MediaUrls = Record<string, string[]>;
+
+export interface RichChecklistTemplate {
+  id: string;
+  org_id: string;
+  name: string;
+  items: FormField[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RichChecklistCompletion {
+  id: string;
+  org_id: string;
+  client_id: string;
+  schedule_job_id?: string;
+  checklist_template_id: string;
+  items: FieldAnswer[];
+  media_urls: MediaUrls;
+  notes: string;
+  completed_by: string;
+  completed_at: string;
+  created_at?: string;
+  // Enriched
+  clientName?: string;
+  templateName?: string;
+  completedByName?: string;
+}

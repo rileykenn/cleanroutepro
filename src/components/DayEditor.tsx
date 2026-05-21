@@ -83,9 +83,10 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const justLoadedRef = useRef(true);
   useEffect(() => { justLoadedRef.current = true; }, [state.selectedDate]);
 
-
   const isSavingRef = useRef(false);
   const needsSaveRef = useRef(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveNow = useCallback(async () => {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
@@ -100,7 +101,12 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     do {
       needsSaveRef.current = false;
       isSavingRef.current = true;
-      try {
+      setSaveStatus('saving');
+      let attempt = 0;
+      let success = false;
+      while (attempt < 2 && !success) {
+        attempt++;
+        try {
         if (!orgId) break;
         const currentState = stateRef.current;
         const today = currentState.selectedDate;
@@ -172,10 +178,23 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             await supabase.from('schedule_jobs').insert(rows);
           }
         }
-      } finally {
-        isSavingRef.current = false;
+        success = true;
+        } catch (err) {
+          if (attempt >= 2) {
+            console.error('[AutoSave] Failed after retry:', err);
+          }
+          // brief pause before retry
+          if (attempt < 2) await new Promise(r => setTimeout(r, 800));
+        }
+      } // end while retry
+      isSavingRef.current = false;
+      if (success) {
+        setSaveStatus('saved');
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
+      } else {
+        setSaveStatus('error');
       }
-    // If another save was requested while this one was running, loop with the latest state
     } while (needsSaveRef.current);
   }, [orgId, supabase]);
 
@@ -344,7 +363,24 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           <div className="flex items-center justify-between px-4 py-2 border-b border-border-light bg-white">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-text-primary">{formatDateDisplay(state.selectedDate)}</span>
-              {dbLoaded && <span className="text-[10px] text-text-tertiary">· Auto-saving</span>}
+              {saveStatus === 'saving' && (
+                <span className="text-[10px] text-text-tertiary flex items-center gap-1">
+                  <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  Saving…
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="text-[10px] text-emerald-500 flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  Saved
+                </span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="text-[10px] text-red-500 flex items-center gap-1" title="Save failed — check connection">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Save failed
+                </span>
+              )}
             </div>
             <button onClick={() => setMobileShowMap(!mobileShowMap)} className="md:hidden btn-ghost">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

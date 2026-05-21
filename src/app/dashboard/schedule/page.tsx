@@ -20,15 +20,33 @@ import ConfirmModal from '@/components/ConfirmModal';
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
+// Module-level cache — persists across route changes in the same browser session.
+// This eliminates the loading skeleton when switching back to the schedule tab.
+type SchedulePageCache = {
+  weekSchedules: Map<string, Map<string, DaySchedule>>;
+  allStaff: StaffMember[];
+  publishedDates: Set<string>;
+  timestamp: number;
+};
+let _pageCache: SchedulePageCache | null = null;
+const CACHE_TTL = 90_000; // 90 seconds
+
 export default function SchedulePage() {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
-  const [dbLoaded, setDbLoaded] = useState(false);
+  const isCacheHit = _pageCache !== null && Date.now() - _pageCache.timestamp < CACHE_TTL;
+  const [dbLoaded, setDbLoaded] = useState(isCacheHit);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
-  const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
-  const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
-  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
+  const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(
+    isCacheHit ? _pageCache!.weekSchedules : new Map()
+  );
+  const [publishedDates, setPublishedDates] = useState<Set<string>>(
+    isCacheHit ? _pageCache!.publishedDates : new Set()
+  );
+  const [allStaff, setAllStaff] = useState<StaffMember[]>(
+    isCacheHit ? _pageCache!.allStaff : []
+  );
   const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
@@ -230,6 +248,8 @@ export default function SchedulePage() {
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
+      // Update module-level cache so the next mount (tab switch) is instant
+      _pageCache = { weekSchedules: allTeamMaps, publishedDates: newPublished, allStaff: [], timestamp: Date.now() };
 
       // Store ALL org teams for the add-team feature
       allOrgTeamsRef.current = teamsList;
@@ -282,7 +302,10 @@ export default function SchedulePage() {
   const loadStaffMembers = useCallback(async () => {
     if (!orgId) return;
     const { data } = await supabase.from('staff_members').select('id, name, role, hourly_rate, available_days').eq('org_id', orgId).order('name');
-    if (data) setAllStaff(data as StaffMember[]);
+    if (data) {
+      setAllStaff(data as StaffMember[]);
+      if (_pageCache) _pageCache = { ..._pageCache, allStaff: data as StaffMember[], timestamp: Date.now() };
+    }
   }, [orgId, supabase]);
 
   // Derive teamStaffMap from per-job assignments (for TeamTabs badges)
@@ -448,6 +471,22 @@ export default function SchedulePage() {
               savedClientId: (j.client_id as string) || undefined,
               assignedStaffIds: assignedIds,
             };
+          });
+        // Reconstruct breaks from is_break=true rows
+        team.breaks = jobs
+          .filter((j) => j.is_break)
+          .map((j) => {
+            try {
+              const meta = JSON.parse((j.notes as string) || '{}');
+              return {
+                id: meta.breakId || (j.id as string),
+                afterClientId: meta.afterClientId || '',
+                durationMinutes: Number(j.duration_minutes) || 30,
+                label: (j.name as string) || 'Break',
+              };
+            } catch {
+              return { id: j.id as string, afterClientId: '', durationMinutes: Number(j.duration_minutes) || 30, label: 'Break' };
+            }
           });
       }
       teamsList.push(team);
@@ -972,10 +1011,59 @@ export default function SchedulePage() {
   if (!dbLoaded) {
     return (
       <APIProvider apiKey={MAPS_KEY} libraries={['places', 'routes']}>
-        <div className="h-full flex flex-col items-center justify-center gap-3 p-6">
-          <div className="shimmer w-48 h-6 rounded-lg" />
-          <div className="shimmer w-64 h-10 rounded-xl" />
-          <div className="shimmer w-full max-w-md h-32 rounded-xl" />
+        <div className="h-full flex flex-col">
+          {/* Header skeleton */}
+          <div className="shrink-0 h-14 border-b border-border-light bg-white px-4 lg:px-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="shimmer w-6 h-6 rounded-md" />
+              <div className="shimmer w-40 h-5 rounded-md" />
+              <div className="shimmer w-6 h-6 rounded-md" />
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="shimmer w-20 h-8 rounded-lg" />
+              <div className="shimmer w-20 h-8 rounded-lg" />
+            </div>
+          </div>
+          {/* Team tabs skeleton */}
+          <div className="shrink-0 h-10 border-b border-border-light bg-white px-4 flex items-center gap-2">
+            {[80, 72, 76].map((w, i) => <div key={i} className="shimmer h-6 rounded-full" style={{ width: w }} />)}
+          </div>
+          {/* Content skeleton */}
+          {state.viewMode === 'day' ? (
+            <div className="flex-1 flex min-h-0">
+              {/* Left panel — job cards */}
+              <div className="w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light p-4 space-y-3 overflow-hidden">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="rounded-xl border border-border-light p-4 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="shimmer w-8 h-8 rounded-full shrink-0" />
+                      <div className="shimmer h-4 rounded-md flex-1" />
+                    </div>
+                    <div className="shimmer h-3 rounded-md w-3/4 ml-11" />
+                    <div className="shimmer h-3 rounded-md w-1/2 ml-11" />
+                  </div>
+                ))}
+                <div className="rounded-xl border border-border-light p-4 space-y-2 mt-2">
+                  <div className="shimmer h-3 rounded-md w-24" />
+                  <div className="shimmer h-8 rounded-md w-full" />
+                  <div className="shimmer h-3 rounded-md w-32" />
+                  <div className="shimmer h-8 rounded-md w-full" />
+                </div>
+              </div>
+              {/* Right panel — map */}
+              <div className="flex-1 shimmer" />
+            </div>
+          ) : (
+            // Week view — 7-column grid
+            <div className="flex-1 flex min-h-0 overflow-x-auto">
+              {[0,1,2,3,4,5,6].map(i => (
+                <div key={i} className="flex-1 min-w-[120px] border-r border-border-light p-3 space-y-2">
+                  <div className="shimmer h-4 rounded-md w-16 mb-3" />
+                  {[1,2,3].map(j => <div key={j} className="shimmer h-12 rounded-lg w-full" />)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </APIProvider>
     );

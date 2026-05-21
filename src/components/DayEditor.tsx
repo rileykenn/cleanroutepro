@@ -76,6 +76,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStateRef = useRef<string>('');
   const prevClientCountRef = useRef<number>(-1);
+  const prevBreakCountRef = useRef<number>(-1);
   const stateRef = useRef(state);
   stateRef.current = state;
   // After a day load (date changes), the first effect run should just initialize
@@ -164,8 +165,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             scheduleId = created.id;
           }
           await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
-          if (team.clients.length > 0) {
-            const rows = team.clients.map((c, i) => ({
+          // Build rows: regular clients first, then breaks
+          const allRows: Record<string, unknown>[] = [
+            ...team.clients.map((c, i) => ({
               schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
               position: i, name: c.name, address: c.location.address,
               lat: c.location.lat, lng: c.location.lng, place_id: c.location.placeId || null,
@@ -174,8 +176,21 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               start_time: c.startTime || null, end_time: c.endTime || null,
               fixed_start_time: c.fixedStartTime || null,
               assigned_staff_ids: c.assignedStaffIds || [],
-            }));
-            await supabase.from('schedule_jobs').insert(rows);
+            })),
+            // Breaks stored with is_break=true; afterClientId encoded in notes
+            ...team.breaks.map((b, i) => ({
+              schedule_id: scheduleId, org_id: orgId, client_id: null,
+              position: team.clients.length + i, name: b.label || 'Break',
+              address: '', lat: 0, lng: 0, place_id: null,
+              duration_minutes: b.durationMinutes, staff_count: 1,
+              is_locked: false, is_break: true,
+              notes: JSON.stringify({ afterClientId: b.afterClientId, breakId: b.id }),
+              start_time: null, end_time: null, fixed_start_time: null,
+              assigned_staff_ids: [],
+            })),
+          ];
+          if (allRows.length > 0) {
+            await supabase.from('schedule_jobs').insert(allRows);
           }
         }
         success = true;
@@ -224,7 +239,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address,
           lat: c.location.lat, lng: c.location.lng,
-          dur: c.jobDurationMinutes,
+          dur: c.jobDurationMinutes, notes: c.notes || '',
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
           assignedStaff: c.assignedStaffIds, color: c.clientColor,
         })),
@@ -237,6 +252,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       justLoadedRef.current = false;
       prevStateRef.current = fingerprint;
       prevClientCountRef.current = totalClients;
+      prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
       return;
     }
 
@@ -244,10 +260,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     prevStateRef.current = fingerprint;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    // Structural change (client added/removed) → save immediately.
-    // Detail change (duration, staff, etc.) → short debounce.
-    const isStructural = totalClients !== prevClientCountRef.current;
+    // Structural change = client or break count changed → save immediately.
+    // Detail change (duration, notes, etc.) → short debounce.
+    const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
+    const isStructural = totalClients !== prevClientCountRef.current ||
+      totalBreaks !== prevBreakCountRef.current;
     prevClientCountRef.current = totalClients;
+    prevBreakCountRef.current = totalBreaks;
 
     if (isStructural) {
       saveNow();

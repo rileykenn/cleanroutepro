@@ -480,20 +480,25 @@ export default function SchedulePage() {
               assignedStaffIds: assignedIds,
             };
           });
-        // Reconstruct breaks from is_break=true rows
+        // Reconstruct breaks from is_break=true rows.
+        // We store afterPosition (stable index) in notes so that the transient
+        // schedule_jobs UUID change on every DELETE+INSERT doesn't break anchoring.
         team.breaks = jobs
           .filter((j) => j.is_break)
           .map((j) => {
             try {
               const meta = JSON.parse((j.notes as string) || '{}');
+              // Map the stored position back to the current client's in-memory ID.
+              const afterPos = typeof meta.afterPosition === 'number' ? meta.afterPosition : -1;
+              const afterClient = afterPos >= 0 ? team.clients[afterPos] : null;
               return {
                 id: meta.breakId || (j.id as string),
-                afterClientId: meta.afterClientId || '',
+                afterClientId: afterClient?.id || meta.afterClientId || '',
                 durationMinutes: Number(j.duration_minutes) || 30,
-                label: (j.name as string) || 'Break',
+                label: meta.label || (j.name as string) || 'Break',
               };
             } catch {
-              return { id: j.id as string, afterClientId: '', durationMinutes: Number(j.duration_minutes) || 30, label: 'Break' };
+              return { id: j.id as string, afterClientId: team.clients[0]?.id || '', durationMinutes: Number(j.duration_minutes) || 30, label: 'Break' };
             }
           });
       }

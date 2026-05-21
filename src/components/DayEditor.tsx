@@ -190,7 +190,12 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               address: '', lat: 0, lng: 0, place_id: null,
               duration_minutes: b.durationMinutes, staff_count: 1,
               is_locked: false, is_break: true,
-              notes: JSON.stringify({ afterClientId: b.afterClientId, breakId: b.id }),
+              // Store afterPosition (stable index) instead of the transient schedule_jobs UUID.
+              // The UUID changes every DELETE+INSERT cycle, but the position is stable.
+              notes: JSON.stringify({
+                afterPosition: team.clients.findIndex(c => c.id === b.afterClientId),
+                breakId: b.id, label: b.label || 'Break',
+              }),
               start_time: null, end_time: null, fixed_start_time: null,
               assigned_staff_ids: [] as string[],
             })),

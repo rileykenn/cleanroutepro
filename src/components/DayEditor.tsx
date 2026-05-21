@@ -25,9 +25,12 @@ interface DayEditorProps {
   supabase: SupabaseClient;
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
   allStaff?: StaffMember[];
+  /** Increments each time loadDayForEdit completes — signals a fresh DB load so
+   *  the autosave baseline is re-recorded and no spurious save fires. */
+  loadGeneration?: number;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, loadGeneration = 0 }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
 
@@ -77,12 +80,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const prevStateRef = useRef<string>('');
   const prevClientCountRef = useRef<number>(-1);
   const prevBreakCountRef = useRef<number>(-1);
+  const prevBaseRef = useRef<string>('');
   const stateRef = useRef(state);
   stateRef.current = state;
   // After a day load (date changes), the first effect run should just initialize
   // the baseline refs without triggering a save.
   const justLoadedRef = useRef(true);
-  useEffect(() => { justLoadedRef.current = true; }, [state.selectedDate]);
+  // Reset baseline whenever selectedDate changes OR a fresh DB load completes
+  useEffect(() => { justLoadedRef.current = true; }, [state.selectedDate, loadGeneration]);
 
   const isSavingRef = useRef(false);
   const needsSaveRef = useRef(false);
@@ -253,6 +258,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       prevStateRef.current = fingerprint;
       prevClientCountRef.current = totalClients;
       prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
+      prevBaseRef.current = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
       return;
     }
 
@@ -260,13 +266,17 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     prevStateRef.current = fingerprint;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    // Structural change = client or break count changed → save immediately.
-    // Detail change (duration, notes, etc.) → short debounce.
+    // Structural = client/break count changed OR base/return address changed → save immediately.
+    // Detail change (duration, notes, staff etc.) → 800ms debounce.
     const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
-    const isStructural = totalClients !== prevClientCountRef.current ||
-      totalBreaks !== prevBreakCountRef.current;
+    const curBase = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
+    const isStructural =
+      totalClients !== prevClientCountRef.current ||
+      totalBreaks !== prevBreakCountRef.current ||
+      curBase !== prevBaseRef.current;
     prevClientCountRef.current = totalClients;
     prevBreakCountRef.current = totalBreaks;
+    prevBaseRef.current = curBase;
 
     if (isStructural) {
       saveNow();

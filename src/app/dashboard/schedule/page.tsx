@@ -48,6 +48,9 @@ export default function SchedulePage() {
   viewModeRef.current = state.viewMode;
   const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; date: string; dayJobCount: number } | null>(null);
   const allOrgTeamsRef = useRef<TeamSchedule[]>([]);
+  // Increments after every loadDayForEdit/loadDayFromCache so DayEditor re-records
+  // its autosave baseline and doesn't mistake the load for a user edit.
+  const [dayLoadGen, setDayLoadGen] = useState(0);
 
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
@@ -501,6 +504,7 @@ export default function SchedulePage() {
     const finalTeams = visibleTeams.length > 0 ? visibleTeams : [teamsList[0]];
 
     dispatch({ type: 'LOAD_STATE', teams: finalTeams, activeTeamId: finalTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id, selectedDate: date });
+    setDayLoadGen(g => g + 1);
   }, [orgId, supabase, loadTeams]);
 
   // ─── Instant day switch from weekSchedules cache ───
@@ -546,6 +550,7 @@ export default function SchedulePage() {
       activeTeamId: finalTeams.find(t => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id,
       selectedDate: date,
     });
+    setDayLoadGen(g => g + 1);
 
     return true;
   }, [weekSchedules]);
@@ -1033,42 +1038,8 @@ export default function SchedulePage() {
           <div className="shrink-0 h-10 border-b border-border-light bg-white px-4 flex items-center gap-2">
             {[80, 72, 76].map((w, i) => <div key={i} className="shimmer h-6 rounded-full" style={{ width: w }} />)}
           </div>
-          {/* Content skeleton */}
-          {state.viewMode === 'day' ? (
-            <div className="flex-1 flex min-h-0">
-              {/* Left panel — job cards */}
-              <div className="w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light p-4 space-y-3 overflow-hidden">
-                {[1,2,3,4].map(i => (
-                  <div key={i} className="rounded-xl border border-border-light p-4 space-y-2">
-                    <div className="flex items-center gap-3">
-                      <div className="shimmer w-8 h-8 rounded-full shrink-0" />
-                      <div className="shimmer h-4 rounded-md flex-1" />
-                    </div>
-                    <div className="shimmer h-3 rounded-md w-3/4 ml-11" />
-                    <div className="shimmer h-3 rounded-md w-1/2 ml-11" />
-                  </div>
-                ))}
-                <div className="rounded-xl border border-border-light p-4 space-y-2 mt-2">
-                  <div className="shimmer h-3 rounded-md w-24" />
-                  <div className="shimmer h-8 rounded-md w-full" />
-                  <div className="shimmer h-3 rounded-md w-32" />
-                  <div className="shimmer h-8 rounded-md w-full" />
-                </div>
-              </div>
-              {/* Right panel — map */}
-              <div className="flex-1 shimmer" />
-            </div>
-          ) : (
-            // Week view — 7-column grid
-            <div className="flex-1 flex min-h-0 overflow-x-auto">
-              {[0,1,2,3,4,5,6].map(i => (
-                <div key={i} className="flex-1 min-w-[120px] border-r border-border-light p-3 space-y-2">
-                  <div className="shimmer h-4 rounded-md w-16 mb-3" />
-                  {[1,2,3].map(j => <div key={j} className="shimmer h-12 rounded-lg w-full" />)}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Content — neutral shimmer, no viewMode branch (avoids SSR/localStorage mismatch) */}
+          <div className="flex-1 shimmer" />
         </div>
       </APIProvider>
     );
@@ -1211,6 +1182,7 @@ export default function SchedulePage() {
               supabase={supabase}
               saveRef={daySaveRef}
               allStaff={allStaff}
+              loadGeneration={dayLoadGen}
             />
           )}
         </div>

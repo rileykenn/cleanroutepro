@@ -127,10 +127,11 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           const hasClients = team.clients.length > 0;
           const hasBaseAddress = team.baseAddress !== null;
           const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
+          const hasBreaks = team.breaks.length > 0;
           const { data: existingSched } = await supabase
             .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
 
-          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !existingSched) continue;
+          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !existingSched) continue;
 
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
@@ -191,11 +192,20 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               is_locked: false, is_break: true,
               notes: JSON.stringify({ afterClientId: b.afterClientId, breakId: b.id }),
               start_time: null, end_time: null, fixed_start_time: null,
-              assigned_staff_ids: [],
+              assigned_staff_ids: [] as string[],
             })),
           ];
-          if (allRows.length > 0) {
-            await supabase.from('schedule_jobs').insert(allRows);
+          // Insert clients and breaks as separate operations so a break-specific
+          // DB error can't silently wipe the client rows too.
+          const clientRows = allRows.filter(r => !r.is_break);
+          const breakRows = allRows.filter(r => r.is_break);
+          if (clientRows.length > 0) {
+            const { error: clientErr } = await supabase.from('schedule_jobs').insert(clientRows);
+            if (clientErr) throw new Error(`Client insert: ${clientErr.message}`);
+          }
+          if (breakRows.length > 0) {
+            const { error: breakErr } = await supabase.from('schedule_jobs').insert(breakRows);
+            if (breakErr) throw new Error(`Break insert: ${breakErr.message}`);
           }
         }
         success = true;

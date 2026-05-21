@@ -136,7 +136,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
             has_start_base: team.baseAddress !== null,
-            has_return_base: team.returnAddress !== 'none',
+            // null = not set → false; 'none' = explicitly cleared → false; Location = set → true
+            has_return_base: team.returnAddress !== null && team.returnAddress !== 'none',
           };
           if (team.baseAddress) {
             scheduleData.base_address = team.baseAddress.address;

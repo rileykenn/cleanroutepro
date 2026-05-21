@@ -158,6 +158,7 @@ export default function SchedulePage() {
 
         for (const date of dates) {
           const dayClients: Client[] = [];
+          const dayBreaks: import('@/lib/types').ScheduleBreak[] = [];
           let schedId: string | null = null;
           let templateCode: string | undefined;
           let isPublished = false;
@@ -208,8 +209,10 @@ export default function SchedulePage() {
               .order('position');
 
             if (jobs) {
+              // First pass: build client list (needed so breaks can reference client IDs)
+              const breakRows: typeof jobs = [];
               for (const j of jobs) {
-                if (j.is_break) continue;
+                if (j.is_break) { breakRows.push(j); continue; }
                 const assignedIds = (j.assigned_staff_ids as string[]) || [];
                 dayClients.push({
                   id: j.id as string,
@@ -232,6 +235,20 @@ export default function SchedulePage() {
                   clientColor: j.client_id ? clientColorMap.get(j.client_id as string) || undefined : undefined,
                 });
               }
+              // Second pass: reconstruct breaks using afterPosition → client ID
+              for (const j of breakRows) {
+                try {
+                  const meta = JSON.parse((j.notes as string) || '{}');
+                  const afterPos = typeof meta.afterPosition === 'number' ? meta.afterPosition : -1;
+                  const afterClient = afterPos >= 0 ? dayClients[afterPos] : null;
+                  dayBreaks.push({
+                    id: meta.breakId || (j.id as string),
+                    afterClientId: afterClient?.id || meta.afterClientId || '',
+                    durationMinutes: Number(j.duration_minutes) || 30,
+                    label: meta.label || (j.name as string) || 'Break',
+                  });
+                } catch { /* skip malformed break row */ }
+              }
             }
           }
 
@@ -242,6 +259,7 @@ export default function SchedulePage() {
             dayOfWeek: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
             scheduleId: schedId,
             clients: dayClients,
+            breaks: dayBreaks,
             templateCode,
             isPublished,
             baseAddress: dayBaseAddress,
@@ -532,7 +550,8 @@ export default function SchedulePage() {
         ...team,
         clients: dayData?.clients || [],
         travelSegments: new Map<string, TravelSegment>(),
-        breaks: [] as typeof team.breaks,
+        // Use breaks from the week cache (populated by loadWeekSchedules)
+        breaks: dayData?.breaks || [] as typeof team.breaks,
         baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
         returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
       };

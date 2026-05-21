@@ -44,6 +44,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
             dayOfWeek: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
             scheduleId: null,
             clients: mergedClients,
+            breaks: [],
             isPublished,
           };
 
@@ -65,6 +66,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
           dayOfWeek: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
           scheduleId: null,
           clients: [],
+          breaks: [],
           isPublished: false,
         };
 

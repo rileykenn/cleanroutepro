@@ -92,6 +92,8 @@ export interface DaySchedule {
   dayOfWeek: string;
   scheduleId: string | null;
   clients: Client[];
+  /** Per-day breaks, parallel to clients, stored here so loadDayFromCache can restore them */
+  breaks: ScheduleBreak[];
   templateCode?: string;
   isPublished: boolean;
   /** Per-day base address override */

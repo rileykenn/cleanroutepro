@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useReducer, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { AnimatePresence } from 'framer-motion';
 
@@ -33,20 +33,13 @@ const CACHE_TTL = 90_000; // 90 seconds
 
 export default function SchedulePage() {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
-  const isCacheHit = _pageCache !== null && Date.now() - _pageCache.timestamp < CACHE_TTL;
-  const [dbLoaded, setDbLoaded] = useState(isCacheHit);
+  const [dbLoaded, setDbLoaded] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
-  const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(
-    isCacheHit ? _pageCache!.weekSchedules : new Map()
-  );
-  const [publishedDates, setPublishedDates] = useState<Set<string>>(
-    isCacheHit ? _pageCache!.publishedDates : new Set()
-  );
-  const [allStaff, setAllStaff] = useState<StaffMember[]>(
-    isCacheHit ? _pageCache!.allStaff : []
-  );
+  const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
+  const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
+  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
   const daySaveRef = useRef<(() => Promise<void>) | null>(null);
   const activeTeamIdRef = useRef(state.activeTeamId);
@@ -63,6 +56,18 @@ export default function SchedulePage() {
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
+
+  // ─── Restore from cache on client (no SSR hydration mismatch) ───
+  // useLayoutEffect runs only on the client, synchronously before paint,
+  // so if the cache is fresh the user never sees the skeleton on tab switch.
+  useLayoutEffect(() => {
+    if (_pageCache && Date.now() - _pageCache.timestamp < CACHE_TTL) {
+      setWeekSchedules(_pageCache.weekSchedules);
+      setPublishedDates(_pageCache.publishedDates);
+      setAllStaff(_pageCache.allStaff);
+      setDbLoaded(true);
+    }
+  }, []);
 
   // ─── Load teams on mount ───
   const loadTeams = useCallback(async () => {

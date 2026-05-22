@@ -37,6 +37,8 @@ export default function SchedulePage() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
+  const [showClearWeek, setShowClearWeek] = useState(false);
+
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
   const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
@@ -1091,8 +1093,25 @@ export default function SchedulePage() {
     setShowLoadTemplate(false);
   }, [orgId, supabase, state.teams, weekDates, loadWeekSchedules]);
 
+  // ─── Clear entire week ───
+  const handleClearWeek = useCallback(async () => {
+    if (!orgId) return;
+    // Find all schedule rows for ALL teams across all 7 days of this week
+    const { data: schedRows } = await supabase
+      .from('schedules')
+      .select('id')
+      .in('schedule_date', weekDates);
+    if (schedRows && schedRows.length > 0) {
+      const ids = schedRows.map((r: { id: string }) => r.id);
+      await supabase.from('schedule_jobs').delete().in('schedule_id', ids);
+      await supabase.from('schedules').delete().in('id', ids);
+    }
+    setShowClearWeek(false);
+    await loadWeekSchedules(weekDates);
+  }, [orgId, supabase, weekDates, loadWeekSchedules]);
 
   // ─── Month overlay data ───
+
   // Derive the active team's week schedule for the week view
   const activeWeekSchedules = useMemo(() => {
     return weekSchedules.get(state.activeTeamId) || new Map<string, DaySchedule>();
@@ -1201,8 +1220,13 @@ export default function SchedulePage() {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                     Load
                   </button>
+                  <button onClick={() => setShowClearWeek(true)} className="btn-ghost text-xs text-danger hover:bg-red-50" title="Clear all jobs from this week">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Clear
+                  </button>
                 </>
               )}
+
 
               {state.viewMode === 'week' && !isStaff && (
                 <div className="flex items-center gap-1.5">
@@ -1415,7 +1439,18 @@ export default function SchedulePage() {
             danger
           />
         )}
+        {showClearWeek && (
+          <ConfirmModal
+            title={`Clear entire week?`}
+            message={`This will permanently delete all jobs across all teams for the week of ${new Date(weekDates[0] + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${new Date(weekDates[6] + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}. This cannot be undone.`}
+            confirmLabel="Clear Entire Week"
+            onConfirm={handleClearWeek}
+            onCancel={() => setShowClearWeek(false)}
+            danger
+          />
+        )}
       </AnimatePresence>
+
     </APIProvider>
   );
 }

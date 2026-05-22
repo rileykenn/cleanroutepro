@@ -144,6 +144,24 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
                 <label className="block text-xs font-medium text-text-secondary mb-1">Template Name</label>
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)}
                   className="input-field text-sm" placeholder="e.g. Standard Week, Week A Rotation" autoFocus />
+                {/* Rotation quick-fill chips */}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {['A1','A2','A3','A4','B1','B2','B3','B4'].map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setName(label)}
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all"
+                      style={
+                        name === label
+                          ? { backgroundColor: 'var(--color-primary)', borderColor: 'var(--color-primary)', color: '#fff' }
+                          : { backgroundColor: 'var(--color-surface-elevated)', borderColor: 'var(--color-border-light)', color: 'var(--color-text-secondary)' }
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Week preview */}

@@ -29,7 +29,11 @@ type SchedulePageCache = {
   timestamp: number;
 };
 let _pageCache: SchedulePageCache | null = null;
-const CACHE_TTL = 90_000; // 90 seconds
+const CACHE_TTL = 30_000; // 30 seconds — short enough that stale ghosts expire quickly
+/** Called by DayEditor after every autosave so the next tab-switch re-fetches fresh data */
+export function invalidateScheduleCache() {
+  if (_pageCache) _pageCache.timestamp = 0;
+}
 
 export default function SchedulePage() {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
@@ -280,38 +284,26 @@ export default function SchedulePage() {
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
-      // Update module-level cache so the next mount (tab switch) is instant
-      _pageCache = { weekSchedules: allTeamMaps, publishedDates: newPublished, allStaff: [], timestamp: Date.now() };
+      // Invalidate the module-level page cache so tab-switching never restores stale data.
+      // We clear it here and re-set it ONLY after a successful full load.
+      _pageCache = { weekSchedules: allTeamMaps, publishedDates: newPublished, allStaff: _pageCache?.allStaff || [], timestamp: Date.now() };
 
-      // Store ALL org teams for the add-team feature
+      // Store ALL org teams — used by addTeam, template save, template load, etc.
       allOrgTeamsRef.current = teamsList;
 
-      // Filter to only teams that have at least one schedule row this week
-      const teamsWithSchedules = teamsList.filter((team: TeamSchedule) => {
-        const teamMap = allTeamMaps.get(team.id);
-        if (!teamMap) return false;
-        for (const [, dayData] of teamMap) {
-          if (dayData.scheduleId !== null) return true;
-        }
-        return false;
-      });
-
-      // Always show at least one team (first team as default)
-      const visibleTeams = teamsWithSchedules.length > 0 ? teamsWithSchedules : [teamsList[0]];
-
-      // Only dispatch LOAD_STATE if we're NOT in day view.
-      // Day view manages its own state via loadDayForEdit/loadDayFromCache.
-      // Overwriting it here would cause jobs to disappear and base addresses to flash.
+      // ── Always show ALL org teams in week view ──
+      // Teams without jobs this week appear as empty columns instead of disappearing.
+      // The user explicitly created those teams and expects to see them.
       if (viewModeRef.current !== 'day') {
-        // Load the active day into the reducer
         const today = state.selectedDate;
-        const teamsWithClients = visibleTeams.map((team: TeamSchedule) => {
+        const teamsWithClients = teamsList.map((team: TeamSchedule) => {
           const teamMap = allTeamMaps.get(team.id);
           const dayData = teamMap?.get(today);
           return {
             ...team,
             clients: dayData?.clients || [],
-            // Per-day base address override
+            breaks: dayData?.breaks || [],
+            driverStaffId: dayData?.driverStaffId || null,
             baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
             returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
           };
@@ -576,16 +568,10 @@ export default function SchedulePage() {
       };
     });
 
-    const teamsWithSchedule = teamsWithClients.filter(t => {
-      const teamMap = weekSchedules.get(t.id);
-      const dayData = teamMap?.get(date);
-      // Include if they have a saved schedule row, OR if they have address config
-      // set for this day (the schedule row may not exist yet if it was just created
-      // by autosave and the week cache hasn't refreshed yet)
-      return dayData?.scheduleId != null || dayData?.baseAddress != null || (dayData?.returnAddress != null && dayData?.returnAddress !== 'none');
-    });
+    // Always show ALL teams in day view (same as week view).
+    // Teams with no jobs today appear as empty — they don't disappear.
+    const finalTeams = teamsWithClients.length > 0 ? teamsWithClients : [teamsWithClients[0]];
 
-    const finalTeams = teamsWithSchedule.length > 0 ? teamsWithSchedule : [teamsWithClients[0]];
 
     dispatch({
       type: 'LOAD_STATE',

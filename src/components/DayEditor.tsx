@@ -16,6 +16,7 @@ import TravelSegmentComponent from '@/components/TravelSegment';
 import DailySummaryCard from '@/components/DailySummary';
 import RouteMap from '@/components/RouteMap';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
+import { invalidateScheduleCache } from '@/app/dashboard/schedule/page';
 
 interface DayEditorProps {
   state: AppState;
@@ -236,6 +237,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       } // end while retry
       isSavingRef.current = false;
       if (success) {
+        invalidateScheduleCache(); // Expire the page cache so tab-switching re-fetches fresh data
         setSaveStatus('saved');
         if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
         savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);

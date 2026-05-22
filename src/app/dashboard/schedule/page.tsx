@@ -239,11 +239,12 @@ export default function SchedulePage() {
               for (const j of breakRows) {
                 try {
                   const meta = JSON.parse((j.notes as string) || '{}');
-                  const afterPos = typeof meta.afterPosition === 'number' ? meta.afterPosition : -1;
-                  const afterClient = afterPos >= 0 ? dayClients[afterPos] : null;
+                  const clientIds = new Set(dayClients.map(c => c.id));
+                  if (!meta.afterClientId || !clientIds.has(meta.afterClientId)) continue;
+
                   dayBreaks.push({
                     id: meta.breakId || (j.id as string),
-                    afterClientId: afterClient?.id || meta.afterClientId || '',
+                    afterClientId: meta.afterClientId,
                     durationMinutes: Number(j.duration_minutes) || 30,
                     label: meta.label || (j.name as string) || 'Break',
                   });
@@ -499,26 +500,36 @@ export default function SchedulePage() {
             };
           });
         // Reconstruct breaks from is_break=true rows.
-        // We store afterPosition (stable index) in notes so that the transient
-        // schedule_jobs UUID change on every DELETE+INSERT doesn't break anchoring.
+        // Prefer afterClientId (stable UUID stored since the save fix) over
+        // afterPosition (legacy index-based anchor, kept as fallback).
+        const clientIdSet = new Set(team.clients.map((c: Client) => c.id));
         team.breaks = jobs
           .filter((j) => j.is_break)
-          .map((j) => {
+          .reduce((acc: typeof team.breaks, j) => {
             try {
               const meta = JSON.parse((j.notes as string) || '{}');
-              // Map the stored position back to the current client's in-memory ID.
-              const afterPos = typeof meta.afterPosition === 'number' ? meta.afterPosition : -1;
-              const afterClient = afterPos >= 0 ? team.clients[afterPos] : null;
-              return {
+              // Resolve by stable ID first, then by position index as fallback.
+              let resolvedClientId: string | undefined;
+              if (meta.afterClientId && clientIdSet.has(meta.afterClientId)) {
+                resolvedClientId = meta.afterClientId;
+              } else {
+                const afterPos = typeof meta.afterPosition === 'number' ? meta.afterPosition : -1;
+                const afterClient = afterPos >= 0 ? team.clients[afterPos] : null;
+                if (afterClient) resolvedClientId = afterClient.id;
+              }
+              // Skip orphaned breaks — client was deleted but break row persists in DB.
+              if (!resolvedClientId) return acc;
+              acc.push({
                 id: meta.breakId || (j.id as string),
-                afterClientId: afterClient?.id || meta.afterClientId || '',
+                afterClientId: resolvedClientId,
                 durationMinutes: Number(j.duration_minutes) || 30,
                 label: meta.label || (j.name as string) || 'Break',
-              };
+              });
             } catch {
-              return { id: j.id as string, afterClientId: team.clients[0]?.id || '', durationMinutes: Number(j.duration_minutes) || 30, label: 'Break' };
+              // Skip malformed break rows entirely rather than inserting a bad anchor.
             }
-          });
+            return acc;
+          }, []);
       }
       teamsList.push(team);
     }

@@ -184,23 +184,32 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               fixed_start_time: c.fixedStartTime || null,
               assigned_staff_ids: c.assignedStaffIds || [],
             })),
-            // Breaks stored with is_break=true; afterClientId encoded in notes
-            ...team.breaks.map((b, i) => ({
-              schedule_id: scheduleId, org_id: orgId, client_id: null,
-              position: team.clients.length + i, name: b.label || 'Break',
-              address: '', lat: 0, lng: 0, place_id: null,
-              duration_minutes: b.durationMinutes, staff_count: 1,
-              is_locked: false, is_break: true,
-              // Store afterPosition (stable index) instead of the transient schedule_jobs UUID.
-              // The UUID changes every DELETE+INSERT cycle, but the position is stable.
-              notes: JSON.stringify({
-                afterPosition: team.clients.findIndex(c => c.id === b.afterClientId),
-                breakId: b.id, label: b.label || 'Break',
-              }),
-              start_time: null, end_time: null, fixed_start_time: null,
-              assigned_staff_ids: [] as string[],
-            })),
+            // Breaks stored with is_break=true; afterClientId encoded in notes.
+            // Only persist breaks whose afterClientId still exists in the current client list —
+            // this prevents ghost breaks accumulating when clients are removed.
+            ...(() => {
+              const validClientIds = new Set(team.clients.map(c => c.id));
+              return team.breaks
+                .filter(b => validClientIds.has(b.afterClientId))
+                .map((b, i) => ({
+                  schedule_id: scheduleId, org_id: orgId, client_id: null,
+                  position: team.clients.length + i, name: b.label || 'Break',
+                  address: '', lat: 0, lng: 0, place_id: null,
+                  duration_minutes: b.durationMinutes, staff_count: 1,
+                  is_locked: false, is_break: true,
+                  // Store BOTH afterClientId (stable) and afterPosition (fallback) in notes.
+                  // afterClientId is preferred on reload; afterPosition is a fallback for old rows.
+                  notes: JSON.stringify({
+                    afterClientId: b.afterClientId,
+                    afterPosition: team.clients.findIndex(c => c.id === b.afterClientId),
+                    breakId: b.id, label: b.label || 'Break',
+                  }),
+                  start_time: null, end_time: null, fixed_start_time: null,
+                  assigned_staff_ids: [] as string[],
+                }));
+            })(),
           ];
+
           // Insert clients and breaks as separate operations so a break-specific
           // DB error can't silently wipe the client rows too.
           const clientRows = allRows.filter(r => !r.is_break);

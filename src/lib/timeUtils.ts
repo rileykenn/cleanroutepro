@@ -22,11 +22,14 @@ export function formatDistance(km: number): string {
 }
 
 /**
- * Parse time string "HH:MM" into total minutes from midnight
+ * Parse time string "HH:MM" into total minutes from midnight.
+ * Returns 0 for any malformed or incomplete input (e.g. "08" while typing).
  */
 export function parseTime(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
+  if (!time || !time.includes(':')) return 0;
+  const [h, m] = time.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return 0;
+  return h * 60 + m;
 }
 
 /**
@@ -42,7 +45,9 @@ export function minutesToTime(totalMinutes: number): string {
  * Format time for display: "9:00 AM"
  */
 export function formatTimeDisplay(time: string): string {
+  if (!time || !time.includes(':')) return '';
   const [hours, minutes] = time.split(':').map(Number);
+  if (isNaN(hours) || isNaN(minutes)) return '';
   const period = hours >= 12 ? 'PM' : 'AM';
   const displayHours = hours % 12 || 12;
   return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;

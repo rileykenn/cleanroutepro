@@ -542,7 +542,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               <div className="flex items-center justify-between">
                 <span className="text-xs text-text-secondary">Day starts at</span>
                 <input type="time" value={activeTeam.dayStartTime}
-                  onChange={(e) => dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: e.target.value })}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // Only dispatch when browser provides a complete HH:MM value.
+                    // While typing manually the field may emit "" or partial strings.
+                    if (v && /^\d{2}:\d{2}$/.test(v)) {
+                      dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: v });
+                    }
+                  }}
                   className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary" />
               </div>
               {baseDepartureTime !== activeTeam.dayStartTime && (

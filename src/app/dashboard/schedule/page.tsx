@@ -165,7 +165,7 @@ export default function SchedulePage() {
 
           const { data: schedule } = await supabase
             .from('schedules')
-            .select('id, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
+            .select('id, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
             .eq('team_id', team.id)
             .eq('schedule_date', date)
             .maybeSingle();
@@ -175,6 +175,7 @@ export default function SchedulePage() {
           let dayReturnAddress: AppLocation | null | 'none' = team.returnAddress;
           let hasStartBase = true;
           let hasReturnBase = true;
+          let dayDriverStaffId: string | null = null;
 
           if (schedule) {
             schedId = schedule.id;
@@ -182,6 +183,7 @@ export default function SchedulePage() {
             templateCode = schedule.template_code || undefined;
             hasStartBase = schedule.has_start_base !== false;
             hasReturnBase = schedule.has_return_base !== false;
+            dayDriverStaffId = (schedule.driver_staff_id as string) || null;
 
             // Override base from schedule if set
             if (schedule.base_address) {
@@ -267,6 +269,7 @@ export default function SchedulePage() {
             returnAddress: dayReturnAddress,
             hasStartBase,
             hasReturnBase,
+            driverStaffId: dayDriverStaffId,
           });
         }
 
@@ -415,7 +418,7 @@ export default function SchedulePage() {
     // ── 1 bulk query: all schedules for these teams on this date ──
     const { data: schedules } = await supabase
       .from('schedules')
-      .select('id, team_id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base')
+      .select('id, team_id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
       .eq('schedule_date', date)
       .in('team_id', teamIds);
 
@@ -479,6 +482,8 @@ export default function SchedulePage() {
             lng: Number(schedule.return_lng) || 0, placeId: schedule.return_place_id ? String(schedule.return_place_id) : undefined,
           };
         }
+        // Restore driver for this day
+        team.driverStaffId = (schedule.driver_staff_id as string) || null;
 
         const jobs = jobsBySchedule.get(schedule.id as string) || [];
         team.clients = jobs
@@ -565,6 +570,7 @@ export default function SchedulePage() {
         breaks: dayData?.breaks || [] as typeof team.breaks,
         baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
         returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
+        driverStaffId: dayData?.driverStaffId !== undefined ? dayData.driverStaffId : null,
       };
     });
 

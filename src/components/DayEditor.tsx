@@ -128,16 +128,18 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           const hasBaseAddress = team.baseAddress !== null;
           const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
           const hasBreaks = team.breaks.length > 0;
+          const hasDriver = !!team.driverStaffId;
           const { data: existingSched } = await supabase
             .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
 
-          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !existingSched) continue;
+          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !hasDriver && !existingSched) continue;
 
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
             has_start_base: team.baseAddress !== null,
             // null = not set → false; 'none' = explicitly cleared → false; Location = set → true
             has_return_base: team.returnAddress !== null && team.returnAddress !== 'none',
+            driver_staff_id: team.driverStaffId || null,
           };
           if (team.baseAddress) {
             scheduleData.base_address = team.baseAddress.address;
@@ -266,6 +268,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       state.teams.map((t) => ({
         id: t.id, name: t.name, base: t.baseAddress, ret: t.returnAddress, start: t.dayStartTime,
         rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
+        driver: t.driverStaffId || null,
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address,
           lat: c.location.lat, lng: c.location.lng,
@@ -563,6 +566,40 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               )}
             </motion.div>
 
+            {/* Driver for Today */}
+            {availableStaff.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}
+                className="card p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+                    </svg>
+                    <span className="text-xs font-bold text-text-primary">Driver for Today</span>
+                  </div>
+                  {activeTeam.driverStaffId && (
+                    <button
+                      onClick={() => dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: null })}
+                      className="text-[10px] text-text-tertiary hover:text-danger transition-colors px-1.5 py-0.5 rounded-md hover:bg-red-50"
+                      title="Remove driver"
+                    >✕ Clear</button>
+                  )}
+                </div>
+                <select
+                  value={activeTeam.driverStaffId || ''}
+                  onChange={(e) => dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: e.target.value || null })}
+                  className="mt-2 w-full text-xs font-medium bg-surface-elevated border border-border-light rounded-lg px-2.5 py-2 outline-none focus:border-primary text-text-primary"
+                >
+                  <option value="">— No driver assigned —</option>
+                  {availableStaff.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </motion.div>
+            )}
+
             {/* Available staff summary */}
             {availableStaff.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
@@ -577,7 +614,20 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {availableStaff.map((s) => (
-                    <span key={s.id} className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-surface-elevated text-text-secondary">
+                    <span key={s.id}
+                      className={`text-[11px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors ${
+                        activeTeam.driverStaffId === s.id
+                          ? 'text-white'
+                          : 'bg-surface-elevated text-text-secondary'
+                      }`}
+                      style={activeTeam.driverStaffId === s.id ? { backgroundColor: activeTeam.color.primary } : {}}
+                    >
+                      {activeTeam.driverStaffId === s.id && (
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+                          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+                        </svg>
+                      )}
                       {s.name}
                     </span>
                   ))}

@@ -121,6 +121,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, returnAddress: 'none', travelSegments: new Map() } : t) };
     case 'CLEAR_BASE_ADDRESS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, baseAddress: null, returnAddress: 'none', travelSegments: new Map() } : t) };
+    case 'SET_DRIVER':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, driverStaffId: action.staffId } : t) };
     default:
       return state;
   }

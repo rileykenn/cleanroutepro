@@ -63,6 +63,8 @@ export interface TeamSchedule {
   fuelEfficiency: number;
   fuelPrice: number;
   perKmRate: number;
+  /** Staff member assigned as driver for this day */
+  driverStaffId?: string | null;
 }
 
 export interface TeamColor {
@@ -101,6 +103,8 @@ export interface DaySchedule {
   returnAddress?: Location | null | 'none';
   hasStartBase?: boolean;
   hasReturnBase?: boolean;
+  /** Driver assigned for this day */
+  driverStaffId?: string | null;
 }
 
 export const TEAM_COLORS: TeamColor[] = [
@@ -237,7 +241,9 @@ export type ScheduleAction =
   | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] }
   | { type: 'SET_RETURN_ADDRESS'; teamId: string; location: Location }
   | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string }
-  | { type: 'CLEAR_BASE_ADDRESS'; teamId: string };
+  | { type: 'CLEAR_BASE_ADDRESS'; teamId: string }
+  | { type: 'SET_DRIVER'; teamId: string; staffId: string | null };
+
 
 export interface AppState {
   teams: TeamSchedule[];

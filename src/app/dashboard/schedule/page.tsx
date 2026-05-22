@@ -938,20 +938,65 @@ export default function SchedulePage() {
 
     if (!orgId) return;
 
-    // For each day in the template, write the clients into schedule_jobs
+    // Use ALL org teams (not just the week-view subset in state.teams)
+    const allTeams = allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : state.teams;
+
+    // Build a stable team lookup: name → team, id → team
+    const teamByName = new Map(allTeams.map(t => [t.name, t]));
+    const teamById   = new Map(allTeams.map(t => [t.id,   t]));
+
+    // Cache of template teamName → actual DB team (created lazily if no match)
+    const resolvedTeams = new Map<string, typeof allTeams[0]>();
+
+    // Resolve or create a DB team for each unique template team name
+    const collectTemplateTeams = () => {
+      const names = new Set<string>();
+      for (let i = 0; i < 7; i++) {
+        for (const tt of weekData[String(i)] || []) names.add(tt.teamName);
+      }
+      return names;
+    };
+
+    for (const teamName of collectTemplateTeams()) {
+      // Match: name first, then saved teamId, else the first unresolved real team
+      const matched = teamByName.get(teamName)
+        ?? [...teamById.values()].find(t => !resolvedTeams.has(t.name) && !teamByName.has(teamName))
+        ?? null;
+
+      if (matched) {
+        resolvedTeams.set(teamName, matched);
+      } else {
+        // No match — create a brand-new DB team so data isn't lost on Team 1
+        const colorIdx = allTeams.length + resolvedTeams.size;
+        const { data: newTeam } = await supabase
+          .from('teams')
+          .insert({ org_id: orgId, name: teamName, color_index: colorIdx % 10, sort_order: allTeams.length + resolvedTeams.size })
+          .select()
+          .single();
+        if (newTeam) {
+          const t = {
+            id: newTeam.id as string, name: newTeam.name as string,
+            color: (await import('@/lib/types')).TEAM_COLORS[colorIdx % 10],
+            colorIndex: colorIdx % 10,
+            baseAddress: null, returnAddress: null, clients: [],
+            travelSegments: new Map(), dayStartTime: '08:00', breaks: [],
+            hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+          };
+          resolvedTeams.set(teamName, t as typeof allTeams[0]);
+          allOrgTeamsRef.current = [...allOrgTeamsRef.current, t as typeof allTeams[0]];
+        }
+      }
+    }
+
+    // For each day in the template, write clients+breaks into the DB
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       const dayTeams = weekData[String(dayIdx)];
       if (!dayTeams || dayTeams.length === 0) continue;
 
       const date = weekDates[dayIdx];
 
-      // Match template teams to actual teams by position or name
       for (const templateTeam of dayTeams) {
-        // Find best matching team: by name first, then by position
-        const matchedTeam = state.teams.find(t => t.name === templateTeam.teamName)
-          || state.teams.find(t => t.id === templateTeam.teamId)
-          || state.teams[0];
-
+        const matchedTeam = resolvedTeams.get(templateTeam.teamName);
         if (!matchedTeam) continue;
 
         // Restore dayStartTime from template if present
@@ -959,7 +1004,7 @@ export default function SchedulePage() {
           await supabase.from('teams').update({ day_start_time: templateTeam.dayStartTime }).eq('id', matchedTeam.id);
         }
 
-        // Ensure schedule row exists for this team+date
+        // Ensure schedule row exists
         let scheduleId: string;
         const { data: existing } = await supabase
           .from('schedules').select('id').eq('team_id', matchedTeam.id).eq('schedule_date', date).maybeSingle();
@@ -972,26 +1017,27 @@ export default function SchedulePage() {
           scheduleId = created.id;
         }
 
-        // Delete existing jobs for this schedule and insert template clients + breaks
+        // Wipe and rewrite jobs for this schedule
         await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
 
         const rows: Record<string, unknown>[] = [];
         let position = 0;
 
         if (templateTeam.clients.length > 0) {
-          // Build a set of client indices that have breaks after them
+          // Map break indices for fast lookup
           const breakByIndex = new Map<number, { durationMinutes: number; label: string }>();
-          if (templateTeam.breaks) {
-            for (const b of templateTeam.breaks) {
-              breakByIndex.set(b.afterClientIndex, { durationMinutes: b.durationMinutes, label: b.label });
-            }
+          for (const b of templateTeam.breaks || []) {
+            breakByIndex.set(b.afterClientIndex, { durationMinutes: b.durationMinutes, label: b.label });
           }
 
+          // We need to know the DB job IDs for client rows so breaks can reference them.
+          // Strategy: insert clients first (collect their IDs), then insert break rows.
+          const clientRows: Record<string, unknown>[] = [];
           for (let ci = 0; ci < templateTeam.clients.length; ci++) {
             const c = templateTeam.clients[ci] as Client;
-            rows.push({
+            clientRows.push({
               schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
-              position, name: c.name, address: c.location?.address || '',
+              position: ci, name: c.name, address: c.location?.address || '',
               lat: c.location?.lat || 0, lng: c.location?.lng || 0,
               place_id: c.location?.placeId || null,
               duration_minutes: c.jobDurationMinutes || 90,
@@ -1001,26 +1047,41 @@ export default function SchedulePage() {
               assigned_staff_ids: c.assignedStaffIds || [],
               fixed_start_time: c.fixedStartTime || null,
             });
-            position++;
-
-            // Insert break after this client if the template had one at this index
-            const breakData = breakByIndex.get(ci);
-            if (breakData) {
-              rows.push({
-                schedule_id: scheduleId, org_id: orgId, client_id: null,
-                position, name: breakData.label || 'Break', address: '',
-                lat: 0, lng: 0, place_id: null,
-                duration_minutes: breakData.durationMinutes,
-                staff_count: 1,
-                is_locked: false, is_break: true, break_label: breakData.label || 'Break',
-                notes: '',
-                assigned_staff_ids: [],
-              });
-              position++;
-            }
           }
 
-          await supabase.from('schedule_jobs').insert(rows);
+          let insertedClientIds: string[] = [];
+          if (clientRows.length > 0) {
+            const { data: inserted } = await supabase.from('schedule_jobs').insert(clientRows).select('id');
+            insertedClientIds = (inserted || []).map((r: { id: string }) => r.id);
+          }
+
+          // Insert break rows — reference the inserted client's DB id via afterClientId in notes
+          const breakRows: Record<string, unknown>[] = [];
+          position = clientRows.length;
+          for (const [clientIdx, breakData] of breakByIndex) {
+            const afterClientId = insertedClientIds[clientIdx] || '';
+            breakRows.push({
+              schedule_id: scheduleId, org_id: orgId, client_id: null,
+              position: position++,
+              name: breakData.label || 'Break',
+              address: '', lat: 0, lng: 0, place_id: null,
+              duration_minutes: breakData.durationMinutes,
+              staff_count: 1, is_locked: false, is_break: true,
+              // Store afterClientId so the break-load logic can resolve it by UUID
+              notes: JSON.stringify({
+                afterClientId,
+                afterPosition: clientIdx,
+                breakId: `${scheduleId}-brk-${clientIdx}`,
+                label: breakData.label || 'Break',
+              }),
+              assigned_staff_ids: [],
+            });
+          }
+          if (breakRows.length > 0) {
+            await supabase.from('schedule_jobs').insert(breakRows);
+          }
+
+          rows; // (unused — kept for reference)
         }
       }
     }
@@ -1029,6 +1090,7 @@ export default function SchedulePage() {
     await loadWeekSchedules(weekDates);
     setShowLoadTemplate(false);
   }, [orgId, supabase, state.teams, weekDates, loadWeekSchedules]);
+
 
   // ─── Month overlay data ───
   // Derive the active team's week schedule for the week view
@@ -1327,7 +1389,7 @@ export default function SchedulePage() {
       {/* Modals */}
       <AnimatePresence>
         {showSaveTemplate && (
-          <SaveTemplateModal teams={state.teams} selectedDate={state.selectedDate} weekSchedules={weekSchedules} orgId={orgId} onClose={() => setShowSaveTemplate(false)} />
+          <SaveTemplateModal teams={allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : state.teams} selectedDate={state.selectedDate} weekSchedules={weekSchedules} orgId={orgId} onClose={() => setShowSaveTemplate(false)} />
         )}
         {showLoadTemplate && (
           <LoadTemplateModal orgId={orgId} onLoadWeek={handleLoadWeekTemplate} onClose={() => setShowLoadTemplate(false)} />

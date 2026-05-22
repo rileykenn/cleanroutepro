@@ -3,13 +3,14 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
-import { TeamSchedule, Client } from '@/lib/types';
+import { TeamSchedule, DaySchedule, Client } from '@/lib/types';
 import { getWeekDates, getShortDayLabel } from '@/lib/timeUtils';
 
 interface SaveTemplateModalProps {
   teams: TeamSchedule[];
   selectedDate: string;
-  weekSchedules: Map<string, Map<string, { clients: Client[]; isPublished: boolean; templateCode?: string }>>;
+  /** Full DaySchedule map — keyed by teamId → date → DaySchedule */
+  weekSchedules: Map<string, Map<string, DaySchedule>>;
   orgId: string | null;
   onClose: () => void;
 }
@@ -22,23 +23,17 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
 
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
 
-  // Build a preview of what will be saved: { dayIndex: 0-6, teams: [ { teamName, clients[] } ] }
+  // Build a preview: for each day, which teams have jobs
   const weekPreview = useMemo(() => {
-    return weekDates.map((date, dayIdx) => {
-      const dayTeams: { teamName: string; teamColor: string; clientCount: number; clientNames: string[] }[] = [];
+    return weekDates.map((date) => {
+      const dayTeams: { teamName: string; teamColor: string; clientCount: number }[] = [];
       for (const team of teams) {
-        const teamDayData = weekSchedules.get(team.id)?.get(date);
-        const clients = teamDayData?.clients || [];
+        const clients = weekSchedules.get(team.id)?.get(date)?.clients || [];
         if (clients.length > 0) {
-          dayTeams.push({
-            teamName: team.name,
-            teamColor: team.color.primary,
-            clientCount: clients.length,
-            clientNames: clients.slice(0, 3).map(c => c.name),
-          });
+          dayTeams.push({ teamName: team.name, teamColor: team.color.primary, clientCount: clients.length });
         }
       }
-      return { date, dayLabel: getShortDayLabel(date), dayIdx, teams: dayTeams };
+      return { date, dayLabel: getShortDayLabel(date), teams: dayTeams };
     });
   }, [weekDates, teams, weekSchedules]);
 
@@ -49,49 +44,54 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
     if (!orgId || !name.trim()) return;
     setSaving(true);
 
-    // Build week_data: keyed by day index (0=Mon, 6=Sun), each containing team data
-    const weekData: Record<string, { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; breaks: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Partial<Client>[] }[]> = {};
+    // week_data: { "0": [{teamName, teamId, dayStartTime, baseAddress, breaks, clients}], ... }
+    const weekData: Record<string, {
+      teamName: string;
+      teamId: string;
+      dayStartTime: string;
+      baseAddress: unknown;
+      breaks: { afterClientIndex: number; durationMinutes: number; label: string }[];
+      clients: Partial<Client>[];
+    }[]> = {};
 
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       const date = weekDates[dayIdx];
-      const dayTeams: { teamName: string; teamId: string; dayStartTime: string; baseAddress: unknown; breaks: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Partial<Client>[] }[] = [];
+      const dayTeams: typeof weekData[string] = [];
 
       for (const team of teams) {
-        const teamDayData = weekSchedules.get(team.id)?.get(date);
-        const clients = teamDayData?.clients || [];
-        if (clients.length > 0) {
-          dayTeams.push({
-            teamName: team.name,
-            teamId: team.id,
-            dayStartTime: team.dayStartTime,
-            baseAddress: team.baseAddress,
-            breaks: team.breaks.map(b => {
-              // Map afterClientId to client index for stable matching across save/load
-              const clientIdx = clients.findIndex(c => c.id === b.afterClientId);
-              return {
-                afterClientIndex: clientIdx,
-                durationMinutes: b.durationMinutes,
-                label: b.label,
-              };
-            }).filter(b => b.afterClientIndex >= 0),
-            clients: clients.map((c) => ({
-              name: c.name,
-              location: c.location,
-              jobDurationMinutes: c.jobDurationMinutes,
-              staffCount: c.staffCount,
-              isLocked: c.isLocked,
-              fixedStartTime: c.fixedStartTime,
-              savedClientId: c.savedClientId,
-              notes: c.notes,
-              assignedStaffIds: c.assignedStaffIds,
-            })),
-          });
-        }
+        const dayData = weekSchedules.get(team.id)?.get(date);
+        const clients = dayData?.clients || [];
+        if (clients.length === 0) continue;
+
+        // Map breaks: afterClientId → afterClientIndex (stable across loads)
+        const breaks = (dayData?.breaks || [])
+          .map(b => {
+            const idx = clients.findIndex(c => c.id === b.afterClientId);
+            return idx >= 0 ? { afterClientIndex: idx, durationMinutes: b.durationMinutes, label: b.label } : null;
+          })
+          .filter((b): b is { afterClientIndex: number; durationMinutes: number; label: string } => b !== null);
+
+        dayTeams.push({
+          teamName: team.name,
+          teamId: team.id,
+          dayStartTime: team.dayStartTime,
+          baseAddress: team.baseAddress,
+          breaks,
+          clients: clients.map(c => ({
+            name: c.name,
+            location: c.location,
+            jobDurationMinutes: c.jobDurationMinutes,
+            staffCount: c.staffCount,
+            isLocked: c.isLocked,
+            fixedStartTime: c.fixedStartTime,
+            savedClientId: c.savedClientId,
+            notes: c.notes,
+            assignedStaffIds: c.assignedStaffIds,
+          })),
+        });
       }
 
-      if (dayTeams.length > 0) {
-        weekData[String(dayIdx)] = dayTeams;
-      }
+      if (dayTeams.length > 0) weekData[String(dayIdx)] = dayTeams;
     }
 
     await supabase.from('schedule_templates').insert({
@@ -164,7 +164,7 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
                 </div>
               </div>
 
-              {/* Week preview */}
+              {/* Week preview — show all teams */}
               <div className="bg-surface-elevated rounded-xl p-3 space-y-1.5">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Week Preview</p>
                 {weekPreview.map((day) => (
@@ -179,7 +179,7 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
                         {day.teams.map((t, i) => (
                           <span key={i} className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
                             style={{ backgroundColor: `${t.teamColor}12`, color: t.teamColor }}>
-                            {t.clientCount} job{t.clientCount !== 1 ? 's' : ''}
+                            {t.teamName}: {t.clientCount} job{t.clientCount !== 1 ? 's' : ''}
                           </span>
                         ))}
                       </div>

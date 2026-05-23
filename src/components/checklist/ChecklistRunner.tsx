@@ -209,8 +209,8 @@ export default function ChecklistRunner({
         })}
       </div>
 
-      {/* ── Submit / status footer ────────────────────────────────────────────── */}
-      {!readOnly && (
+      {/* ── Submit / status footer ── staff only ──────────────────────────── */}
+      {!readOnly && !isAdmin && (
         <div className="shrink-0 border-t border-border-light p-4 bg-white">
           {saving && (
             <p className="text-[11px] text-text-tertiary text-center mb-2 flex items-center justify-center gap-1">

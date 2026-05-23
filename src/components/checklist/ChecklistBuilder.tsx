@@ -1,24 +1,32 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChecklistSection, ChecklistField, FieldType, FIELD_TYPE_ICONS, FIELD_TYPE_LABELS } from './types';
-import ChecklistFieldEditor from './ChecklistFieldEditor';
-import { generateId } from '@/lib/timeUtils';
+import { ChecklistField, ChecklistSection, FieldType, FIELD_TYPE_LABELS, FIELD_TYPE_ICONS } from './types';
 
-const QUICK_ADD_TYPES: FieldType[] = ['checkbox', 'text', 'yesno', 'dropdown', 'photo'];
+// All types shown in the type picker (simple pill row)
+const TYPE_PILLS: { type: FieldType; icon: string; label: string }[] = [
+  { type: 'checkbox', icon: '☑', label: 'Check' },
+  { type: 'yesno',    icon: '👍', label: 'Yes/No' },
+  { type: 'text',     icon: '📝', label: 'Text' },
+  { type: 'photo',    icon: '📷', label: 'Photo' },
+  { type: 'dropdown', icon: '🔽', label: 'Dropdown' },
+  { type: 'date',     icon: '📅', label: 'Date' },
+  { type: 'time',     icon: '🕐', label: 'Time' },
+  { type: 'multiselect', icon: '☰', label: 'Multi' },
+  { type: 'video',    icon: '🎥', label: 'Video' },
+];
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 interface ChecklistBuilderProps {
-  /** Controlled — caller holds the state */
   sections: ChecklistSection[];
   onChange: (sections: ChecklistSection[]) => void;
-
-  /** Save actions */
   initialName?: string;
   initialIsDefault?: boolean;
   saving?: boolean;
-
-  // Which save actions to show
   mode: 'client-profile' | 'schedule-panel';
   onSave: (name: string, sections: ChecklistSection[], isDefault: boolean) => Promise<void>;
   onSaveAsNew?: (name: string, sections: ChecklistSection[]) => Promise<void>;
@@ -28,251 +36,365 @@ interface ChecklistBuilderProps {
 
 export default function ChecklistBuilder({
   sections, onChange,
-  initialName = '', initialIsDefault = false,
+  initialName = '',
+  initialIsDefault = false,
   saving = false,
-  mode, onSave, onSaveAsNew, onSaveJobOnly, onCancel,
+  mode,
+  onSave, onSaveAsNew, onSaveJobOnly, onCancel,
 }: ChecklistBuilderProps) {
   const [name, setName] = useState(initialName);
   const [isDefault, setIsDefault] = useState(initialIsDefault);
-  const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
-  const [dragOverSectionId, setDragOverSectionId] = useState<string | null>(null);
-  const [showNamePrompt, setShowNamePrompt] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'save-new' | null>(null);
-  const [newSaveName, setNewSaveName] = useState('');
+  const [addText, setAddText] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [newOption, setNewOption] = useState('');
+  const [showSaveAsNew, setShowSaveAsNew] = useState(false);
+  const [saveAsNewName, setSaveAsNewName] = useState('');
+  const addRef = useRef<HTMLInputElement>(null);
 
-  // ─── Section helpers ────────────────────────────────────────────────────────
-  const addSection = () => {
-    const newSection: ChecklistSection = { id: generateId(), title: '', fields: [] };
-    onChange([...sections, newSection]);
+  // ── Flat field list (we keep ONE internal section for DB compat) ────────────
+  const fields: ChecklistField[] = sections[0]?.fields ?? [];
+
+  const setFields = useCallback((next: ChecklistField[]) => {
+    onChange([{ id: sections[0]?.id ?? uid(), title: '', fields: next }]);
+  }, [sections, onChange]);
+
+  // ── Field CRUD ──────────────────────────────────────────────────────────────
+  const addField = () => {
+    const text = addText.trim();
+    if (!text) return;
+    const newField: ChecklistField = { id: uid(), type: 'checkbox', label: text };
+    setFields([...fields, newField]);
+    setAddText('');
+    addRef.current?.focus();
   };
 
-  const updateSection = (sid: string, patch: Partial<ChecklistSection>) =>
-    onChange(sections.map(s => s.id === sid ? { ...s, ...patch } : s));
+  const updateField = (id: string, patch: Partial<ChecklistField>) =>
+    setFields(fields.map(f => f.id === id ? { ...f, ...patch } : f));
 
-  const removeSection = (sid: string) =>
-    onChange(sections.filter(s => s.id !== sid));
+  const removeField = (id: string) => {
+    setFields(fields.filter(f => f.id !== id));
+    if (expandedId === id) setExpandedId(null);
+  };
 
-  const moveSectionUp = (idx: number) => {
+  const moveUp = (idx: number) => {
     if (idx === 0) return;
-    const next = [...sections];
+    const next = [...fields];
     [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-    onChange(next);
+    setFields(next);
   };
 
-  const moveSectionDown = (idx: number) => {
-    if (idx === sections.length - 1) return;
-    const next = [...sections];
+  const moveDown = (idx: number) => {
+    if (idx === fields.length - 1) return;
+    const next = [...fields];
     [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-    onChange(next);
+    setFields(next);
   };
 
-  // ─── Field helpers ──────────────────────────────────────────────────────────
-  const addField = (sid: string, type: FieldType) => {
-    const field: ChecklistField = { id: generateId(), type, label: '' };
-    updateSection(sid, { fields: [...(sections.find(s => s.id === sid)?.fields || []), field] });
+  // ── Options for dropdown/multiselect ───────────────────────────────────────
+  const addOption = (fieldId: string) => {
+    const opt = newOption.trim();
+    if (!opt) return;
+    const f = fields.find(f => f.id === fieldId);
+    if (!f) return;
+    updateField(fieldId, { options: [...(f.options ?? []), opt] });
+    setNewOption('');
   };
 
-  const updateField = (sid: string, fid: string, updated: ChecklistField) =>
-    updateSection(sid, {
-      fields: (sections.find(s => s.id === sid)?.fields || []).map(f => f.id === fid ? updated : f),
-    });
+  // ── All yes/no fields for conditional logic picker ─────────────────────────
+  const yesNoFields = fields.filter(f => f.type === 'yesno');
 
-  const removeField = (sid: string, fid: string) =>
-    updateSection(sid, {
-      fields: (sections.find(s => s.id === sid)?.fields || []).filter(f => f.id !== fid),
-    });
-
-  const moveFieldUp = (sid: string, idx: number) => {
-    const sec = sections.find(s => s.id === sid);
-    if (!sec || idx === 0) return;
-    const fields = [...sec.fields];
-    [fields[idx - 1], fields[idx]] = [fields[idx], fields[idx - 1]];
-    updateSection(sid, { fields });
-  };
-
-  const moveFieldDown = (sid: string, idx: number) => {
-    const sec = sections.find(s => s.id === sid);
-    if (!sec || idx === sec.fields.length - 1) return;
-    const fields = [...sec.fields];
-    [fields[idx], fields[idx + 1]] = [fields[idx + 1], fields[idx]];
-    updateSection(sid, { fields });
-  };
-
-  // ─── Drag-and-drop section reorder ──────────────────────────────────────────
-  const handleDragStart = (sid: string) => setDraggingSectionId(sid);
-  const handleDragOver = (e: React.DragEvent, sid: string) => { e.preventDefault(); setDragOverSectionId(sid); };
-  const handleDrop = (sid: string) => {
-    if (!draggingSectionId || draggingSectionId === sid) { setDraggingSectionId(null); setDragOverSectionId(null); return; }
-    const from = sections.findIndex(s => s.id === draggingSectionId);
-    const to = sections.findIndex(s => s.id === sid);
-    const next = [...sections];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onChange(next);
-    setDraggingSectionId(null);
-    setDragOverSectionId(null);
-  };
-
-  // All yes/no fields across all sections (for conditional logic picker)
-  const allYesNoFields = sections.flatMap(s =>
-    s.fields.filter(f => f.type === 'yesno').map(f => ({ id: f.id, label: f.label }))
-  );
-
-  const totalFields = sections.reduce((sum, s) => sum + s.fields.length, 0);
-
+  // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    await onSave(name || 'Untitled', sections, isDefault);
+    await onSave(name.trim() || 'Untitled', sections, isDefault);
   };
 
   const handleSaveAsNew = async () => {
-    if (!newSaveName.trim()) return;
-    await onSaveAsNew?.(newSaveName.trim(), sections);
-    setShowNamePrompt(false);
-    setNewSaveName('');
+    await onSaveAsNew?.(saveAsNewName.trim() || 'Untitled', sections);
+    setShowSaveAsNew(false);
+    setSaveAsNewName('');
   };
 
   return (
     <div className="flex flex-col h-full">
-      {/* ── Name + default row ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated shrink-0 flex-wrap gap-y-2">
+
+      {/* ── Name row ─────────────────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated">
         <input
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="Checklist name…"
-          className="input-field text-sm font-semibold flex-1 min-w-[140px] py-2"
+          className="input-field text-sm font-semibold flex-1 py-2"
         />
         {mode === 'client-profile' && (
           <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-            <button onClick={() => setIsDefault(!isDefault)}
-              className={`relative w-9 h-5 rounded-full transition-colors ${isDefault ? 'bg-primary' : 'bg-border-light'}`}>
+            <button
+              type="button"
+              onClick={() => setIsDefault(v => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${isDefault ? 'bg-primary' : 'bg-border-light'}`}
+            >
               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDefault ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </button>
-            <span className="text-xs font-semibold text-text-secondary">Default</span>
+            <span className="text-xs font-semibold text-text-secondary whitespace-nowrap">Default</span>
           </label>
         )}
-        <span className="text-xs text-text-tertiary shrink-0">{totalFields} field{totalFields !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* ── Sections ──────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-        <AnimatePresence initial={false}>
-          {sections.map((sec, si) => (
-            <motion.div
-              key={sec.id}
-              layout
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8, height: 0 }}
-              draggable
-              onDragStart={() => handleDragStart(sec.id)}
-              onDragOver={e => handleDragOver(e, sec.id)}
-              onDrop={() => handleDrop(sec.id)}
-              onDragEnd={() => { setDraggingSectionId(null); setDragOverSectionId(null); }}
-              className={`rounded-xl border-2 transition-all ${
-                draggingSectionId === sec.id ? 'opacity-40' : 'opacity-100'
-              } ${
-                dragOverSectionId === sec.id && draggingSectionId !== sec.id
-                  ? 'border-primary bg-primary-light/20'
-                  : 'border-border-light bg-white'
-              }`}
-            >
-              {/* Section header */}
-              <div className="flex items-start gap-2 p-3 border-b border-border-light">
-                {/* Drag handle */}
-                <button className="mt-1 p-1 rounded cursor-grab active:cursor-grabbing text-text-tertiary hover:text-text-primary transition-colors shrink-0">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="8" cy="6" r="1" fill="currentColor"/><circle cx="16" cy="6" r="1" fill="currentColor"/>
-                    <circle cx="8" cy="12" r="1" fill="currentColor"/><circle cx="16" cy="12" r="1" fill="currentColor"/>
-                    <circle cx="8" cy="18" r="1" fill="currentColor"/><circle cx="16" cy="18" r="1" fill="currentColor"/>
-                  </svg>
-                </button>
+      {/* ── Field list ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="divide-y divide-border-light/60">
+          <AnimatePresence initial={false}>
+            {fields.map((field, idx) => {
+              const expanded = expandedId === field.id;
+              const needsOptions = field.type === 'dropdown' || field.type === 'multiselect';
+              const isNonDefault = field.type !== 'checkbox';
 
-                <div className="flex-1 space-y-1.5">
-                  <input
-                    value={sec.title}
-                    onChange={e => updateSection(sec.id, { title: e.target.value })}
-                    placeholder={`Section ${si + 1} title…`}
-                    className="input-field text-sm font-bold w-full py-2"
-                  />
-                  <input
-                    value={sec.description || ''}
-                    onChange={e => updateSection(sec.id, { description: e.target.value || undefined })}
-                    placeholder="Section description (optional)…"
-                    className="input-field text-xs text-text-secondary w-full py-1.5"
-                  />
-                </div>
+              return (
+                <motion.div
+                  key={field.id}
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  {/* ── Main item row ── */}
+                  <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-surface-elevated/50 group">
+                    {/* Drag / reorder */}
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button onClick={() => moveUp(idx)} disabled={idx === 0}
+                        className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20 transition-colors">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                      </button>
+                      <button onClick={() => moveDown(idx)} disabled={idx === fields.length - 1}
+                        className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20 transition-colors">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                      </button>
+                    </div>
 
-                <div className="flex items-center gap-1 shrink-0 mt-1">
-                  <button onClick={() => moveSectionUp(si)} disabled={si === 0}
-                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-20 text-text-tertiary transition-colors">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>
-                  </button>
-                  <button onClick={() => moveSectionDown(si)} disabled={si === sections.length - 1}
-                    className="p-1 rounded hover:bg-surface-hover disabled:opacity-20 text-text-tertiary transition-colors">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  {sections.length > 1 && (
-                    <button onClick={() => removeSection(sec.id)}
-                      className="p-1 rounded hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    {/* Type icon */}
+                    <span className="text-sm shrink-0 select-none" title={FIELD_TYPE_LABELS[field.type]}>
+                      {FIELD_TYPE_ICONS[field.type]}
+                    </span>
+
+                    {/* Label */}
+                    <input
+                      value={field.label}
+                      onChange={e => updateField(field.id, { label: e.target.value })}
+                      placeholder="Item label…"
+                      className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-tertiary outline-none min-w-0 py-0.5"
+                    />
+
+                    {/* Badges */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {field.required && (
+                        <span className="text-[10px] font-bold text-red-400 leading-none">*</span>
+                      )}
+                      {field.allowNA && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-gray-100 text-gray-500 leading-none">N/A</span>
+                      )}
+                      {isNonDefault && (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-primary-light text-primary leading-none">
+                          {FIELD_TYPE_LABELS[field.type]}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Expand settings */}
+                    <button
+                      onClick={() => setExpandedId(expanded ? null : field.id)}
+                      className="p-1 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors shrink-0"
+                      title="Field settings"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => removeField(field.id)}
+                      className="p-1 rounded-lg text-text-tertiary hover:text-danger hover:bg-danger-light transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M18 6L6 18M6 6l12 12"/>
                       </svg>
                     </button>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              {/* Fields */}
-              <div className="p-3 space-y-3">
-                <AnimatePresence initial={false}>
-                  {sec.fields.map((field, fi) => (
-                    <motion.div key={field.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                      <ChecklistFieldEditor
-                        field={field}
-                        allYesNoFields={allYesNoFields}
-                        onChange={updated => updateField(sec.id, field.id, updated)}
-                        onDelete={() => removeField(sec.id, field.id)}
-                        onMoveUp={fi > 0 ? () => moveFieldUp(sec.id, fi) : undefined}
-                        onMoveDown={fi < sec.fields.length - 1 ? () => moveFieldDown(sec.id, fi) : undefined}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+                  {/* ── Expanded settings ── */}
+                  <AnimatePresence>
+                    {expanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4 pt-2 bg-surface-elevated/60 border-t border-border-light/60 space-y-3">
 
-                {/* Quick add field buttons */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {QUICK_ADD_TYPES.map(type => (
-                    <button key={type}
-                      onClick={() => addField(sec.id, type)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-dashed border-border-light text-text-tertiary hover:border-primary hover:text-primary hover:bg-primary-light/20 transition-all">
-                      <span>{FIELD_TYPE_ICONS[type]}</span>
-                      {FIELD_TYPE_LABELS[type]}
-                    </button>
-                  ))}
-                  {/* More types dropdown */}
-                  <MoreTypesButton onAdd={type => addField(sec.id, type)} />
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+                          {/* Helper text */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1">Helper text (optional)</label>
+                            <input
+                              value={field.description ?? ''}
+                              onChange={e => updateField(field.id, { description: e.target.value || undefined })}
+                              placeholder="Extra instruction shown to staff below the label…"
+                              className="input-field text-xs w-full py-2"
+                            />
+                          </div>
 
-        {/* Add section */}
-        <button onClick={addSection}
-          className="w-full py-3 rounded-xl border-2 border-dashed border-border-light hover:border-primary text-sm text-text-tertiary hover:text-primary transition-colors font-semibold flex items-center justify-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Section
-        </button>
+                          {/* Type pills */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">Field type</label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {TYPE_PILLS.map(({ type, icon, label }) => (
+                                <button
+                                  key={type}
+                                  onClick={() => updateField(field.id, { type, options: undefined, conditionalOn: undefined, conditionalValue: undefined })}
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                    field.type === type
+                                      ? 'bg-primary text-white border-primary'
+                                      : 'bg-white text-text-secondary border-border-light hover:border-primary hover:text-primary'
+                                  }`}
+                                >
+                                  <span>{icon}</span> {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Required + N/A toggles */}
+                          <div className="flex items-center gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <button type="button" onClick={() => updateField(field.id, { required: !field.required })}
+                                className={`relative w-8 h-4 rounded-full transition-colors ${field.required ? 'bg-primary' : 'bg-border-light'}`}>
+                                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${field.required ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                              </button>
+                              <span className="text-xs font-semibold text-text-secondary">Required</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <button type="button" onClick={() => updateField(field.id, { allowNA: !field.allowNA })}
+                                className={`relative w-8 h-4 rounded-full transition-colors ${field.allowNA ? 'bg-amber-500' : 'bg-border-light'}`}>
+                                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${field.allowNA ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                              </button>
+                              <span className="text-xs font-semibold text-text-secondary">Allow N/A</span>
+                            </label>
+                          </div>
+
+                          {/* Options editor */}
+                          {needsOptions && (
+                            <div>
+                              <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">Options</label>
+                              <div className="space-y-1.5 mb-2">
+                                {(field.options ?? []).map((opt, oi) => (
+                                  <div key={oi} className="flex items-center gap-2">
+                                    <input
+                                      value={opt}
+                                      onChange={e => updateField(field.id, { options: (field.options ?? []).map((o, i) => i === oi ? e.target.value : o) })}
+                                      className="input-field text-xs flex-1 py-1.5"
+                                    />
+                                    <button onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                                      className="p-0.5 text-text-tertiary hover:text-danger transition-colors">
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex gap-2">
+                                <input
+                                  value={newOption}
+                                  onChange={e => setNewOption(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOption(field.id); } }}
+                                  placeholder="Add option…"
+                                  className="input-field text-xs flex-1 py-1.5"
+                                />
+                                <button onClick={() => addOption(field.id)}
+                                  className="px-3 text-xs font-semibold text-primary border border-primary rounded-lg hover:bg-primary-light/30 transition-colors">
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Conditional logic */}
+                          {yesNoFields.filter(f => f.id !== field.id).length > 0 && (
+                            <div>
+                              <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">Only show when</label>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <select
+                                  value={field.conditionalOn ?? ''}
+                                  onChange={e => updateField(field.id, {
+                                    conditionalOn: e.target.value || undefined,
+                                    conditionalValue: e.target.value ? (field.conditionalValue ?? 'yes') : undefined,
+                                  })}
+                                  className="input-field text-xs py-1.5 flex-1 min-w-[120px]"
+                                >
+                                  <option value="">Always visible</option>
+                                  {yesNoFields.filter(f => f.id !== field.id).map(f => (
+                                    <option key={f.id} value={f.id}>{f.label || 'Untitled Yes/No'}</option>
+                                  ))}
+                                </select>
+                                {field.conditionalOn && (
+                                  <div className="flex rounded-lg border border-border-light overflow-hidden shrink-0">
+                                    {(['yes', 'no'] as const).map(v => (
+                                      <button key={v} onClick={() => updateField(field.id, { conditionalValue: v })}
+                                        className={`px-3 py-1.5 text-xs font-semibold transition-colors ${field.conditionalValue === v ? 'bg-primary text-white' : 'bg-white text-text-secondary hover:bg-surface-elevated'}`}>
+                                        {v === 'yes' ? 'Yes' : 'No'}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          {/* ── Empty state ── */}
+          {fields.length === 0 && (
+            <div className="py-8 text-center text-sm text-text-tertiary">
+              No items yet — type below to add your first one
+            </div>
+          )}
+        </div>
+
+        {/* ── Add item input ──────────────────────────────────────────────── */}
+        <div className="px-3 py-3 border-t border-border-light sticky bottom-0 bg-white">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-text-tertiary shrink-0">☑</span>
+            <input
+              ref={addRef}
+              value={addText}
+              onChange={e => setAddText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addField(); } }}
+              placeholder="Add an item and press Enter…"
+              className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-tertiary outline-none py-1"
+            />
+            {addText.trim() && (
+              <button onClick={addField}
+                className="shrink-0 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+                Add
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* ── Save actions ────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-t border-border-light p-3 space-y-2 bg-white">
+      {/* ── Save actions ─────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-border-light p-3 bg-white space-y-2">
         {mode === 'client-profile' ? (
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving}
               className="btn-primary text-sm flex-1 py-2.5 disabled:opacity-50 flex items-center justify-center gap-1.5">
               {saving
-                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                ? <svg width="13" height="13" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                 : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
               }
               Save Checklist
@@ -287,23 +409,27 @@ export default function ChecklistBuilder({
               <button onClick={handleSave} disabled={saving}
                 className="btn-primary text-xs py-2.5 disabled:opacity-50 flex items-center justify-center gap-1.5">
                 {saving
-                  ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  ? <svg width="12" height="12" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                   : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
                 }
                 Save Changes
               </button>
               {onSaveAsNew && (
-                <button onClick={() => setShowNamePrompt(true)} disabled={saving}
-                  className="btn-ghost text-xs py-2.5 disabled:opacity-50 flex items-center justify-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                <button onClick={() => setShowSaveAsNew(true)} disabled={saving}
+                  className="btn-ghost text-xs py-2.5 disabled:opacity-50">
                   Save as New
                 </button>
               )}
             </div>
             {onSaveJobOnly && (
               <button onClick={() => onSaveJobOnly(sections)} disabled={saving}
-                className="w-full text-xs text-text-tertiary hover:text-primary py-1.5 text-center transition-colors border border-border-light rounded-lg hover:border-primary hover:bg-primary-light/20">
+                className="w-full text-xs text-text-tertiary hover:text-primary py-1.5 text-center transition-colors">
                 Save for this job only
+              </button>
+            )}
+            {onCancel && (
+              <button onClick={onCancel} className="w-full text-xs text-text-tertiary hover:text-text-primary py-1 text-center transition-colors">
+                Cancel
               </button>
             )}
           </>
@@ -312,59 +438,30 @@ export default function ChecklistBuilder({
 
       {/* ── Save-as-new name prompt ─────────────────────────────────────────── */}
       <AnimatePresence>
-        {showNamePrompt && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
-            >
+        {showSaveAsNew && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
               <h3 className="text-sm font-bold text-text-primary mb-1">Name this checklist</h3>
-              <p className="text-xs text-text-secondary mb-4">It will be saved to this client's profile for future use.</p>
+              <p className="text-xs text-text-secondary mb-4">Saves a copy to this client's profile.</p>
               <input
                 autoFocus
-                value={newSaveName}
-                onChange={e => setNewSaveName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveAsNew(); if (e.key === 'Escape') { setShowNamePrompt(false); setNewSaveName(''); } }}
+                value={saveAsNewName}
+                onChange={e => setSaveAsNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveAsNew(); if (e.key === 'Escape') setShowSaveAsNew(false); }}
                 placeholder="e.g. Deep Clean, End of Lease…"
                 className="input-field text-sm w-full mb-4"
               />
               <div className="flex gap-2">
-                <button onClick={handleSaveAsNew} disabled={!newSaveName.trim() || saving}
+                <button onClick={handleSaveAsNew} disabled={!saveAsNewName.trim() || saving}
                   className="btn-primary text-sm flex-1 disabled:opacity-50">Save</button>
-                <button onClick={() => { setShowNamePrompt(false); setNewSaveName(''); }} className="btn-ghost text-sm px-4">Cancel</button>
+                <button onClick={() => setShowSaveAsNew(false)} className="btn-ghost text-sm px-4">Cancel</button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-// ── More field types picker ────────────────────────────────────────────────────
-const EXTRA_TYPES: FieldType[] = ['multiselect', 'date', 'time', 'video'];
-function MoreTypesButton({ onAdd }: { onAdd: (type: FieldType) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-dashed border-border-light text-text-tertiary hover:border-primary hover:text-primary transition-all">
-        + More
-      </button>
-      {open && (
-        <div className="absolute bottom-full mb-1 left-0 z-30 bg-white rounded-xl shadow-xl border border-border-light p-2 grid grid-cols-2 gap-1 w-44">
-          {EXTRA_TYPES.map(t => (
-            <button key={t} onClick={() => { onAdd(t); setOpen(false); }}
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[11px] font-semibold text-text-secondary hover:bg-surface-elevated hover:text-primary transition-colors">
-              <span>{FIELD_TYPE_ICONS[t]}</span>
-              {FIELD_TYPE_LABELS[t]}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

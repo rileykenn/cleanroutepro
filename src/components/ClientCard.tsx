@@ -22,9 +22,10 @@ interface ClientCardProps {
   availableStaff?: StaffMember[];
   staffBusyPeriods?: Map<string, StaffBusyPeriod[]>;
   savedClients?: SavedClient[];
+  onOpenChecklist?: (client: Client) => void;
 }
 
-export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, savedClients }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, savedClients, onOpenChecklist }: ClientCardProps) {
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
@@ -233,7 +234,28 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <button onClick={() => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { isLocked: !client.isLocked } })} className={`p-1.5 rounded-lg transition-colors ${client.isLocked ? 'bg-amber-50 text-amber-600' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Lock position">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{client.isLocked ? <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
           </button>
-          <button onClick={() => setShowInfo(true)} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Client info, checklist & media">
+          {/* Checklist icon — only shown for saved clients */}
+          {client.savedClientId && onOpenChecklist && (
+            <button
+              onClick={() => onOpenChecklist(client)}
+              className={`relative p-1.5 rounded-lg transition-colors ${
+                client.checklistId
+                  ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  : 'hover:bg-surface-elevated text-text-tertiary hover:text-primary'
+              }`}
+              title="View checklist & access instructions"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <path d="M9 12h6M9 16h4"/>
+              </svg>
+              {client.checklistId && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
+              )}
+            </button>
+          )}
+          <button onClick={() => setShowInfo(true)} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Client info & media">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
           </button>
           <a href={mapsNavUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Navigate">

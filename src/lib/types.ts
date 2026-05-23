@@ -29,6 +29,53 @@ export interface Client {
   phone?: string;
   assignedStaffIds?: string[];
   clientColor?: string;
+  /** ID of the client_checklists row linked to this scheduled job */
+  checklistId?: string | null;
+  /** One-time override sections for "save for this job only" */
+  checklistOverride?: ChecklistSection[] | null;
+}
+
+// ─── Checklist types ───
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  required?: boolean;
+}
+
+export interface ChecklistSection {
+  id: string;
+  title: string;
+  items: ChecklistItem[];
+}
+
+export interface ClientChecklist {
+  id: string;
+  org_id: string;
+  client_id: string;
+  name: string;
+  is_default: boolean;
+  sections: ChecklistSection[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChecklistItemCompletion {
+  item_id: string;
+  checked: boolean;
+  checked_by_name?: string;
+  checked_at?: string;
+}
+
+export interface ChecklistCompletion {
+  id: string;
+  org_id: string;
+  client_id: string;
+  schedule_job_id: string | null;
+  checklist_id: string | null;
+  items: ChecklistItemCompletion[];
+  notes: string | null;
+  completed_by: string | null;
+  completed_at: string;
 }
 
 export interface TravelSegment {

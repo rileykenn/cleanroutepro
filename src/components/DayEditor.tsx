@@ -17,6 +17,8 @@ import DailySummaryCard from '@/components/DailySummary';
 import RouteMap from '@/components/RouteMap';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import { invalidateScheduleCache } from '@/app/dashboard/schedule/page';
+import { lazy, Suspense } from 'react';
+const ClientChecklistPanel = lazy(() => import('@/components/ClientChecklistPanel'));
 
 interface DayEditorProps {
   state: AppState;
@@ -26,14 +28,16 @@ interface DayEditorProps {
   supabase: SupabaseClient;
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
   allStaff?: StaffMember[];
+  isAdmin?: boolean;
   /** Increments each time loadDayForEdit completes — signals a fresh DB load so
    *  the autosave baseline is re-recorded and no spurious save fires. */
   loadGeneration?: number;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, loadGeneration = 0 }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0 }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
+  const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
 
   // Saved client database — used for the swap-client feature on each card
   const { clients: savedClients } = useClients(orgId ?? null);
@@ -663,7 +667,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     {segment && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
-                      staffBusyPeriods={staffBusyPeriods} savedClients={savedClients} />
+                      staffBusyPeriods={staffBusyPeriods} savedClients={savedClients}
+                      onOpenChecklist={setActiveChecklistClient} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="mx-2 my-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">
@@ -821,22 +826,47 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           </div>
         </div>
 
-        {/* Map Panel */}
-        <div className={`${mobileShowMap ? 'flex' : 'hidden md:flex'} flex-1 relative`}>
-          <GoogleMap defaultCenter={{ lat: -33.8688, lng: 151.2093 }} defaultZoom={11} mapId="cleanroute-map"
-            gestureHandling="greedy" disableDefaultUI={false} zoomControl={true} streetViewControl={false}
-            mapTypeControl={false} fullscreenControl={true} className="w-full h-full">
-            <RouteMap team={activeTeam} />
-          </GoogleMap>
-          <div className="absolute top-4 left-4 glass-panel rounded-xl px-4 py-2.5 flex items-center gap-2.5">
-            <div className="team-dot animate-pulse-dot" style={{ backgroundColor: activeTeam.color.primary }} />
-            <span className="text-sm font-semibold text-text-primary">{activeTeam.name}</span>
-            {activeTeam.clients.length > 0 && (
-              <span className="text-xs text-text-secondary">
-                · {activeTeam.clients.length} stop{activeTeam.clients.length !== 1 ? 's' : ''}
-              </span>
+        {/* Map Panel or Checklist Panel */}
+        <div className={`${mobileShowMap || activeChecklistClient ? 'flex' : 'hidden md:flex'} flex-1 relative`}>
+          <AnimatePresence mode="wait">
+            {activeChecklistClient ? (
+              <motion.div key="checklist" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="absolute inset-0 p-2 overflow-hidden">
+                <Suspense fallback={<div className="h-full flex items-center justify-center"><div className="shimmer w-full h-full rounded-2xl" /></div>}>
+                  <ClientChecklistPanel
+                    client={activeChecklistClient}
+                    orgId={orgId || ''}
+                    isAdmin={isAdmin}
+                    scheduleJobId={activeChecklistClient.id}
+                    onClose={() => { setActiveChecklistClient(null); setMobileShowMap(false); }}
+                    onLinkChecklist={(clientId, checklistId) => {
+                      dispatch({ type: 'UPDATE_CLIENT', teamId: activeTeam.id, clientId, updates: { checklistId } });
+                    }}
+                    onSaveJobOnly={(clientId, override) => {
+                      dispatch({ type: 'UPDATE_CLIENT', teamId: activeTeam.id, clientId, updates: { checklistOverride: override } });
+                    }}
+                  />
+                </Suspense>
+              </motion.div>
+            ) : (
+              <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">
+                <GoogleMap defaultCenter={{ lat: -33.8688, lng: 151.2093 }} defaultZoom={11} mapId="cleanroute-map"
+                  gestureHandling="greedy" disableDefaultUI={false} zoomControl={true} streetViewControl={false}
+                  mapTypeControl={false} fullscreenControl={true} className="w-full h-full">
+                  <RouteMap team={activeTeam} />
+                </GoogleMap>
+                <div className="absolute top-4 left-4 glass-panel rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+                  <div className="team-dot animate-pulse-dot" style={{ backgroundColor: activeTeam.color.primary }} />
+                  <span className="text-sm font-semibold text-text-primary">{activeTeam.name}</span>
+                  {activeTeam.clients.length > 0 && (
+                    <span className="text-xs text-text-secondary">
+                      · {activeTeam.clients.length} stop{activeTeam.clients.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </div>
       </div>
     </>

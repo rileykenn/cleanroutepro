@@ -187,38 +187,77 @@ export default function ChecklistsPage() {
           </div>
         </div>
 
-        {/* Client list */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar py-1">
+        {/* Client list with checklists nested underneath */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredClients.length === 0 ? (
             <p className="text-xs text-text-tertiary text-center py-8 px-4">No clients yet</p>
           ) : (
-            filteredClients.map(client => {
-              const count = checklists.filter(cl => cl.client_id === client.id).length;
-              const isSelected = selectedClientId === client.id;
-              return (
-                <button
-                  key={client.id}
-                  onClick={() => setSelectedClientId(client.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${isSelected ? 'bg-primary/8 border-r-2 border-primary' : 'hover:bg-surface-elevated'}`}
-                >
-                  {/* Avatar */}
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold shrink-0"
-                    style={{ backgroundColor: client.color || '#6366f1' }}
-                  >
-                    {client.name.charAt(0).toUpperCase()}
+            <div className="divide-y divide-border-light/60">
+              {filteredClients.map(client => {
+                const clientCls = checklists.filter(cl => cl.client_id === client.id);
+                const isSelected = selectedClientId === client.id;
+
+                return (
+                  <div key={client.id}>
+                    {/* Client row */}
+                    <button
+                      onClick={() => { setSelectedClientId(client.id); setActiveChecklistId(null); setBuilderSections([]); }}
+                      className={`w-full flex items-center gap-3 px-3 py-3 transition-colors text-left ${isSelected ? 'bg-primary/5' : 'hover:bg-surface-elevated'}`}
+                    >
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
+                        style={{ backgroundColor: client.color || '#6366f1' }}
+                      >
+                        {client.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold truncate ${isSelected ? 'text-primary' : 'text-text-primary'}`}>
+                          {client.name}
+                        </p>
+                        {client.address && (
+                          <p className="text-[11px] text-text-tertiary truncate">{client.address}</p>
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Checklists under this client */}
+                    {clientCls.length > 0 && (
+                      <div className="pb-1">
+                        {clientCls.map(cl => {
+                          const isActiveChecklist = activeChecklistId === cl.id && selectedClientId === client.id;
+                          return (
+                            <button
+                              key={cl.id}
+                              onClick={() => { setSelectedClientId(client.id); openEdit(cl); }}
+                              className={`w-full flex items-center gap-2.5 pl-[52px] pr-3 py-2 transition-colors text-left ${isActiveChecklist ? 'bg-primary/8 border-r-2 border-primary' : 'hover:bg-surface-elevated'}`}
+                            >
+                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`} />
+                              <span className={`text-xs truncate flex-1 ${isActiveChecklist ? 'text-primary font-semibold' : 'text-text-secondary'}`}>
+                                {cl.name}
+                              </span>
+                              {cl.is_default && (
+                                <span className="text-[9px] font-bold text-primary shrink-0">Default</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* New checklist shortcut */}
+                    {isSelected && (
+                      <button
+                        onClick={openNew}
+                        className="w-full flex items-center gap-2 pl-[52px] pr-3 py-2 text-[11px] font-semibold text-text-tertiary hover:text-primary transition-colors"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        New checklist
+                      </button>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold truncate ${isSelected ? 'text-primary' : 'text-text-primary'}`}>
-                      {client.name}
-                    </p>
-                    <p className="text-[11px] text-text-tertiary">
-                      {count} checklist{count !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </button>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

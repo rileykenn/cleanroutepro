@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
-import { FormField, FormFieldType, LegacyFieldAnswer as FieldAnswer, MediaUrls, normaliseField, AnyFormField } from '@/lib/types';
+import { FormField, FormFieldType, FieldAnswer, MediaUrls, normaliseField, AnyFormField } from '@/lib/types';
 
 interface StaffChecklistViewProps {
   clientId: string;

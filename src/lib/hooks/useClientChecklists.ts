@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { ClientChecklist, ChecklistSection } from '@/lib/types';
+import { ClientChecklist } from '@/lib/types';
+import { ChecklistSection } from '@/components/checklist/types';
 import { generateId } from '@/lib/timeUtils';
 
 export function useClientChecklists(clientId: string | null, orgId: string | null) {
@@ -102,7 +103,7 @@ export function useClientChecklists(clientId: string | null, orgId: string | nul
       {
         id: generateId(),
         title: 'General',
-        fields: [{ id: generateId(), type: 'yesno' as const, label: 'Check entry and lock up after', required: true }],
+        fields: [{ id: generateId(), type: 'checkbox' as const, label: 'Check entry and lock up after', required: true }],
       },
     ], true);
   }, [addChecklist]);

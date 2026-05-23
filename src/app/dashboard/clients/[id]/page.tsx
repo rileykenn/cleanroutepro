@@ -6,11 +6,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
-import { ClientChecklist, ChecklistSection, CLIENT_COLORS } from '@/lib/types';
-import { generateId } from '@/lib/timeUtils';
+import { CLIENT_COLORS } from '@/lib/types';
+import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 
-// (Checklist editing now uses ChecklistBuilder component)
 
 // ─── Media uploader ───────────────────────────────────────────────────────────
 function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) {
@@ -147,6 +146,7 @@ export default function ClientProfilePage() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '', default_duration_minutes: 90, default_staff_count: 1, notes: '', access_instructions: '' });
   const [editingChecklistId, setEditingChecklistId] = useState<string | 'new' | null>(null);
+  const [builderSections, setBuilderSections] = useState<ChecklistSection[]>([]);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -198,7 +198,8 @@ export default function ClientProfilePage() {
     );
   }
 
-  const totalItems = checklists.reduce((sum, cl) => sum + cl.sections.reduce((s, sec) => s + sec.fields.length, 0), 0);
+  const totalFields = checklists.reduce((sum, cl) =>
+    sum + cl.sections.reduce((s2, sec) => s2 + ((sec as unknown as { fields?: unknown[] }).fields?.length ?? (sec as unknown as { items?: unknown[] }).items?.length ?? 0), 0), 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -354,115 +355,121 @@ export default function ClientProfilePage() {
         )}
 
         {/* Checklists */}
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between px-5 pt-5 pb-4">
             <div>
               <h3 className="text-sm font-bold text-text-primary">Checklists</h3>
               <p className="text-xs text-text-tertiary mt-0.5">
-                {checklists.length} checklist{checklists.length !== 1 ? 's' : ''} · {totalItems} items total
+                {checklists.length} checklist{checklists.length !== 1 ? 's' : ''}· {totalFields} field{totalFields !== 1 ? 's' : ''} total
               </p>
             </div>
             <button onClick={() => setEditingChecklistId('new')}
               className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New Checklist
             </button>
           </div>
 
-          {/* New checklist editor */}
+          {/* New checklist builder */}
           <AnimatePresence>
             {editingChecklistId === 'new' && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden mb-4">
-                <div className="bg-surface-elevated rounded-xl p-4">
-                  <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">New Checklist</h4>
-                  <ChecklistBuilder
-                    mode="builder"
-                    checklist={{ id: 'new', org_id: orgId || '', client_id: id, name: '', is_default: checklists.length === 0, sections: [], created_at: '', updated_at: '' }}
-                    compact={false}
-                    onSaveTemplate={async ({ name, sections }) => {
-                      await addChecklist(name, sections, checklists.length === 0);
-                      setEditingChecklistId(null);
-                    }}
-                  />
-                </div>
+                className="overflow-hidden border-t border-border-light" style={{ maxHeight: 600 }}>
+                <ChecklistBuilder
+                  sections={builderSections}
+                  onChange={setBuilderSections}
+                  initialName=""
+                  initialIsDefault={checklists.length === 0}
+                  mode="client-profile"
+                  onSave={async (name, sections, isDefault) => {
+                    await addChecklist(name, sections, isDefault);
+                    setEditingChecklistId(null);
+                    setBuilderSections([]);
+                  }}
+                  onCancel={() => { setEditingChecklistId(null); setBuilderSections([]); }}
+                />
               </motion.div>
             )}
           </AnimatePresence>
 
           {checklistsLoading ? (
-            <div className="space-y-2">{[1, 2].map(i => <div key={i} className="shimmer h-16 rounded-xl" />)}</div>
-          ) : checklists.length === 0 ? (
-            <div className="text-center py-8 border-2 border-dashed border-border-light rounded-xl">
+            <div className="px-5 pb-5 space-y-2">{[1, 2].map(i => <div key={i} className="shimmer h-16 rounded-xl" />)}</div>
+          ) : checklists.length === 0 && editingChecklistId !== 'new' ? (
+            <div className="text-center py-8 border-t border-border-light">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-2">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-                <rect x="9" y="3" width="6" height="4" rx="1" />
-                <path d="M9 12h6M9 16h4" />
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
               </svg>
               <p className="text-sm text-text-tertiary">No checklists yet</p>
               <p className="text-xs text-text-tertiary mt-1">Create one above to get started</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y divide-border-light">
               {checklists.map((cl) => (
                 <div key={cl.id}>
-                  <motion.div layout className="rounded-xl border border-border-light overflow-hidden">
-                    <div className="flex items-center gap-3 p-3 bg-white hover:bg-surface-elevated transition-colors">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-text-primary">{cl.name}</span>
-                          {cl.is_default && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary-light text-primary">Default</span>
-                          )}
-                        </div>
-                      <p className="text-xs text-text-tertiary">
-                          {cl.sections.length} section{cl.sections.length !== 1 ? 's' : ''} · {cl.sections.reduce((s, sec) => s + sec.fields.length, 0)} fields
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {!cl.is_default && (
-                          <button onClick={() => setDefault(cl.id)}
-                            className="text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-primary-light hover:text-primary text-text-tertiary transition-colors">
-                            Set Default
-                          </button>
+                  <div className="flex items-center gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-text-primary">{cl.name}</span>
+                        {cl.is_default && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary-light text-primary">Default</span>
                         )}
-                        <button onClick={() => setEditingChecklistId(editingChecklistId === cl.id ? null : cl.id)}
-                          className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors">
+                      </div>
+                      <p className="text-xs text-text-tertiary">
+                        {cl.sections.length} section{cl.sections.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!cl.is_default && (
+                        <button onClick={() => setDefault(cl.id)}
+                          className="text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-primary-light hover:text-primary text-text-tertiary transition-colors">
+                          Set Default
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          const migrated = cl.sections.map(s => migrateOldSection(s as unknown as Record<string, unknown>));
+                          setBuilderSections(migrated);
+                          setEditingChecklistId(editingChecklistId === cl.id ? null : cl.id);
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
+                      {checklists.length > 1 && (
+                        <button onClick={() => { if (confirm(`Delete "${cl.name}"?`)) deleteChecklist(cl.id); }}
+                          className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                           </svg>
                         </button>
-                        {checklists.length > 1 && (
-                          <button onClick={() => { if (confirm(`Delete "${cl.name}"?`)) deleteChecklist(cl.id); }}
-                            className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <AnimatePresence>
-                      {editingChecklistId === cl.id && (
-                        <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
-                          className="overflow-hidden border-t border-border-light">
-                          <div className="p-4 bg-surface-elevated">
-                            <ChecklistBuilder
-                              mode="builder"
-                              checklist={cl}
-                              compact={false}
-                              onSaveTemplate={async ({ name, sections }) => {
-                                await updateChecklist(cl.id, { name, sections, is_default: cl.is_default });
-                                setEditingChecklistId(null);
-                              }}
-                            />
-                          </div>
-                        </motion.div>
                       )}
-                    </AnimatePresence>
-                  </motion.div>
+                    </div>
+                  </div>
+
+                  {/* Edit checklist with ChecklistBuilder */}
+                  <AnimatePresence>
+                    {editingChecklistId === cl.id && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden border-t border-border-light" style={{ maxHeight: 650 }}>
+                        <ChecklistBuilder
+                          sections={builderSections}
+                          onChange={setBuilderSections}
+                          initialName={cl.name}
+                          initialIsDefault={cl.is_default}
+                          mode="client-profile"
+                          onSave={async (name, sections, isDefault) => {
+                            await updateChecklist(cl.id, { name, sections, is_default: isDefault });
+                            setEditingChecklistId(null);
+                            setBuilderSections([]);
+                          }}
+                          onCancel={() => { setEditingChecklistId(null); setBuilderSections([]); }}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               ))}
             </div>

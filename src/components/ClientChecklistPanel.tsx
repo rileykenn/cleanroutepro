@@ -1,239 +1,198 @@
 'use client';
 
-/**
- * ClientChecklistPanel
- *
- * Right-panel component shown in the Schedule day view when clicking
- * the clipboard icon on a job card. Wraps the universal ChecklistBuilder
- * component in compact mode.
- *
- * Handles:
- * - Loading the right checklist for the client (uses default or job-linked one)
- * - Access instructions accordion
- * - Saving completions to the DB + realtime subscription for live tracking
- * - Admin can switch between builder/completion modes
- */
-
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createClient as createSupabaseClient } from '@/lib/supabase/client';
+import { SupabaseClient } from '@supabase/supabase-js';
+
+import { Client } from '@/lib/types';
+import { ChecklistSection, migrateOldSection, PreFillMeta } from '@/components/checklist/types';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
-import {
-  Client, ClientChecklist, ChecklistSection, ChecklistCompletion, FieldAnswer,
-} from '@/lib/types';
+import { useChecklistCompletion } from '@/lib/hooks/useChecklistCompletion';
 import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
+import ChecklistRunner from '@/components/checklist/ChecklistRunner';
+import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 
 interface ClientChecklistPanelProps {
   client: Client;
   orgId: string;
-  isAdmin: boolean;
-  scheduleJobId: string;
-  scheduleJobDbId?: string;
+  isAdmin?: boolean;
+  scheduleJobId?: string;
   onClose: () => void;
-  onLinkChecklist?: (clientId: string, checklistId: string | null) => void;
+  onLinkChecklist?: (clientId: string, checklistId: string) => void;
   onSaveJobOnly?: (clientId: string, override: ChecklistSection[]) => void;
+  preFill?: PreFillMeta;
 }
 
+type PanelView = 'run' | 'build';
+
 export default function ClientChecklistPanel({
-  client, orgId, isAdmin, scheduleJobId, scheduleJobDbId, onClose, onLinkChecklist, onSaveJobOnly,
+  client, orgId, isAdmin = false, scheduleJobId,
+  onClose, onLinkChecklist, onSaveJobOnly, preFill,
 }: ClientChecklistPanelProps) {
-  const supabase = useMemo(() => createSupabaseClient(), []);
-  const { checklists, defaultChecklist, loading, addChecklist, updateChecklist } = useClientChecklists(client.savedClientId || null, orgId);
+  const supabase: SupabaseClient = useMemo(() => createSupabaseClient(), []);
+  const [view, setView] = useState<PanelView>('run');
+  const [saving, setSaving] = useState(false);
 
-  // Which checklist is active
-  const [activeId, setActiveId] = useState<string | null>(client.checklistId || null);
-  const [editorMode, setEditorMode] = useState<'completion' | 'builder'>('completion');
-  const [showAccess, setShowAccess] = useState(false);
-  const [accessInstructions, setAccessInstructions] = useState('');
-  const [completion, setCompletion] = useState<ChecklistCompletion | null>(null);
-  const [userName, setUserName] = useState('');
-
-  const activeChecklist = useMemo(() =>
-    checklists.find(c => c.id === activeId) || defaultChecklist,
-    [checklists, activeId, defaultChecklist]
+  const savedClientId = client.savedClientId || '';
+  const { checklists, defaultChecklist, loading: checklistsLoading, addChecklist, updateChecklist } = useClientChecklists(
+    savedClientId || null,
+    orgId,
   );
 
-  // Set active from default when checklists load
-  useEffect(() => {
-    if (!activeId && defaultChecklist) setActiveId(defaultChecklist.id);
-    if (client.checklistId) setActiveId(client.checklistId);
-  }, [activeId, defaultChecklist, client.checklistId]);
+  // Checklist in use: override > linked > default
+  const [activeChecklistId, setActiveChecklistId] = useState<string | null>(null);
 
-  // Load access instructions
-  useEffect(() => {
-    if (!client.savedClientId) return;
-    supabase.from('clients').select('access_instructions').eq('id', client.savedClientId).single()
+  const activeChecklist = useMemo(() => {
+    // 1. Job-level override stored on the client object
+    if (client.checklistOverride) {
+      return {
+        id: '__override__',
+        name: 'Custom (this job only)',
+        sections: (client.checklistOverride as unknown[]).map(s => migrateOldSection(s as Record<string, unknown>)),
+        is_default: false,
+      };
+    }
+    // 2. Explicitly selected in this panel
+    if (activeChecklistId) return checklists.find(c => c.id === activeChecklistId) || null;
+    // 3. Linked to the job
+    if (client.checklistId) return checklists.find(c => c.id === client.checklistId) || null;
+    // 4. Default for the client
+    return defaultChecklist || null;
+  }, [client.checklistOverride, client.checklistId, activeChecklistId, checklists, defaultChecklist]);
+
+  // Migrate sections to new field format
+  const activeSections: ChecklistSection[] = useMemo(() => {
+    if (!activeChecklist) return [];
+    return activeChecklist.sections.map(s => migrateOldSection(s as unknown as Record<string, unknown>));
+  }, [activeChecklist]);
+
+  // Builder state (admin editing)
+  const [builderSections, setBuilderSections] = useState<ChecklistSection[]>([]);
+
+  const openBuilder = useCallback(() => {
+    setBuilderSections(activeSections.length > 0 ? activeSections : [{ id: crypto.randomUUID(), title: 'General', fields: [] }]);
+    setView('build');
+  }, [activeSections]);
+
+  // Completion hook
+  const { completionId, responses, status, loading: completionLoading, saving: autoSaving, handleResponseChange, submit } = useChecklistCompletion({
+    supabase,
+    orgId,
+    clientId: savedClientId,
+    checklistId: activeChecklist?.id && activeChecklist.id !== '__override__' ? activeChecklist.id : null,
+    scheduleJobId: scheduleJobId || null,
+    preFill,
+  });
+
+  // Access instructions
+  const [accessInstructions, setAccessInstructions] = useState<string | null>(null);
+  const [accessLoading, setAccessLoading] = useState(true);
+  useMemo(() => {
+    if (!savedClientId) { setAccessLoading(false); return; }
+    supabase.from('clients').select('access_instructions').eq('id', savedClientId).single()
       .then(({ data }: { data: { access_instructions: string | null } | null }) => {
-        if (data) setAccessInstructions(data.access_instructions || '');
+        setAccessInstructions(data?.access_instructions || null);
+        setAccessLoading(false);
       });
-  }, [client.savedClientId, supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedClientId]);
 
-  // Load completion record
-  useEffect(() => {
-    if (!scheduleJobDbId) return;
-    supabase.from('checklist_completions')
-      .select('*').eq('schedule_job_id', scheduleJobDbId).maybeSingle()
-      .then(({ data }: { data: ChecklistCompletion | null }) => {
-        if (data) setCompletion(data);
-      });
-  }, [scheduleJobDbId, supabase]);
+  const [showAccess, setShowAccess] = useState(false);
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!scheduleJobDbId) return;
-    const channel = supabase
-      .channel(`completion-${scheduleJobDbId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'checklist_completions',
-        filter: `schedule_job_id=eq.${scheduleJobDbId}`,
-      }, (payload: { new: ChecklistCompletion | null }) => {
-        if (payload.new) setCompletion(payload.new);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [scheduleJobDbId, supabase]);
-
-  // Current user name for completion records
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }: { data: { user: { id: string } | null } }) => {
-      if (data?.user) {
-        supabase.from('profiles').select('full_name').eq('id', data.user.id).single()
-          .then(({ data: p }: { data: { full_name: string } | null }) => { if (p) setUserName(p.full_name || ''); });
-      }
-    });
-  }, [supabase]);
-
-  const handleSubmit = useCallback(async (answers: FieldAnswer[], notes: string) => {
-    if (!client.savedClientId) return;
-    const now = new Date().toISOString();
-    const row = {
-      org_id: orgId,
-      client_id: client.savedClientId,
-      schedule_job_id: scheduleJobDbId || null,
-      checklist_id: activeChecklist?.id || null,
-      items: answers,
-      notes,
-      completed_by: userName,
-      completed_at: now,
-      submitted: true,
-    };
-    if (completion?.id) {
-      await supabase.from('checklist_completions').update(row).eq('id', completion.id);
-    } else {
-      const { data } = await supabase.from('checklist_completions').insert(row).select('*').single();
-      if (data) setCompletion(data as ChecklistCompletion);
+  // ─── Save handlers ─────────────────────────────────────────────────────────
+  const handleSaveChanges = async (name: string, sections: ChecklistSection[], isDefault: boolean) => {
+    setSaving(true);
+    if (activeChecklist && activeChecklist.id !== '__override__') {
+      await updateChecklist(activeChecklist.id, { name, sections, is_default: isDefault });
     }
-  }, [orgId, client.savedClientId, scheduleJobDbId, activeChecklist, userName, completion, supabase]);
+    setSaving(false);
+    setView('run');
+  };
 
-  const handleAutoSave = useCallback(async (answers: FieldAnswer[]) => {
-    if (!client.savedClientId || !scheduleJobDbId) return;
-    const now = new Date().toISOString();
-    const row = {
-      org_id: orgId,
-      client_id: client.savedClientId,
-      schedule_job_id: scheduleJobDbId,
-      checklist_id: activeChecklist?.id || null,
-      items: answers,
-      notes: completion?.notes || '',
-      completed_by: userName,
-      completed_at: now,
-      submitted: false,
-    };
-    if (completion?.id) {
-      await supabase.from('checklist_completions').update(row).eq('id', completion.id);
-    } else {
-      const { data } = await supabase.from('checklist_completions').insert(row).select('*').single();
-      if (data) setCompletion(data as ChecklistCompletion);
-    }
-  }, [orgId, client.savedClientId, scheduleJobDbId, activeChecklist, userName, completion, supabase]);
+  const handleSaveAsNew = async (name: string, sections: ChecklistSection[]) => {
+    setSaving(true);
+    const created = await addChecklist(name, sections, false);
+    setSaving(false);
+    setView('run');
+  };
 
-  const cardColor = client.clientColor || '#6366f1';
+  const handleSaveJobOnly = (sections: ChecklistSection[]) => {
+    onSaveJobOnly?.(client.id, sections);
+    setView('run');
+  };
+
+  if (!savedClientId) {
+    return (
+      <div className="h-full flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-sm text-text-secondary">No client linked to this job.</p>
+          <p className="text-xs text-text-tertiary mt-1">Add a saved client to use checklists.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      className="flex flex-col h-full bg-white rounded-2xl border border-border-light overflow-hidden"
-    >
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated shrink-0">
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-text-primary transition-colors">
+    <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-border-light overflow-hidden">
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light">
+        <button onClick={onClose}
+          className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <div className="w-6 h-6 rounded-lg shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: cardColor }}>
-          {client.name.charAt(0).toUpperCase()}
-        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-bold text-text-primary truncate">{client.name}</p>
-          <p className="text-[10px] text-text-tertiary">Checklist</p>
+          <h2 className="text-sm font-bold text-text-primary truncate">{client.name}</h2>
+          {activeChecklist && (
+            <p className="text-[11px] text-text-tertiary truncate">{activeChecklist.name}</p>
+          )}
         </div>
-
         {/* Checklist selector */}
-        {checklists.length > 1 && (
+        {checklists.length > 1 && view === 'run' && (
           <select
-            value={activeId || ''}
-            onChange={e => { setActiveId(e.target.value); if (onLinkChecklist) onLinkChecklist(client.id, e.target.value || null); }}
-            className="text-xs bg-white border border-border-light rounded-lg px-2 py-1.5 outline-none max-w-[130px] truncate"
+            value={activeChecklistId || activeChecklist?.id || ''}
+            onChange={e => setActiveChecklistId(e.target.value)}
+            className="input-field text-xs py-1.5 max-w-[120px]"
           >
             {checklists.map(cl => (
-              <option key={cl.id} value={cl.id}>{cl.name}{cl.is_default ? ' ✓' : ''}</option>
+              <option key={cl.id} value={cl.id}>{cl.name}</option>
             ))}
           </select>
         )}
-        {checklists.length === 1 && (
-          <span className="text-xs font-medium text-text-secondary bg-surface-elevated px-2 py-1 rounded-lg truncate max-w-[120px]">{checklists[0].name}</span>
-        )}
-
-        {/* Mode toggle (admin only) */}
-        {isAdmin && checklists.length > 0 && (
-          <button
-            onClick={() => setEditorMode(m => m === 'completion' ? 'builder' : 'completion')}
-            className={`p-1.5 rounded-lg transition-colors shrink-0 ${editorMode === 'builder' ? 'bg-primary text-white' : 'hover:bg-surface-elevated text-text-tertiary hover:text-primary'}`}
-            title={editorMode === 'builder' ? 'Switch to completion mode' : 'Edit checklist structure'}
-          >
-            {editorMode === 'builder' ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            )}
-          </button>
+        {/* View toggle (admin only) */}
+        {isAdmin && !checklistsLoading && (
+          <div className="flex rounded-lg border border-border-light overflow-hidden shrink-0">
+            {(['run', 'build'] as PanelView[]).map(v => (
+              <button key={v} onClick={() => v === 'build' ? openBuilder() : setView('run')}
+                className={`px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                  view === v ? 'bg-primary text-white' : 'bg-white text-text-secondary hover:bg-surface-elevated'
+                }`}>
+                {v === 'run' ? '▶ Run' : '✏️ Edit'}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* No checklist */}
-      {!loading && checklists.length === 0 && (
-        <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <div>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
-              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-              <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-            </svg>
-            <p className="text-sm font-semibold text-text-primary mb-1">No checklist set up</p>
-            <p className="text-xs text-text-tertiary">Go to the client's profile in the Clients tab to create checklists.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Access instructions accordion */}
+      {/* ── Access instructions ────────────────────────────────────────────── */}
       {accessInstructions && (
-        <div className="border-b border-border-light shrink-0">
-          <button
-            onClick={() => setShowAccess(!showAccess)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-surface-elevated transition-colors"
-          >
+        <div className="shrink-0 border-b border-border-light">
+          <button onClick={() => setShowAccess(!showAccess)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-amber-50 transition-colors">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500 shrink-0">
               <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
             </svg>
-            <span className="text-xs font-semibold text-amber-700 flex-1">Access Instructions</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`text-text-tertiary transition-transform ${showAccess ? 'rotate-180' : ''}`}>
+            <span className="text-xs font-semibold text-amber-700 flex-1 text-left">Access Instructions</span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              className={`text-amber-500 transition-transform ${showAccess ? 'rotate-180' : ''}`}>
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </button>
           <AnimatePresence>
             {showAccess && (
-              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                <div className="px-4 pb-3 pt-0">
-                  <p className="text-xs text-text-secondary bg-amber-50 rounded-xl p-3 leading-relaxed whitespace-pre-wrap border border-amber-100">{accessInstructions}</p>
+              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                className="overflow-hidden">
+                <div className="px-4 pb-3">
+                  <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-3 leading-relaxed">{accessInstructions}</p>
                 </div>
               </motion.div>
             )}
@@ -241,41 +200,59 @@ export default function ClientChecklistPanel({
         </div>
       )}
 
-      {/* ChecklistBuilder */}
-      {!loading && checklists.length > 0 && activeChecklist && (
-        <div className="flex-1 overflow-hidden p-3">
-          <ChecklistBuilder
-            mode={editorMode}
-            checklist={activeChecklist}
-            completion={editorMode === 'completion' ? completion : null}
-            orgId={orgId}
-            compact={true}
-            onSubmit={handleSubmit}
-            onAutoSave={handleAutoSave}
-            onSaveTemplate={async ({ name, sections }) => {
-              await updateChecklist(activeChecklist.id, { name, sections, is_default: activeChecklist.is_default });
-            }}
-            onSaveAsNew={async (name, sections) => {
-              const newCl = await addChecklist(name, sections, false);
-              if (newCl && onLinkChecklist) onLinkChecklist(client.id, newCl.id);
-              return newCl;
-            }}
-            onSaveJobOnly={sections => {
-              if (onSaveJobOnly) onSaveJobOnly(client.id, sections);
-              if (scheduleJobDbId) {
-                supabase.from('schedule_jobs').update({ checklist_override: sections }).eq('id', scheduleJobDbId);
-              }
-            }}
-            showJobActions={true}
-          />
+      {/* ── No checklist state ─────────────────────────────────────────────── */}
+      {!checklistsLoading && checklists.length === 0 && view === 'run' && (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+              <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
+            </svg>
+            <p className="text-sm text-text-secondary font-medium">No checklist for this client</p>
+            {isAdmin && (
+              <button onClick={openBuilder} className="mt-3 btn-primary text-xs py-2 px-4">
+                Create Checklist
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {loading && (
-        <div className="flex-1 p-4 space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="shimmer h-12 rounded-xl" />)}
-        </div>
-      )}
-    </motion.div>
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {view === 'build' ? (
+          <motion.div key="build" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 min-h-0">
+            <ChecklistBuilder
+              sections={builderSections}
+              onChange={setBuilderSections}
+              initialName={activeChecklist?.name || ''}
+              saving={saving}
+              mode="schedule-panel"
+              onSave={handleSaveChanges}
+              onSaveAsNew={handleSaveAsNew}
+              onSaveJobOnly={handleSaveJobOnly}
+              onCancel={() => setView('run')}
+            />
+          </motion.div>
+        ) : (
+          activeSections.length > 0 && (
+            <motion.div key="run" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 min-h-0">
+              <ChecklistRunner
+                sections={activeSections}
+                responses={responses}
+                onChange={handleResponseChange}
+                onSubmit={submit}
+                orgId={orgId}
+                completionId={completionId}
+                preFilledMeta={preFill}
+                isAdmin={isAdmin}
+                readOnly={status === 'submitted'}
+                saving={autoSaving}
+              />
+            </motion.div>
+          )
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

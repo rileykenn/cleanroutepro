@@ -1,3 +1,5 @@
+import type { ChecklistSection } from '@/components/checklist/types';
+
 export interface StaffMember {
   id: string;
   name: string;
@@ -35,43 +37,15 @@ export interface Client {
   checklistOverride?: ChecklistSection[] | null;
 }
 
-// ─── Checklist types ──────────────────────────────────────────────────────────
+// ─── Checklist types — canonical source is src/components/checklist/types.ts ─
+// Re-exported here for backward compat with existing imports throughout the app.
+export type { ChecklistField, ChecklistSection, FieldResponse, PreFillMeta, FieldType } from '@/components/checklist/types';
 
-export type ChecklistFieldType =
-  | 'text'
-  | 'yesno'
-  | 'dropdown'
-  | 'multiselect'
-  | 'date'
-  | 'time'
-  | 'photo'
-  | 'video';
-
-export interface ChecklistConditional {
-  /** ID of the yes/no field that controls visibility */
-  parentFieldId: string;
-  /** Show this field only when parent answer matches this value */
-  showWhen: 'yes' | 'no';
-}
-
-export interface ChecklistField {
+/** @deprecated Use ChecklistField instead */
+export interface ChecklistItem {
   id: string;
-  type: ChecklistFieldType;
-  label: string;
-  description?: string;
+  text: string;
   required?: boolean;
-  allowNA?: boolean;
-  /** Options for dropdown / multiselect fields */
-  options?: string[];
-  /** If set, this field is only shown when the conditional is met */
-  conditional?: ChecklistConditional;
-}
-
-export interface ChecklistSection {
-  id: string;
-  title: string;
-  description?: string;
-  fields: ChecklistField[];
 }
 
 export interface ClientChecklist {
@@ -80,21 +54,17 @@ export interface ClientChecklist {
   client_id: string;
   name: string;
   is_default: boolean;
-  sections: ChecklistSection[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sections: any[]; // use migrateOldSection() at runtime to normalise to ChecklistSection[]
   created_at: string;
   updated_at: string;
 }
 
-/** One answer per field in a completed submission */
-export interface FieldAnswer {
-  field_id: string;
-  /** For text/yesno/date/time: string. For multiselect: string[]. For photo/video: null (see media_urls). */
-  value: string | string[] | null;
-  na?: boolean;
-  /** Supabase Storage paths for photo/video fields */
-  media_urls?: string[];
-  answered_by?: string;
-  answered_at?: string;
+export interface ChecklistItemCompletion {
+  item_id: string;
+  checked: boolean;
+  checked_by_name?: string;
+  checked_at?: string;
 }
 
 export interface ChecklistCompletion {
@@ -103,36 +73,10 @@ export interface ChecklistCompletion {
   client_id: string;
   schedule_job_id: string | null;
   checklist_id: string | null;
-  /** Full answers array — one per field */
-  items: FieldAnswer[];
+  items: ChecklistItemCompletion[];
   notes: string | null;
   completed_by: string | null;
   completed_at: string;
-  submitted?: boolean;
-}
-
-// Backwards compat aliases (remove once old code is migrated)
-/** @deprecated use ChecklistField */
-export interface ChecklistItem {
-  id: string;
-  text: string;
-  required?: boolean;
-}
-/** @deprecated use FieldAnswer */
-export interface ChecklistItemCompletion {
-  item_id: string;
-  checked: boolean;
-  checked_by_name?: string;
-  checked_at?: string;
-}
-
-/** Context injected into a checklist at completion time */
-export interface ChecklistContext {
-  staffName?: string;
-  clientName?: string;
-  address?: string;
-  date?: string;   // ISO date string
-  time?: string;   // HH:mm
 }
 
 export interface TravelSegment {
@@ -413,9 +357,8 @@ export function normaliseField(raw: AnyFormField): FormField {
   };
 }
 
-/** Answer values stored in checklist_completions.items — legacy flat form builder */
-/** @deprecated Use FieldAnswer from the new checklist type system */
-export interface LegacyFieldAnswer {
+/** Answer values stored in checklist_completions.items */
+export interface FieldAnswer {
   fieldId: string;
   value: string | string[] | boolean | null;
   /** true if staff marked this N/A */
@@ -440,7 +383,7 @@ export interface RichChecklistCompletion {
   client_id: string;
   schedule_job_id?: string;
   checklist_template_id: string;
-  items: LegacyFieldAnswer[];
+  items: FieldAnswer[];
   media_urls: MediaUrls;
   notes: string;
   completed_by: string;

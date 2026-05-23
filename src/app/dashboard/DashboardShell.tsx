@@ -20,17 +20,15 @@ interface OrgMembership { org_id: string; role: string; org_name: string; }
 
 const ADMIN_NAV = [
   { label: 'Schedule', href: '/dashboard/schedule', d: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18' },
-  { label: 'Clients', href: '/dashboard/clients', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
+  { label: 'Clients', href: '/dashboard/checklists', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { label: 'Templates', href: '/dashboard/templates', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
-  { label: 'Checklists', href: '/dashboard/checklists', d: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
   { label: 'Staff', href: '/dashboard/staff', d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M19 8v6M22 11h-6' },
   { label: 'Settings', href: '/dashboard/settings', d: 'M12 12a3 3 0 1 0 0 .01' },
 ];
 
 const STAFF_NAV = [
   { label: 'My Schedule', href: '/dashboard/staff-view', d: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18' },
-  { label: 'Checklists', href: '/dashboard/checklists', d: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
-  { label: 'Clients', href: '/dashboard/clients', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
+  { label: 'Clients', href: '/dashboard/checklists', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
 ];
 
 export default function DashboardShell({ children, serverProfile }: { children: React.ReactNode; serverProfile: UserProfile | null }) {

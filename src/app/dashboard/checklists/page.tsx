@@ -262,199 +262,65 @@ export default function ChecklistsPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          RIGHT PANEL — Checklists for selected client
-      ══════════════════════════════════════════════════════════════════════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {!selectedClient ? (
-          <div className="flex-1 flex items-center justify-center text-center px-6">
-            <div>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-              </svg>
-              <p className="text-sm text-text-secondary font-semibold">Select a client</p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* ── Right header ── */}
-            <div className="shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-border-light bg-white">
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0"
-                style={{ backgroundColor: selectedClient.color || '#6366f1' }}
-              >
-                {selectedClient.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-bold text-text-primary truncate">{selectedClient.name}</h2>
-                <p className="text-[11px] text-text-tertiary">
-                  {clientChecklists.length} checklist{clientChecklists.length !== 1 ? 's' : ''}
-                  {activeChecklistId === 'new' ? ' · Creating new' : activeChecklist ? ` · Editing "${activeChecklist.name}"` : ''}
+        <AnimatePresence mode="wait">
+          {!activeChecklistId ? (
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="flex-1 flex items-center justify-center text-center px-8">
+              <div>
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
+                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                  <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
+                </svg>
+                <p className="text-sm font-semibold text-text-secondary mb-1">
+                  {!selectedClient
+                    ? 'Select a client'
+                    : clientChecklists.length > 0
+                      ? 'Select a checklist to edit'
+                      : `No checklists for ${selectedClient.name}`}
                 </p>
-              </div>
-              {/* New checklist button */}
-              {activeChecklistId !== 'new' && (
-                <button onClick={openNew} className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  New Checklist
-                </button>
-              )}
-            </div>
-
-            {/* ── Main content: split into checklist list + builder ── */}
-            <div className="flex-1 flex min-h-0 overflow-hidden">
-
-              {/* Checklist list — left of right panel */}
-              <div className="w-56 shrink-0 flex flex-col border-r border-border-light bg-white overflow-y-auto custom-scrollbar">
-                {loading ? (
-                  <div className="p-3 space-y-2">
-                    {[1,2,3].map(i => <div key={i} className="shimmer h-14 rounded-xl"/>)}
-                  </div>
-                ) : clientChecklists.length === 0 && activeChecklistId !== 'new' ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8">
-                    <p className="text-xs text-text-tertiary">No checklists yet</p>
-                    <button onClick={openNew} className="mt-3 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
-                      + Create one
-                    </button>
-                  </div>
-                ) : (
-                  <div className="py-1">
-                    {/* New (unsaved) entry */}
-                    {activeChecklistId === 'new' && (
-                      <div className="flex items-center gap-2 px-3 py-2.5 bg-primary/8 border-r-2 border-primary">
-                        <div className="w-2 h-2 rounded-full bg-primary shrink-0"/>
-                        <span className="text-xs font-semibold text-primary truncate flex-1">New checklist</span>
-                      </div>
-                    )}
-                    {clientChecklists.map(cl => {
-                      const comps = completionsFor(cl.id);
-                      const submitted = comps.filter(c => c.status === 'submitted').length;
-                      const isActive = activeChecklistId === cl.id;
-                      return (
-                        <div key={cl.id}>
-                          <button
-                            onClick={() => openEdit(cl)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2.5 transition-colors text-left ${isActive ? 'bg-primary/8 border-r-2 border-primary' : 'hover:bg-surface-elevated'}`}
-                          >
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`}/>
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-xs font-semibold truncate ${isActive ? 'text-primary' : 'text-text-primary'}`}>{cl.name}</p>
-                              <p className="text-[10px] text-text-tertiary">
-                                {cl.is_default && 'Default · '}{submitted} submitted
-                              </p>
-                            </div>
-                          </button>
-                          {/* Submissions under this checklist */}
-                          {isActive && comps.length > 0 && (
-                            <div className="bg-slate-50 border-t border-border-light/50 px-3 py-2 space-y-1.5">
-                              <p className="text-[9px] font-bold text-text-tertiary uppercase tracking-wider mb-1">Submissions</p>
-                              {comps.slice(0, 5).map(comp => (
-                                <div key={comp.id} className="flex items-center gap-2">
-                                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${comp.status === 'submitted' ? 'bg-emerald-500' : 'bg-amber-400'}`}/>
-                                  <p className="text-[10px] text-text-secondary flex-1 truncate">
-                                    {comp.pre_fill?.staff_name || 'Staff'} · {comp.pre_fill?.date || new Date(comp.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                                  </p>
-                                  {comp.status === 'submitted' && (
-                                    <button
-                                      onClick={e => { e.stopPropagation(); downloadPDF(comp); }}
-                                      disabled={downloading === comp.id}
-                                      className="text-[10px] font-semibold text-primary hover:text-primary/70 disabled:opacity-40 shrink-0"
-                                    >
-                                      {downloading === comp.id ? '…' : 'PDF'}
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                {selectedClient && (
+                  <button onClick={openNew} className="mt-3 btn-primary text-xs py-2 px-4">
+                    + New Checklist
+                  </button>
                 )}
               </div>
-
-              {/* Builder / empty state */}
-              <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
-                <AnimatePresence mode="wait">
-                  {activeChecklistId ? (
-                    <motion.div
-                      key={activeChecklistId}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex-1 flex flex-col min-h-0 overflow-hidden"
-                    >
-                      {/* Checklist actions bar (for existing checklists) */}
-                      {activeChecklist && (
-                        <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-slate-50/60 border-b border-border-light">
-                          {!activeChecklist.is_default && (
-                            <button
-                              onClick={() => handleSetDefault(activeChecklist.id)}
-                              className="text-xs font-semibold text-text-tertiary hover:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/5"
-                            >
-                              Set as Default
-                            </button>
-                          )}
-                          {activeChecklist.is_default && (
-                            <span className="text-xs font-semibold text-primary px-2 py-1">✓ Default</span>
-                          )}
-                          <div className="flex-1"/>
-                          <button
-                            onClick={() => handleDelete(activeChecklist.id)}
-                            className="text-xs font-semibold text-text-tertiary hover:text-rose-500 transition-colors px-2 py-1 rounded-lg hover:bg-rose-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="flex-1 min-h-0 overflow-hidden">
-                        <ChecklistBuilder
-                          sections={builderSections}
-                          onChange={setBuilderSections}
-                          initialName={activeChecklist?.name ?? ''}
-                          initialIsDefault={activeChecklist?.is_default ?? (clientChecklists.length === 0)}
-                          mode="client-profile"
-                          saving={saving}
-                          onSave={handleSave}
-                          onCancel={activeChecklistId === 'new' ? () => { setActiveChecklistId(null); setBuilderSections([]); } : undefined}
-                        />
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="empty"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex-1 flex items-center justify-center text-center px-8"
-                    >
-                      <div>
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
-                          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                          <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-                        </svg>
-                        <p className="text-sm font-semibold text-text-secondary mb-1">
-                          {clientChecklists.length > 0 ? 'Select a checklist to edit' : 'No checklists yet'}
-                        </p>
-                        <p className="text-xs text-text-tertiary mb-4">
-                          {clientChecklists.length > 0
-                            ? 'Choose one from the list, or create a new one'
-                            : `Create the first checklist for ${selectedClient.name}`}
-                        </p>
-                        <button onClick={openNew} className="btn-primary text-xs py-2 px-4">
-                          + New Checklist
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+            </motion.div>
+          ) : (
+            <motion.div key={activeChecklistId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* Actions bar for existing checklists */}
+              {activeChecklist && (
+                <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-light bg-slate-50/60">
+                  {activeChecklist.is_default
+                    ? <span className="text-xs font-semibold text-primary">✓ Default</span>
+                    : <button onClick={() => handleSetDefault(activeChecklist.id)}
+                        className="text-xs font-semibold text-text-tertiary hover:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/5">
+                        Set as Default
+                      </button>
+                  }
+                  <div className="flex-1"/>
+                  <button onClick={() => handleDelete(activeChecklist.id)}
+                    className="text-xs font-semibold text-text-tertiary hover:text-rose-500 transition-colors px-2 py-1 rounded-lg hover:bg-rose-50">
+                    Delete
+                  </button>
+                </div>
+              )}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ChecklistBuilder
+                  sections={builderSections}
+                  onChange={setBuilderSections}
+                  initialName={activeChecklist?.name ?? ''}
+                  initialIsDefault={activeChecklist?.is_default ?? (clientChecklists.length === 0)}
+                  mode="client-profile"
+                  saving={saving}
+                  onSave={handleSave}
+                  onCancel={activeChecklistId === 'new' ? () => { setActiveChecklistId(null); setBuilderSections([]); } : undefined}
+                />
               </div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

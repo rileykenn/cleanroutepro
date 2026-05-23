@@ -102,7 +102,7 @@ export function useClientChecklists(clientId: string | null, orgId: string | nul
       {
         id: generateId(),
         title: 'General',
-        items: [{ id: generateId(), text: 'Check entry and lock up after', required: true }],
+        fields: [{ id: generateId(), type: 'yesno' as const, label: 'Check entry and lock up after', required: true }],
       },
     ], true);
   }, [addChecklist]);

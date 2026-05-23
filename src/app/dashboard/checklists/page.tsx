@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import {
   FormField, FormFieldType, FormFieldConditional,
   RichChecklistTemplate, RichChecklistCompletion,
-  FieldAnswer, normaliseField, AnyFormField,
+  LegacyFieldAnswer as FieldAnswer, normaliseField, AnyFormField,
 } from '@/lib/types';
 
 function generateId() {

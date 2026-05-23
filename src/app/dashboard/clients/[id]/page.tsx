@@ -6,119 +6,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
-import { ClientChecklist, ChecklistSection, ChecklistItem, CLIENT_COLORS } from '@/lib/types';
+import { ClientChecklist, ChecklistSection, CLIENT_COLORS } from '@/lib/types';
 import { generateId } from '@/lib/timeUtils';
+import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 
-// ─── Checklist editor ────────────────────────────────────────────────────────
-function ChecklistEditor({
-  checklist,
-  onSave,
-  onCancel,
-}: {
-  checklist: ClientChecklist | { name: string; sections: ChecklistSection[]; is_default: boolean; id?: string };
-  onSave: (name: string, sections: ChecklistSection[], isDefault: boolean) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState(checklist.name);
-  const [isDefault, setIsDefault] = useState(checklist.is_default);
-  const [sections, setSections] = useState<ChecklistSection[]>(
-    checklist.sections.length > 0 ? checklist.sections : [{ id: generateId(), title: 'General', items: [] }]
-  );
-  const [saving, setSaving] = useState(false);
-
-  const addSection = () => setSections(s => [...s, { id: generateId(), title: '', items: [] }]);
-  const removeSection = (sid: string) => setSections(s => s.filter(x => x.id !== sid));
-  const updateSectionTitle = (sid: string, title: string) =>
-    setSections(s => s.map(x => x.id === sid ? { ...x, title } : x));
-  const addItem = (sid: string) =>
-    setSections(s => s.map(x => x.id === sid ? { ...x, items: [...x.items, { id: generateId(), text: '', required: false }] } : x));
-  const removeItem = (sid: string, iid: string) =>
-    setSections(s => s.map(x => x.id === sid ? { ...x, items: x.items.filter(i => i.id !== iid) } : x));
-  const updateItem = (sid: string, iid: string, patch: Partial<ChecklistItem>) =>
-    setSections(s => s.map(x => x.id === sid ? { ...x, items: x.items.map(i => i.id === iid ? { ...i, ...patch } : i) } : x));
-
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave(name.trim() || 'Untitled', sections, isDefault);
-    setSaving(false);
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Checklist Name</label>
-          <input value={name} onChange={e => setName(e.target.value)}
-            className="input-field text-sm" placeholder="e.g. Standard Clean, Deep Clean…" />
-        </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <div
-              onClick={() => setIsDefault(!isDefault)}
-              className={`w-10 h-5 rounded-full transition-colors relative ${isDefault ? 'bg-primary' : 'bg-border-light'}`}
-            >
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDefault ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </div>
-            <span className="text-sm font-medium text-text-primary">Set as Default</span>
-          </label>
-        </div>
-      </div>
-
-      {sections.map((sec, si) => (
-        <div key={sec.id} className="bg-surface-elevated rounded-xl p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <input value={sec.title} onChange={e => updateSectionTitle(sec.id, e.target.value)}
-              className="input-field text-sm font-semibold flex-1" placeholder={`Section ${si + 1} title…`} />
-            {sections.length > 1 && (
-              <button onClick={() => removeSection(sec.id)}
-                className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-          <div className="space-y-1.5 pl-1">
-            {sec.items.map((item) => (
-              <div key={item.id} className="flex items-center gap-2">
-                <button
-                  onClick={() => updateItem(sec.id, item.id, { required: !item.required })}
-                  className={`shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${item.required ? 'bg-primary border-primary' : 'border-border-light hover:border-primary'}`}
-                  title="Required item"
-                >
-                  {item.required && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
-                </button>
-                <input value={item.text} onChange={e => updateItem(sec.id, item.id, { text: e.target.value })}
-                  className="input-field text-sm flex-1 py-1.5" placeholder="Checklist item…" />
-                <button onClick={() => removeItem(sec.id, item.id)}
-                  className="p-1 rounded hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors shrink-0">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                </button>
-              </div>
-            ))}
-            <button onClick={() => addItem(sec.id)}
-              className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1 mt-1 transition-colors">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              Add item
-            </button>
-          </div>
-        </div>
-      ))}
-
-      <button onClick={addSection}
-        className="w-full py-2 rounded-xl border-2 border-dashed border-border-light hover:border-primary text-sm text-text-tertiary hover:text-primary transition-colors font-medium">
-        + Add Section
-      </button>
-
-      <div className="flex items-center gap-2 pt-1">
-        <button onClick={handleSave} disabled={saving} className="btn-primary text-sm flex-1 py-2.5 disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save Checklist'}
-        </button>
-        <button onClick={onCancel} className="btn-ghost text-sm px-4">Cancel</button>
-      </div>
-    </div>
-  );
-}
+// (Checklist editing now uses ChecklistBuilder component)
 
 // ─── Media uploader ───────────────────────────────────────────────────────────
 function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) {
@@ -306,7 +198,7 @@ export default function ClientProfilePage() {
     );
   }
 
-  const totalItems = checklists.reduce((sum, cl) => sum + cl.sections.reduce((s, sec) => s + sec.items.length, 0), 0);
+  const totalItems = checklists.reduce((sum, cl) => sum + cl.sections.reduce((s, sec) => s + sec.fields.length, 0), 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -484,13 +376,14 @@ export default function ClientProfilePage() {
                 className="overflow-hidden mb-4">
                 <div className="bg-surface-elevated rounded-xl p-4">
                   <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">New Checklist</h4>
-                  <ChecklistEditor
-                    checklist={{ name: '', sections: [], is_default: checklists.length === 0 }}
-                    onSave={async (name, sections, isDefault) => {
-                      await addChecklist(name, sections, isDefault);
+                  <ChecklistBuilder
+                    mode="builder"
+                    checklist={{ id: 'new', org_id: orgId || '', client_id: id, name: '', is_default: checklists.length === 0, sections: [], created_at: '', updated_at: '' }}
+                    compact={false}
+                    onSaveTemplate={async ({ name, sections }) => {
+                      await addChecklist(name, sections, checklists.length === 0);
                       setEditingChecklistId(null);
                     }}
-                    onCancel={() => setEditingChecklistId(null)}
                   />
                 </div>
               </motion.div>
@@ -523,8 +416,8 @@ export default function ClientProfilePage() {
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary-light text-primary">Default</span>
                           )}
                         </div>
-                        <p className="text-xs text-text-tertiary">
-                          {cl.sections.length} section{cl.sections.length !== 1 ? 's' : ''} · {cl.sections.reduce((s, sec) => s + sec.items.length, 0)} items
+                      <p className="text-xs text-text-tertiary">
+                          {cl.sections.length} section{cl.sections.length !== 1 ? 's' : ''} · {cl.sections.reduce((s, sec) => s + sec.fields.length, 0)} fields
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -556,13 +449,14 @@ export default function ClientProfilePage() {
                         <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
                           className="overflow-hidden border-t border-border-light">
                           <div className="p-4 bg-surface-elevated">
-                            <ChecklistEditor
+                            <ChecklistBuilder
+                              mode="builder"
                               checklist={cl}
-                              onSave={async (name, sections, isDefault) => {
-                                await updateChecklist(cl.id, { name, sections, is_default: isDefault });
+                              compact={false}
+                              onSaveTemplate={async ({ name, sections }) => {
+                                await updateChecklist(cl.id, { name, sections, is_default: cl.is_default });
                                 setEditingChecklistId(null);
                               }}
-                              onCancel={() => setEditingChecklistId(null)}
                             />
                           </div>
                         </motion.div>

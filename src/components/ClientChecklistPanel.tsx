@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SupabaseClient } from '@supabase/supabase-js';
 
@@ -8,7 +8,6 @@ import { Client } from '@/lib/types';
 import { ChecklistSection, migrateOldSection, PreFillMeta } from '@/components/checklist/types';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
 import { useChecklistCompletion } from '@/lib/hooks/useChecklistCompletion';
-import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 import ChecklistRunner from '@/components/checklist/ChecklistRunner';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 
@@ -18,32 +17,24 @@ interface ClientChecklistPanelProps {
   isAdmin?: boolean;
   scheduleJobId?: string;
   onClose: () => void;
-  onLinkChecklist?: (clientId: string, checklistId: string) => void;
-  onSaveJobOnly?: (clientId: string, override: ChecklistSection[]) => void;
   preFill?: PreFillMeta;
 }
 
-type PanelView = 'run' | 'build';
-
 export default function ClientChecklistPanel({
   client, orgId, isAdmin = false, scheduleJobId,
-  onClose, onLinkChecklist, onSaveJobOnly, preFill,
+  onClose, preFill,
 }: ClientChecklistPanelProps) {
   const supabase: SupabaseClient = useMemo(() => createSupabaseClient(), []);
-  const [view, setView] = useState<PanelView>('run');
-  const [saving, setSaving] = useState(false);
 
   const savedClientId = client.savedClientId || '';
-  const { checklists, defaultChecklist, loading: checklistsLoading, addChecklist, updateChecklist } = useClientChecklists(
+  const { checklists, defaultChecklist, loading: checklistsLoading } = useClientChecklists(
     savedClientId || null,
     orgId,
   );
 
-  // Checklist in use: override > linked > default
   const [activeChecklistId, setActiveChecklistId] = useState<string | null>(null);
 
   const activeChecklist = useMemo(() => {
-    // 1. Job-level override stored on the client object
     if (client.checklistOverride) {
       return {
         id: '__override__',
@@ -52,30 +43,18 @@ export default function ClientChecklistPanel({
         is_default: false,
       };
     }
-    // 2. Explicitly selected in this panel
     if (activeChecklistId) return checklists.find(c => c.id === activeChecklistId) || null;
-    // 3. Linked to the job
     if (client.checklistId) return checklists.find(c => c.id === client.checklistId) || null;
-    // 4. Default for the client
     return defaultChecklist || null;
   }, [client.checklistOverride, client.checklistId, activeChecklistId, checklists, defaultChecklist]);
 
-  // Migrate sections to new field format
   const activeSections: ChecklistSection[] = useMemo(() => {
     if (!activeChecklist) return [];
     return activeChecklist.sections.map(s => migrateOldSection(s as unknown as Record<string, unknown>));
   }, [activeChecklist]);
 
-  // Builder state (admin editing)
-  const [builderSections, setBuilderSections] = useState<ChecklistSection[]>([]);
-
-  const openBuilder = useCallback(() => {
-    setBuilderSections(activeSections.length > 0 ? activeSections : [{ id: crypto.randomUUID(), title: 'General', fields: [] }]);
-    setView('build');
-  }, [activeSections]);
-
   // Completion hook
-  const { completionId, responses, status, loading: completionLoading, saving: autoSaving, handleResponseChange, submit } = useChecklistCompletion({
+  const { completionId, responses, status, saving: autoSaving, handleResponseChange, submit } = useChecklistCompletion({
     supabase,
     orgId,
     clientId: savedClientId,
@@ -86,40 +65,15 @@ export default function ClientChecklistPanel({
 
   // Access instructions
   const [accessInstructions, setAccessInstructions] = useState<string | null>(null);
-  const [accessLoading, setAccessLoading] = useState(true);
+  const [showAccess, setShowAccess] = useState(false);
   useMemo(() => {
-    if (!savedClientId) { setAccessLoading(false); return; }
+    if (!savedClientId) return;
     supabase.from('clients').select('access_instructions').eq('id', savedClientId).single()
       .then(({ data }: { data: { access_instructions: string | null } | null }) => {
         setAccessInstructions(data?.access_instructions || null);
-        setAccessLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedClientId]);
-
-  const [showAccess, setShowAccess] = useState(false);
-
-  // ─── Save handlers ─────────────────────────────────────────────────────────
-  const handleSaveChanges = async (name: string, sections: ChecklistSection[], isDefault: boolean) => {
-    setSaving(true);
-    if (activeChecklist && activeChecklist.id !== '__override__') {
-      await updateChecklist(activeChecklist.id, { name, sections, is_default: isDefault });
-    }
-    setSaving(false);
-    setView('run');
-  };
-
-  const handleSaveAsNew = async (name: string, sections: ChecklistSection[]) => {
-    setSaving(true);
-    const created = await addChecklist(name, sections, false);
-    setSaving(false);
-    setView('run');
-  };
-
-  const handleSaveJobOnly = (sections: ChecklistSection[]) => {
-    onSaveJobOnly?.(client.id, sections);
-    setView('run');
-  };
 
   if (!savedClientId) {
     return (
@@ -134,46 +88,38 @@ export default function ClientChecklistPanel({
 
   return (
     <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-border-light overflow-hidden">
+
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light">
         <button onClick={onClose}
           className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
         </button>
+
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-text-primary truncate">{client.name}</h2>
           {activeChecklist && (
             <p className="text-[11px] text-text-tertiary truncate">{activeChecklist.name}</p>
           )}
         </div>
-        {/* Checklist selector */}
-        {checklists.length > 1 && view === 'run' && (
+
+        {/* Checklist selector — only when client has multiple */}
+        {checklists.length > 1 && (
           <select
             value={activeChecklistId || activeChecklist?.id || ''}
             onChange={e => setActiveChecklistId(e.target.value)}
-            className="input-field text-xs py-1.5 max-w-[120px]"
+            className="input-field text-xs py-1.5 max-w-[130px]"
           >
             {checklists.map(cl => (
               <option key={cl.id} value={cl.id}>{cl.name}</option>
             ))}
           </select>
         )}
-        {/* View toggle (admin only) */}
-        {isAdmin && !checklistsLoading && (
-          <div className="flex rounded-lg border border-border-light overflow-hidden shrink-0">
-            {(['run', 'build'] as PanelView[]).map(v => (
-              <button key={v} onClick={() => v === 'build' ? openBuilder() : setView('run')}
-                className={`px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                  view === v ? 'bg-primary text-white' : 'bg-white text-text-secondary hover:bg-surface-elevated'
-                }`}>
-                {v === 'run' ? '▶ Run' : '✏️ Edit'}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* ── Access instructions ────────────────────────────────────────────── */}
+      {/* ── Access instructions accordion ────────────────────────────────────── */}
       {accessInstructions && (
         <div className="shrink-0 border-b border-border-light">
           <button onClick={() => setShowAccess(!showAccess)}
@@ -189,8 +135,7 @@ export default function ClientChecklistPanel({
           </button>
           <AnimatePresence>
             {showAccess && (
-              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
-                className="overflow-hidden">
+              <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
                 <div className="px-4 pb-3">
                   <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-3 leading-relaxed">{accessInstructions}</p>
                 </div>
@@ -200,8 +145,29 @@ export default function ClientChecklistPanel({
         </div>
       )}
 
-      {/* ── No checklist state ─────────────────────────────────────────────── */}
-      {!checklistsLoading && checklists.length === 0 && view === 'run' && (
+      {/* ── Content ──────────────────────────────────────────────────────────── */}
+      {checklistsLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin text-text-tertiary">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+        </div>
+      ) : activeSections.length > 0 ? (
+        <div className="flex-1 min-h-0">
+          <ChecklistRunner
+            sections={activeSections}
+            responses={responses}
+            onChange={handleResponseChange}
+            onSubmit={submit}
+            orgId={orgId}
+            completionId={completionId}
+            preFilledMeta={preFill}
+            isAdmin={isAdmin}
+            readOnly={status === 'submitted'}
+            saving={autoSaving}
+          />
+        </div>
+      ) : (
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
@@ -209,50 +175,10 @@ export default function ClientChecklistPanel({
               <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
             </svg>
             <p className="text-sm text-text-secondary font-medium">No checklist for this client</p>
-            {isAdmin && (
-              <button onClick={openBuilder} className="mt-3 btn-primary text-xs py-2 px-4">
-                Create Checklist
-              </button>
-            )}
+            <p className="text-xs text-text-tertiary mt-1">Add one from the client's profile.</p>
           </div>
         </div>
       )}
-
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
-      <AnimatePresence mode="wait">
-        {view === 'build' ? (
-          <motion.div key="build" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 min-h-0">
-            <ChecklistBuilder
-              sections={builderSections}
-              onChange={setBuilderSections}
-              initialName={activeChecklist?.name || ''}
-              saving={saving}
-              mode="schedule-panel"
-              onSave={handleSaveChanges}
-              onSaveAsNew={handleSaveAsNew}
-              onSaveJobOnly={handleSaveJobOnly}
-              onCancel={() => setView('run')}
-            />
-          </motion.div>
-        ) : (
-          activeSections.length > 0 && (
-            <motion.div key="run" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 min-h-0">
-              <ChecklistRunner
-                sections={activeSections}
-                responses={responses}
-                onChange={handleResponseChange}
-                onSubmit={submit}
-                orgId={orgId}
-                completionId={completionId}
-                preFilledMeta={preFill}
-                isAdmin={isAdmin}
-                readOnly={status === 'submitted'}
-                saving={autoSaving}
-              />
-            </motion.div>
-          )
-        )}
-      </AnimatePresence>
     </div>
   );
 }

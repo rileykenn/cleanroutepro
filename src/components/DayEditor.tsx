@@ -839,12 +839,6 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     isAdmin={isAdmin}
                     scheduleJobId={activeChecklistClient.id}
                     onClose={() => { setActiveChecklistClient(null); setMobileShowMap(false); }}
-                    onLinkChecklist={(clientId, checklistId) => {
-                      dispatch({ type: 'UPDATE_CLIENT', teamId: activeTeam.id, clientId, updates: { checklistId } });
-                    }}
-                    onSaveJobOnly={(clientId, override) => {
-                      dispatch({ type: 'UPDATE_CLIENT', teamId: activeTeam.id, clientId, updates: { checklistOverride: override } });
-                    }}
                   />
                 </Suspense>
               </motion.div>

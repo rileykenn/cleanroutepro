@@ -46,10 +46,12 @@ export default function ChecklistBuilder({
   const [newOption, setNewOption] = useState<string>('');
   const [showSaveAsNew, setShowSaveAsNew] = useState(false);
   const [saveAsNewName, setSaveAsNewName] = useState('');
-  const addRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus the add input on mount
-  useEffect(() => { addRef.current?.focus(); }, []);
+  // Auto-focus the name input on mount
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { nameRef.current?.focus(); }, []);
+
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   // ── Single flat field list, one section for DB compat ──────────────────────
   const fields: ChecklistField[] = sections[0]?.fields ?? [];
@@ -61,12 +63,9 @@ export default function ChecklistBuilder({
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
   const addField = () => {
-    const text = addText.trim();
-    if (!text) return;
-    setFields([...fields, { id: uid(), type: 'checkbox', label: text }]);
-    setAddText('');
-    // keep focus in add box
-    addRef.current?.focus();
+    const newId = uid();
+    setFields([...fields, { id: newId, type: 'checkbox', label: '' }]);
+    setFocusId(newId);
   };
 
   const updateField = (id: string, patch: Partial<ChecklistField>) =>
@@ -110,6 +109,7 @@ export default function ChecklistBuilder({
       {/* ── Top bar: name + default toggle ─────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated/60">
         <input
+          ref={nameRef}
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="Checklist name…"
@@ -129,34 +129,19 @@ export default function ChecklistBuilder({
         )}
       </div>
 
-      {/* ── Add item row (always visible at top of list area) ─────────────── */}
-      <div className="shrink-0 px-4 py-3 border-b border-border-light bg-white">
-        <div className="flex items-center gap-3">
-          <div className="w-4 h-4 rounded border-2 border-border-light shrink-0" />
-          <input
-            ref={addRef}
-            value={addText}
-            onChange={e => setAddText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); addField(); }
-            }}
-            placeholder="Type an item and press Enter to add…"
-            className="flex-1 text-sm text-text-primary placeholder-text-tertiary bg-transparent outline-none"
-          />
-          <AnimatePresence>
-            {addText.trim() && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                onClick={addField}
-                className="shrink-0 px-3 py-1 text-xs font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Add
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
+      {/* ── Add item button ─────────────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-2.5 border-b border-border-light bg-white">
+        <button
+          onClick={addField}
+          className="flex items-center gap-2.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group"
+        >
+          <span className="w-6 h-6 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </span>
+          Add item
+        </button>
       </div>
 
       {/* ── Item list ──────────────────────────────────────────────────────── */}
@@ -210,10 +195,13 @@ export default function ChecklistBuilder({
                       )}
                     </div>
 
-                    {/* Label */}
+                    {/* Label — auto-focus if just created */}
                     <input
+                      autoFocus={focusId === field.id}
                       value={field.label}
                       onChange={e => updateField(field.id, { label: e.target.value })}
+                      onFocus={() => setFocusId(null)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addField(); } }}
                       placeholder="Item label…"
                       className="flex-1 text-sm text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0"
                     />

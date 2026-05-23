@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useClients, SavedClient } from '@/lib/hooks/useClients';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { ClientChecklist, ChecklistSection, ChecklistItem, CLIENT_COLORS } from '@/lib/types';
@@ -215,8 +214,41 @@ export default function ClientProfilePage() {
   const orgId = profile?.org_id || null;
   const supabase = useMemo(() => createSupabaseClient(), []);
 
-  const { clients, loading: clientsLoading, updateClient, deleteClient } = useClients(orgId);
-  const client = clients.find(c => c.id === id) as (SavedClient & { access_instructions?: string }) | undefined;
+  // Fetch client directly by ID — avoids depending on the full client list being loaded
+  type ClientRow = {
+    id: string; name: string; address: string; phone: string | null; email: string | null;
+    default_duration_minutes: number; default_staff_count: number;
+    notes: string | null; color: string | null; access_instructions: string | null;
+    created_at: string;
+  };
+  const [client, setClient] = useState<ClientRow | null>(null);
+  const [clientsLoading, setClientsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+    setClientsLoading(true);
+    supabase
+      .from('clients')
+      .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, notes, color, access_instructions, created_at')
+      .eq('id', id)
+      .single()
+      .then(({ data }: { data: ClientRow | null }) => {
+        setClient(data);
+        setClientsLoading(false);
+      });
+  }, [id, supabase]);
+
+  // Direct update: patch the clients table and reflect locally
+  const updateClient = useCallback(async (field: string, value: string | number | null) => {
+    if (!id) return;
+    await supabase.from('clients').update({ [field]: value }).eq('id', id);
+    setClient(prev => prev ? { ...prev, [field]: value } : prev);
+  }, [id, supabase]);
+
+  const deleteClientFn = useCallback(async () => {
+    if (!id) return;
+    await supabase.from('clients').delete().eq('id', id);
+  }, [id, supabase]);
 
   const { checklists, defaultChecklist, loading: checklistsLoading, addChecklist, updateChecklist, deleteChecklist, setDefault } = useClientChecklists(id || null, orgId);
 
@@ -242,15 +274,14 @@ export default function ClientProfilePage() {
   }, [client]);
 
   const saveField = useCallback(async (field: string, value: string | number) => {
-    if (!id) return;
-    await updateClient(id, { [field]: value } as Partial<SavedClient>);
+    await updateClient(field, value);
     setEditingField(null);
-  }, [id, updateClient]);
+  }, [updateClient]);
 
   const handleDelete = async () => {
     if (!id || !confirm('Delete this client and all their data? This cannot be undone.')) return;
     setDeleting(true);
-    await deleteClient(id);
+    await deleteClientFn();
     router.push('/dashboard/clients');
   };
 
@@ -306,7 +337,7 @@ export default function ClientProfilePage() {
                     <div className="grid grid-cols-5 gap-2">
                       {(CLIENT_COLORS as { value: string; name: string }[]).map((c) => (
                         <button key={c.value}
-                          onClick={() => { updateClient(id, { color: client.color === c.value ? null : c.value } as Partial<SavedClient>); setShowColorPicker(false); }}
+                          onClick={() => { updateClient('color', client.color === c.value ? null : c.value); setShowColorPicker(false); }}
                           className={`w-9 h-9 rounded-xl border-2 transition-all hover:scale-110 flex items-center justify-center ${client.color === c.value ? 'border-gray-700 scale-110 shadow-sm' : 'border-transparent'}`}
                           style={{ backgroundColor: c.value }} title={c.name}>
                           {client.color === c.value && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
@@ -314,7 +345,7 @@ export default function ClientProfilePage() {
                       ))}
                     </div>
                     {client.color && (
-                      <button onClick={() => { updateClient(id, { color: null } as Partial<SavedClient>); setShowColorPicker(false); }}
+                      <button onClick={() => { updateClient('color', null); setShowColorPicker(false); }}
                         className="w-full mt-3 pt-2 border-t border-border-light text-xs text-text-tertiary hover:text-danger transition-colors text-center">
                         Clear colour
                       </button>

@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChecklistField, ChecklistSection, FieldType, FIELD_TYPE_LABELS } from './types';
+import { ChecklistField, ChecklistSection, FieldType, FIELD_TYPE_LABELS, FieldResponse } from './types';
+import ChecklistRunner from './ChecklistRunner';
 
 const TYPE_OPTIONS: { type: FieldType; label: string }[] = [
   { type: 'checkbox',    label: 'Checkbox' },
@@ -44,8 +45,12 @@ export default function ChecklistBuilder({
   const [addText, setAddText] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [newOption, setNewOption] = useState<string>('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewResponses, setPreviewResponses] = useState<FieldResponse[]>([]);
   const [showSaveAsNew, setShowSaveAsNew] = useState(false);
   const [saveAsNewName, setSaveAsNewName] = useState('');
+
+  const openPreview = () => { setPreviewResponses([]); setShowPreview(true); };
 
   // Auto-focus the name input on mount
   const nameRef = useRef<HTMLInputElement>(null);
@@ -106,7 +111,7 @@ export default function ChecklistBuilder({
   return (
     <div className="flex flex-col h-full min-h-0">
 
-      {/* ── Top bar: name + default toggle ─────────────────────────────────── */}
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated/60">
         <input
           ref={nameRef}
@@ -115,6 +120,17 @@ export default function ChecklistBuilder({
           placeholder="Checklist name…"
           className="input-field text-sm font-semibold flex-1 py-2"
         />
+        {/* Preview button */}
+        <button
+          onClick={openPreview}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-light text-xs font-semibold text-text-secondary hover:text-primary hover:border-primary hover:bg-primary/5 transition-all"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          Preview
+        </button>
         {mode === 'client-profile' && (
           <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
             <button
@@ -433,6 +449,45 @@ export default function ChecklistBuilder({
                 <button onClick={handleSaveAsNew} disabled={!saveAsNewName.trim() || saving}
                   className="btn-primary text-sm flex-1 disabled:opacity-50">Save</button>
                 <button onClick={() => setShowSaveAsNew(false)} className="btn-ghost text-sm px-4">Cancel</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Preview modal ───────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPreview && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowPreview(false); }}>
+            <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
+              style={{ height: '85vh' }}>
+              {/* Preview header */}
+              <div className="shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-border-light bg-slate-50">
+                <div>
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Staff Preview</p>
+                  <h3 className="text-sm font-bold text-text-primary">{name || 'Untitled Checklist'}</h3>
+                </div>
+                <button onClick={() => setShowPreview(false)}
+                  className="p-2 rounded-xl text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+              {/* Runner — staff view, responses are local preview only */}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ChecklistRunner
+                  sections={sections}
+                  responses={previewResponses}
+                  onChange={setPreviewResponses}
+                  onSubmit={async () => { setShowPreview(false); }}
+                  orgId="preview"
+                  completionId={null}
+                  isAdmin={false}
+                />
               </div>
             </motion.div>
           </motion.div>

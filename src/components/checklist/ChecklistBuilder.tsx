@@ -304,35 +304,29 @@ export default function ChecklistBuilder({
   }, []);
 
   const handleGhostChange = useCallback((value: string, inputEl: HTMLInputElement | null) => {
-    // Slash → open command palette
-    if (value.endsWith('/') && !slashState) {
-      const prefix = value.slice(0, -1);
+    // Slash anywhere → open command palette
+    if (value.includes('/') && !slashState) {
+      const slashIdx = value.lastIndexOf('/');
+      const prefix = value.slice(0, slashIdx);
       const rect = inputEl?.getBoundingClientRect() ?? null;
-      setSlashState({ blockId: GHOST_ID, prefix, query: '', anchorRect: rect });
+      setSlashState({ blockId: GHOST_ID, prefix, query: value.slice(slashIdx + 1), anchorRect: rect });
       setGhostValue(value);
       return;
     }
     if (slashState?.blockId === GHOST_ID) {
-      const prefix = slashState.prefix;
-      const slashIdx = value.indexOf('/', prefix.length);
+      const slashIdx = value.indexOf('/', slashState.prefix.length);
       if (slashIdx !== -1) {
         setSlashState(s => s ? { ...s, query: value.slice(slashIdx + 1) } : s);
         setGhostValue(value);
         return;
       } else {
+        // Slash was deleted — exit slash mode
         setSlashState(null);
       }
     }
-    // Normal typing → create a Checkbox block with the typed text and move focus into it
-    if (value.trim()) {
-      const newId = uid();
-      setFields([...fields, { id: newId, type: 'multiselect', label: value }]);
-      setGhostValue('');
-      focusBlock(newId);
-      return;
-    }
+    // Normal typing — just update the ghost value
     setGhostValue(value);
-  }, [slashState, fields, setFields, focusBlock]);
+  }, [slashState]);
 
   // handleGhostKeyDown declared below after focusBlock
 
@@ -346,14 +340,20 @@ export default function ChecklistBuilder({
 
   const handleGhostKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (slashState?.blockId === GHOST_ID) return; // slash menu handles keys
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const label = ghostValue.trim();
+      if (!label) return;
+      const newId = uid();
+      setFields([...fields, { id: newId, type: 'multiselect', label }]);
+      setGhostValue('');
+      focusBlock(newId);
+    }
     if (e.key === 'ArrowUp' && fields.length > 0) {
       e.preventDefault();
       focusBlock(fields[fields.length - 1].id);
     }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault();
-    }
-  }, [slashState, fields, focusBlock]);
+  }, [slashState, ghostValue, fields, setFields, focusBlock]);
 
   // Close slash menu on outside click
   useEffect(() => {

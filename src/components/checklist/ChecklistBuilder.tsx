@@ -689,8 +689,8 @@ export default function ChecklistBuilder({
                 layout initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
                 className="group relative"
               >
-                {/* Logic blocks get their own full-width editor */}
-                {isLogic ? (
+                {/* Logic blocks render as their own full-width editor */}
+                {isLogic && (
                   <LogicBlockEditor
                     field={field}
                     allFields={fields}
@@ -700,98 +700,102 @@ export default function ChecklistBuilder({
                     isFirst={idx === 0}
                     isLast={idx === fields.length - 1}
                   />
-                ) : (
-
-                <div className={`flex items-center gap-2 py-1 rounded-xl transition-colors ${showingSettings ? 'bg-primary/4' : 'hover:bg-surface-elevated/60'} ${isHeading ? 'pt-4 pb-1' : ''}`}>
-
-                  {/* Drag / reorder handles — visible on hover */}
-                  <div className="flex flex-col gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-5">
-                    <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
-                      className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-                    </button>
-                    <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
-                      className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                  </div>
-
-                  {/* Type icon — clickable to open slash menu on this block */}
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                      setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
-                      focusBlock(field.id);
-                    }}
-                    className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
-                    title="Change block type"
-                  >
-                    <BlockIcon type={field.type}/>
-                  </button>
-
-                  {/* Label input */}
-                  <input
-                    ref={el => { inputRefs.current[field.id] = el; }}
-                    data-block-input
-                    value={displayValue}
-                    onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
-                    onKeyDown={e => handleKeyDown(e, field, idx)}
-                    onFocus={() => setSettingsState(null)}
-                    placeholder={
-                      isHeading ? 'Section heading…' :
-                      field.type === 'multiselect' ? 'Checkbox item…' :
-                      field.type === 'yesno' ? 'Yes / No question…' :
-                      field.type === 'text' ? 'Text question…' :
-                      field.type === 'photo' ? 'Photo caption…' :
-                      field.type === 'video' ? 'Video caption…' :
-                      field.type === 'dropdown' ? 'Dropdown question…' :
-                      'Label…'
-                    }
-                    className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
-                      isHeading
-                        ? 'text-sm font-bold uppercase tracking-wider'
-                        : 'text-sm'
-                    }`}
-                  />
-
-                  {/* Badges */}
-                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
-                    {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
-                  </div>
-
-                  {/* Settings ⋯ */}
-                  {!isHeading && (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        if (showingSettings) { setSettingsState(null); return; }
-                        const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                        setSettingsState({ blockId: field.id, anchorRect: rect });
-                      }}
-                      className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
-                      </svg>
-                    </button>
-                  )}
-
-                  {/* Delete */}
-                  <button onClick={() => removeField(field.id)}
-                    className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                      <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Heading separator line */}
-                {isHeading && (
-                  <div className="ml-6 h-px bg-border-light mb-2"/>
                 )}
-                )} {/* close isLogic ternary else */}
+
+                {/* Regular / Heading blocks */}
+                {!isLogic && (
+                  <>
+                    <div className={`flex items-center gap-2 py-1 rounded-xl transition-colors ${showingSettings ? 'bg-primary/4' : 'hover:bg-surface-elevated/60'} ${isHeading ? 'pt-4 pb-1' : ''}`}>
+
+                      {/* Drag / reorder handles — visible on hover */}
+                      <div className="flex flex-col gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-5">
+                        <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
+                          className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                        </button>
+                        <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
+                          className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                      </div>
+
+                      {/* Type icon — clickable to open slash menu on this block */}
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                          setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
+                          focusBlock(field.id);
+                        }}
+                        className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
+                        title="Change block type"
+                      >
+                        <BlockIcon type={field.type}/>
+                      </button>
+
+                      {/* Label input */}
+                      <input
+                        ref={el => { inputRefs.current[field.id] = el; }}
+                        data-block-input
+                        value={displayValue}
+                        onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
+                        onKeyDown={e => handleKeyDown(e, field, idx)}
+                        onFocus={() => setSettingsState(null)}
+                        placeholder={
+                          isHeading ? 'Section heading…' :
+                          field.type === 'multiselect' ? 'Checkbox item…' :
+                          field.type === 'yesno' ? 'Yes / No question…' :
+                          field.type === 'text' ? 'Text question…' :
+                          field.type === 'photo' ? 'Photo caption…' :
+                          field.type === 'video' ? 'Video caption…' :
+                          field.type === 'dropdown' ? 'Dropdown question…' :
+                          'Label…'
+                        }
+                        className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
+                          isHeading
+                            ? 'text-sm font-bold uppercase tracking-wider'
+                            : 'text-sm'
+                        }`}
+                      />
+
+                      {/* Badges */}
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
+                        {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
+                      </div>
+
+                      {/* Settings ⋯ */}
+                      {!isHeading && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (showingSettings) { setSettingsState(null); return; }
+                            const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                            setSettingsState({ blockId: field.id, anchorRect: rect });
+                          }}
+                          className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Delete */}
+                      <button onClick={() => removeField(field.id)}
+                        className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Heading separator line */}
+                    {isHeading && (
+                      <div className="ml-6 h-px bg-border-light mb-2"/>
+                    )}
+                  </>
+                )}
               </motion.div>
             );
           })}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChecklistSection, ChecklistField, FieldResponse, PreFillMeta } from './types';
+import { ChecklistSection, ChecklistField, FieldResponse, PreFillMeta, LogicCondition } from './types';
 import ChecklistFieldInput from './ChecklistFieldInput';
 
 interface ChecklistRunnerProps {

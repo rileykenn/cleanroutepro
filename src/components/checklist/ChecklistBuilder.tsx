@@ -265,7 +265,7 @@ export default function ChecklistBuilder({
   }, [fields, setFields]);
 
   // Add new block after a given index (or at end)
-  const addBlock = useCallback((afterIdx: number, type: FieldType = 'multiselect') => {
+  const addBlock = useCallback((afterIdx: number, type: FieldType = 'text') => {
     const newId = uid();
     const next = [...fields];
     next.splice(afterIdx + 1, 0, { id: newId, type, label: '' });
@@ -345,7 +345,7 @@ export default function ChecklistBuilder({
       const label = ghostValue.trim();
       if (!label) return;
       const newId = uid();
-      setFields([...fields, { id: newId, type: 'multiselect', label }]);
+      setFields([...fields, { id: newId, type: 'text', label }]);
       setGhostValue('');
       focusBlock(newId);
     }
@@ -428,7 +428,7 @@ export default function ChecklistBuilder({
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      const newId = addBlock(idx);
+      const newId = addBlock(idx, field.type === 'heading' ? 'text' : field.type);
       focusBlock(newId);
     }
 

@@ -289,6 +289,48 @@ export default function ChecklistBuilder({
     anchorRect: DOMRect | null;
   } | null>(null);
 
+  // ── Ghost input — persistent "new block" line at the bottom ──────────────
+  const [ghostValue, setGhostValue] = useState('');
+  const ghostRef = useRef<HTMLInputElement>(null);
+  const GHOST_ID = '__ghost__';
+
+  const handleGhostChange = useCallback((value: string, inputEl: HTMLInputElement | null) => {
+    // Detect slash
+    if (value.endsWith('/') && !slashState) {
+      const prefix = value.slice(0, -1);
+      const rect = inputEl?.getBoundingClientRect() ?? null;
+      setSlashState({ blockId: GHOST_ID, prefix, query: '', anchorRect: rect });
+      setGhostValue(value);
+      return;
+    }
+    if (slashState?.blockId === GHOST_ID) {
+      const prefix = slashState.prefix;
+      const slashIdx = value.indexOf('/', prefix.length);
+      if (slashIdx !== -1) {
+        setSlashState(s => s ? { ...s, query: value.slice(slashIdx + 1) } : s);
+        setGhostValue(value);
+        return;
+      } else {
+        setSlashState(null);
+      }
+    }
+    // Silently discard regular typing — ghost only responds to /
+    setGhostValue('');
+  }, [slashState]);
+
+  const handleGhostKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (slashState?.blockId === GHOST_ID) return; // slash menu handles keys
+    // Arrow up from ghost → focus last block
+    if (e.key === 'ArrowUp' && fields.length > 0) {
+      e.preventDefault();
+      focusBlock(fields[fields.length - 1].id);
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      // Don't delete anything from ghost
+      e.preventDefault();
+    }
+  }, [slashState, fields, focusBlock]);
+
   // ── Preview modal ────────────────────────────────────────────────────────
   const [showPreview, setShowPreview] = useState(false);
   const [previewResponses, setPreviewResponses] = useState<FieldResponse[]>([]);
@@ -354,14 +396,25 @@ export default function ChecklistBuilder({
     updateField(field.id, { label: value });
   }, [slashState, updateField]);
 
-  // ── Select a type from the slash menu ────────────────────────────────────
+  // selectSlashType — handles both block-level and ghost slash selections
   const selectSlashType = useCallback((type: FieldType) => {
     if (!slashState) return;
     const { blockId, prefix } = slashState;
-    updateField(blockId, { type, label: prefix, options: undefined, conditionalOn: undefined, conditionalValue: undefined });
-    setSlashState(null);
-    focusBlock(blockId);
-  }, [slashState, updateField, focusBlock]);
+
+    if (blockId === GHOST_ID) {
+      // Create a brand-new block from the ghost
+      const newId = uid();
+      setFields([...fields, { id: newId, type, label: prefix }]);
+      setGhostValue('');
+      setSlashState(null);
+      focusBlock(newId);
+    } else {
+      // Change an existing block's type
+      updateField(blockId, { type, label: prefix, options: undefined, conditionalOn: undefined, conditionalValue: undefined });
+      setSlashState(null);
+      focusBlock(blockId);
+    }
+  }, [slashState, fields, setFields, updateField, focusBlock]);
 
   // ── Handle keydown for a block ────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, field: ChecklistField, idx: number) => {
@@ -385,7 +438,9 @@ export default function ChecklistBuilder({
       const prev = fields[idx - 1];
       if (prev) { e.preventDefault(); focusBlock(prev.id); }
     }
-    if (e.key === 'ArrowDown' && idx < fields.length - 1) {
+    if (e.key === 'ArrowDown') {
+      // If last block, move to ghost
+      if (idx === fields.length - 1) { e.preventDefault(); ghostRef.current?.focus(); return; }
       const next = fields[idx + 1];
       if (next) { e.preventDefault(); focusBlock(next.id); }
     }
@@ -427,11 +482,11 @@ export default function ChecklistBuilder({
       </div>
 
       {/* ── Block list ───────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-5 py-4">
-        {fields.length === 0 && (
-          <div className="flex items-center gap-2 text-text-tertiary/60 py-2 cursor-text"
-            onClick={() => { const newId = addBlock(-1); focusBlock(newId); }}>
-            <span className="text-sm">Start typing, or press</span>
+      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-5 py-4"
+        onClick={e => { if (e.target === e.currentTarget) ghostRef.current?.focus(); }}>
+        {fields.length === 0 && !ghostValue && (
+          <div className="flex items-center gap-2 text-text-tertiary/50 py-2 pointer-events-none select-none">
+            <span className="text-sm">Press</span>
             <kbd className="px-1.5 py-0.5 text-xs font-mono bg-surface-elevated border border-border-light rounded-md">/</kbd>
             <span className="text-sm">to insert a block</span>
           </div>
@@ -545,18 +600,19 @@ export default function ChecklistBuilder({
           })}
         </AnimatePresence>
 
-        {/* "Add block" hint at bottom */}
-        {fields.length > 0 && (
-          <button
-            onClick={() => { const newId = addBlock(fields.length - 1); focusBlock(newId); }}
-            className="flex items-center gap-2 mt-3 text-text-tertiary/50 hover:text-text-tertiary text-xs transition-colors group/add"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span>Add block  ·  Type <kbd className="px-1 py-0.5 text-[10px] font-mono bg-surface-elevated border border-border-light rounded">/</kbd> to insert a specific type</span>
-          </button>
-        )}
+        {/* ── Ghost input — always-visible new-block line ──────────────── */}
+        <div className="flex items-center gap-2 py-1 mt-1 group/ghost">
+          <div className="w-4 h-4 shrink-0 opacity-0"/>{/* spacer for icon column */}
+          <input
+            ref={ghostRef}
+            value={slashState?.blockId === GHOST_ID ? (slashState.prefix + '/' + slashState.query) : ghostValue}
+            onChange={e => handleGhostChange(e.target.value, ghostRef.current)}
+            onKeyDown={handleGhostKeyDown}
+            onFocus={() => setSettingsState(null)}
+            placeholder="Type / to insert a block…"
+            className="flex-1 bg-transparent outline-none text-sm text-text-tertiary placeholder-text-tertiary/40 min-w-0"
+          />
+        </div>
       </div>
 
       {/* ── Bottom action bar ─────────────────────────────────────────────── */}
@@ -586,7 +642,11 @@ export default function ChecklistBuilder({
               anchorRect={slashState.anchorRect}
               onSelect={selectSlashType}
               onClose={() => {
-                updateField(slashState.blockId, { label: slashState.prefix });
+                if (slashState.blockId === GHOST_ID) {
+                  setGhostValue('');
+                } else {
+                  updateField(slashState.blockId, { label: slashState.prefix });
+                }
                 setSlashState(null);
               }}
             />

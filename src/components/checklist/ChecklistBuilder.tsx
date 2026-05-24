@@ -318,18 +318,7 @@ export default function ChecklistBuilder({
     setGhostValue('');
   }, [slashState]);
 
-  const handleGhostKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (slashState?.blockId === GHOST_ID) return; // slash menu handles keys
-    // Arrow up from ghost → focus last block
-    if (e.key === 'ArrowUp' && fields.length > 0) {
-      e.preventDefault();
-      focusBlock(fields[fields.length - 1].id);
-    }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      // Don't delete anything from ghost
-      e.preventDefault();
-    }
-  }, [slashState, fields, focusBlock]);
+  // handleGhostKeyDown declared below after focusBlock
 
   // ── Preview modal ────────────────────────────────────────────────────────
   const [showPreview, setShowPreview] = useState(false);
@@ -348,6 +337,17 @@ export default function ChecklistBuilder({
       if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
     }, 30);
   }, []);
+
+  const handleGhostKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (slashState?.blockId === GHOST_ID) return; // slash menu handles keys
+    if (e.key === 'ArrowUp' && fields.length > 0) {
+      e.preventDefault();
+      focusBlock(fields[fields.length - 1].id);
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+    }
+  }, [slashState, fields, focusBlock]);
 
   // Close slash menu on outside click
   useEffect(() => {

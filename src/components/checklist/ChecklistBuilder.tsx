@@ -295,7 +295,7 @@ export default function ChecklistBuilder({
   const GHOST_ID = '__ghost__';
 
   const handleGhostChange = useCallback((value: string, inputEl: HTMLInputElement | null) => {
-    // Detect slash
+    // Slash → open command palette
     if (value.endsWith('/') && !slashState) {
       const prefix = value.slice(0, -1);
       const rect = inputEl?.getBoundingClientRect() ?? null;
@@ -314,9 +314,16 @@ export default function ChecklistBuilder({
         setSlashState(null);
       }
     }
-    // Silently discard regular typing — ghost only responds to /
-    setGhostValue('');
-  }, [slashState]);
+    // Normal typing → create a Checkbox block with the typed text and move focus into it
+    if (value.trim()) {
+      const newId = uid();
+      setFields([...fields, { id: newId, type: 'multiselect', label: value }]);
+      setGhostValue('');
+      focusBlock(newId);
+      return;
+    }
+    setGhostValue(value);
+  }, [slashState, fields, setFields, focusBlock]);
 
   // handleGhostKeyDown declared below after focusBlock
 

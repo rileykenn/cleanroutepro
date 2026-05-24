@@ -1,5 +1,6 @@
 // ─── Field types ─────────────────────────────────────────────────────────────
 export type FieldType =
+  | 'heading'     // visual section title / divider
   | 'checkbox'    // simple tick item
   | 'text'        // open text input
   | 'yesno'       // Yes / No toggle
@@ -11,6 +12,7 @@ export type FieldType =
   | 'video';      // video upload
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  heading: 'Heading',
   checkbox: 'Checkbox',
   text: 'Open Text',
   yesno: 'Yes / No',
@@ -23,6 +25,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
 };
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
+  heading: '𝐇',
   checkbox: '☑',
   text: '📝',
   yesno: '👍',

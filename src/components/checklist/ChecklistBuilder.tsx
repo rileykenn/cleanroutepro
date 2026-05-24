@@ -14,6 +14,7 @@ const TYPE_OPTIONS: { type: FieldType; label: string }[] = [
   { type: 'date',        label: 'Date' },
   { type: 'time',        label: 'Time' },
   { type: 'dropdown',    label: 'Dropdown' },
+  { type: 'heading',     label: 'Heading' },
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -366,7 +367,40 @@ export default function ChecklistBuilder({
                   exit={{ opacity: 0, height: 0 }}
                   className="border-b border-border-light/60 last:border-0"
                 >
-                  {/* ── Item row ── */}
+                  {/* ── Heading row — rendered as a section divider ── */}
+                  {field.type === 'heading' ? (
+                    <div className="flex items-center gap-3 px-4 py-2.5 group border-t-2 border-border-light/40 bg-slate-50/60">
+                      {/* Reorder */}
+                      <div className="flex flex-col gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
+                          className="text-text-tertiary hover:text-text-primary disabled:opacity-20 p-0.5">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                        </button>
+                        <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
+                          className="text-text-tertiary hover:text-text-primary disabled:opacity-20 p-0.5">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                      </div>
+                      {/* Heading icon */}
+                      <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest shrink-0">H</span>
+                      {/* Editable heading label */}
+                      <input
+                        value={field.label}
+                        onChange={e => updateField(field.id, { label: e.target.value })}
+                        placeholder="Section heading…"
+                        className="flex-1 text-sm font-bold text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0 uppercase tracking-wide"
+                      />
+                      {/* Delete */}
+                      <button onClick={() => removeField(field.id)}
+                        className="p-1.5 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                  <>
+                  {/* ── Regular field row ── */}
                   <div className="flex items-center gap-3 px-4 py-3 group hover:bg-surface-elevated/40 transition-colors">
                     {/* Reorder */}
                     <div className="flex flex-col gap-0.5 shrink-0 opacity-30 group-hover:opacity-100 transition-opacity">
@@ -380,35 +414,35 @@ export default function ChecklistBuilder({
                       </button>
                     </div>
 
-                    {/* Checkbox preview */}
-                    <div className={`w-4 h-4 rounded shrink-0 border-2 ${field.type === 'checkbox' ? 'border-border-light' : 'border-transparent bg-surface-elevated'} flex items-center justify-center`}>
-                      {field.type !== 'checkbox' && (
-                        <span className="text-[9px] font-bold text-text-tertiary leading-none">
-                          {field.type === 'yesno' ? 'Y/N' : field.type === 'photo' ? '📷' : field.type === 'text' ? 'T' : field.type === 'date' ? 'D' : field.type === 'time' ? '⏱' : field.type === 'video' ? '🎥' : '…'}
-                        </span>
-                      )}
+                    {/* Type icon */}
+                    <div className="w-4 h-4 rounded shrink-0 border-2 border-border-light flex items-center justify-center">
+                      <span className="text-[9px] font-bold text-text-tertiary leading-none">
+                        {field.type === 'multiselect' ? '✓' : field.type === 'yesno' ? 'Y/N' : field.type === 'photo' ? '📷' : field.type === 'text' ? 'T' : field.type === 'date' ? 'D' : field.type === 'time' ? '⏱' : field.type === 'video' ? '🎥' : field.type === 'dropdown' ? '▾' : ''}
+                      </span>
                     </div>
 
-                    {/* Label — auto-focus if just created */}
+                    {/* Label */}
                     <input
                       autoFocus={focusId === field.id}
                       value={field.label}
                       onChange={e => updateField(field.id, { label: e.target.value })}
                       onFocus={() => setFocusId(null)}
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addField(); } }}
                       placeholder="Item label…"
                       className="flex-1 text-sm text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0"
                     />
 
                     {/* Badges */}
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {field.type !== 'checkbox' && (
+                      {field.type !== 'multiselect' && (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 whitespace-nowrap">
                           {FIELD_TYPE_LABELS[field.type]}
                         </span>
                       )}
                       {field.required && (
                         <span className="text-[10px] font-bold text-rose-400">Required</span>
+                      )}
+                      {field.conditionalOn && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 whitespace-nowrap">Conditional</span>
                       )}
                     </div>
 
@@ -433,6 +467,8 @@ export default function ChecklistBuilder({
                       </svg>
                     </button>
                   </div>
+                  </>
+                  )}
 
                   {/* ── Expanded settings ── */}
                   <AnimatePresence>

@@ -54,9 +54,9 @@ export default function ChecklistRunner({
     setValidationErrors(prev => prev.filter(id => id !== updated.field_id));
   }, [responses, onChange]);
 
-  // Compute visible fields across all sections
+  // Compute visible fields across all sections (headings are decorative, not counted)
   const visibleFields: ChecklistField[] = useMemo(() =>
-    sections.flatMap(s => s.fields.filter(f => isFieldVisible(f, responses))),
+    sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && isFieldVisible(f, responses))),
     [sections, responses]
   );
 
@@ -175,6 +175,23 @@ export default function ChecklistRunner({
 
               <div className="space-y-4">
                 {visibleSectionFields.map(field => {
+                  // Heading — renders as a section divider, not an interactive field
+                  if (field.type === 'heading') {
+                    return (
+                      <div key={field.id} className="pt-2 pb-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-xs font-black text-text-secondary uppercase tracking-widest whitespace-nowrap">
+                            {field.label || 'Section'}
+                          </h3>
+                          <div className="flex-1 h-px bg-border-light"/>
+                        </div>
+                        {field.description && (
+                          <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
+                        )}
+                      </div>
+                    );
+                  }
+
                   const resp = ensureResponse(responses, field.id);
                   const hasError = showErrors && validationErrors.includes(field.id);
 

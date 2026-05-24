@@ -294,6 +294,15 @@ export default function ChecklistBuilder({
   const ghostRef = useRef<HTMLInputElement>(null);
   const GHOST_ID = '__ghost__';
 
+  // Per-block input refs — declared here so ghost handlers can reference focusBlock
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const focusBlock = useCallback((id: string) => {
+    setTimeout(() => {
+      const el = inputRefs.current[id];
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 30);
+  }, []);
+
   const handleGhostChange = useCallback((value: string, inputEl: HTMLInputElement | null) => {
     // Slash → open command palette
     if (value.endsWith('/') && !slashState) {
@@ -334,16 +343,6 @@ export default function ChecklistBuilder({
   // ── Save-as-new modal ────────────────────────────────────────────────────
   const [showSaveAsNew, setShowSaveAsNew] = useState(false);
   const [saveAsNewName, setSaveAsNewName] = useState('');
-
-  // Per-block input refs (for focusing after operations)
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  const focusBlock = useCallback((id: string) => {
-    setTimeout(() => {
-      const el = inputRefs.current[id];
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    }, 30);
-  }, []);
 
   const handleGhostKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (slashState?.blockId === GHOST_ID) return; // slash menu handles keys

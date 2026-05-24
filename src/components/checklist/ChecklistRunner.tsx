@@ -20,12 +20,79 @@ interface ChecklistRunnerProps {
   saving?: boolean;
 }
 
-// Evaluate whether a field is visible given current responses
-function isFieldVisible(field: ChecklistField, responses: FieldResponse[]): boolean {
-  if (!field.conditionalOn) return true;
-  const parentResp = responses.find(r => r.field_id === field.conditionalOn);
-  if (!parentResp) return false;
-  return parentResp.value === field.conditionalValue;
+// ─── Logic engine ─────────────────────────────────────────────────────────────
+
+function evalCondition(cond: LogicCondition, responses: FieldResponse[]): boolean {
+  const raw = responses.find(r => r.field_id === cond.fieldId)?.value ?? null;
+  switch (cond.operator) {
+    case 'is_answered':
+      return raw !== null && raw !== '' && !(Array.isArray(raw) && raw.length === 0);
+    case 'is_empty':
+      return raw === null || raw === '' || (Array.isArray(raw) && raw.length === 0);
+    case 'equals':
+    case 'not_equals': {
+      let s: string | null = null;
+      if (typeof raw === 'string') s = raw;
+      else if (typeof raw === 'boolean') s = raw ? 'yes' : 'no';
+      else if (Array.isArray(raw)) s = raw[0] ?? null;
+      const match = s === cond.value;
+      return cond.operator === 'equals' ? match : !match;
+    }
+    case 'contains':
+      if (Array.isArray(raw)) return raw.includes(cond.value ?? '');
+      if (typeof raw === 'string') return raw.toLowerCase().includes((cond.value ?? '').toLowerCase());
+      return false;
+    default: return false;
+  }
+}
+
+/** Build a map of fieldId → visible for all non-logic fields */
+function buildVisibilityMap(
+  allFields: ChecklistField[],
+  responses: FieldResponse[]
+): Record<string, boolean> {
+  const logicBlocks = allFields.filter(
+    f => f.type === 'logic' && (f.logicConditions?.length ?? 0) > 0 && (f.logicTargets?.length ?? 0) > 0
+  );
+
+  // Fields targeted by a 'show' action are hidden by default
+  const hiddenByDefault = new Set<string>();
+  for (const lb of logicBlocks) {
+    if (lb.logicAction === 'show') lb.logicTargets!.forEach(id => hiddenByDefault.add(id));
+  }
+
+  const map: Record<string, boolean> = {};
+
+  for (const field of allFields) {
+    if (field.type === 'logic') continue;
+
+    // ── Legacy conditionalOn (keep working) ─────────────────────────────
+    if (field.conditionalOn && !hiddenByDefault.has(field.id) && logicBlocks.every(lb => !lb.logicTargets?.includes(field.id))) {
+      const parentResp = responses.find(r => r.field_id === field.conditionalOn);
+      if (!parentResp) { map[field.id] = false; continue; }
+      map[field.id] = parentResp.value === field.conditionalValue;
+      continue;
+    }
+
+    // ── New logic system ─────────────────────────────────────────────────
+    let visible = !hiddenByDefault.has(field.id);
+
+    for (const lb of logicBlocks) {
+      if (!lb.logicTargets?.includes(field.id)) continue;
+      const conds = lb.logicConditions ?? [];
+      const op = lb.logicOperator ?? 'and';
+      const met = op === 'and'
+        ? conds.every(c => evalCondition(c, responses))
+        : conds.some(c => evalCondition(c, responses));
+
+      if (lb.logicAction === 'show' && met) visible = true;
+      if (lb.logicAction === 'hide' && met) visible = false;
+    }
+
+    map[field.id] = visible;
+  }
+
+  return map;
 }
 
 // Get or create a FieldResponse for a field
@@ -54,10 +121,14 @@ export default function ChecklistRunner({
     setValidationErrors(prev => prev.filter(id => id !== updated.field_id));
   }, [responses, onChange]);
 
-  // Compute visible fields across all sections (headings are decorative, not counted)
+  // Build visibility map from all logic blocks + legacy conditionalOn
+  const allFields = useMemo(() => sections.flatMap(s => s.fields), [sections]);
+  const visibilityMap = useMemo(() => buildVisibilityMap(allFields, responses), [allFields, responses]);
+
+  // Compute visible interactive fields (headings and logic blocks are decorative)
   const visibleFields: ChecklistField[] = useMemo(() =>
-    sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && isFieldVisible(f, responses))),
-    [sections, responses]
+    allFields.filter(f => f.type !== 'heading' && f.type !== 'logic' && visibilityMap[f.id] !== false),
+    [allFields, visibilityMap]
   );
 
   // Progress
@@ -160,7 +231,9 @@ export default function ChecklistRunner({
       {/* ── Sections ─────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6 pb-4">
         {sections.map(sec => {
-          const visibleSectionFields = sec.fields.filter(f => isFieldVisible(f, responses));
+          const visibleSectionFields = sec.fields.filter(f =>
+            f.type !== 'logic' && visibilityMap[f.id] !== false
+          );
           if (visibleSectionFields.length === 0) return null;
 
           return (

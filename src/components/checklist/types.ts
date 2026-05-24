@@ -1,6 +1,7 @@
 // ─── Field types ─────────────────────────────────────────────────────────────
 export type FieldType =
   | 'heading'     // visual section title / divider
+  | 'logic'       // conditional logic rule block
   | 'checkbox'    // simple tick item
   | 'text'        // open text input
   | 'yesno'       // Yes / No toggle
@@ -11,7 +12,15 @@ export type FieldType =
   | 'photo'       // image upload
   | 'video';      // video upload
 
+// Condition for a logic block
+export interface LogicCondition {
+  fieldId: string;
+  operator: 'equals' | 'not_equals' | 'is_answered' | 'is_empty' | 'contains';
+  value?: string;
+}
+
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  logic: 'Logic',
   heading: 'Heading',
   checkbox: 'Checkbox',
   text: 'Open Text',
@@ -25,6 +34,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
 };
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
+  logic: '⚡',
   heading: '𝐇',
   checkbox: '☑',
   text: '📝',
@@ -46,8 +56,14 @@ export interface ChecklistField {
   required?: boolean;
   allowNA?: boolean;
   options?: string[];         // for dropdown / multiselect
-  conditionalOn?: string;     // field.id of a yesno field in the same section
-  conditionalValue?: 'yes' | 'no'; // show this field when parent equals this
+  conditionalOn?: string;     // LEGACY: field.id of a yesno field
+  conditionalValue?: 'yes' | 'no'; // LEGACY: show this field when parent equals this
+
+  // ── Logic block fields (type === 'logic') ─────────────────────────────────
+  logicConditions?: LogicCondition[];
+  logicOperator?: 'and' | 'or';   // how to combine multiple conditions
+  logicAction?: 'show' | 'hide';  // what to do when conditions are met
+  logicTargets?: string[];         // field IDs affected by this logic
 }
 
 export interface ChecklistSection {

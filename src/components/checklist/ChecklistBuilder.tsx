@@ -2,20 +2,21 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChecklistField, ChecklistSection, FieldType, FieldResponse } from './types';
+import { ChecklistField, ChecklistSection, FieldType, FieldResponse, LogicCondition } from './types';
 import ChecklistRunner from './ChecklistRunner';
 
 // ─── Block type catalogue ────────────────────────────────────────────────────
 const BLOCK_TYPES: { type: FieldType; label: string; desc: string; icon: React.ReactNode }[] = [
-  { type: 'multiselect', label: 'Checkbox', desc: 'Tick one or more items', icon: <BlockIcon type="multiselect"/> },
-  { type: 'yesno',       label: 'Yes / No',     desc: 'Yes or no answer',           icon: <BlockIcon type="yesno"/> },
-  { type: 'text',        label: 'Text',          desc: 'Open-ended text response',   icon: <BlockIcon type="text"/> },
-  { type: 'photo',       label: 'Photo',         desc: 'Staff captures a photo',     icon: <BlockIcon type="photo"/> },
-  { type: 'video',       label: 'Video',         desc: 'Staff records a video',      icon: <BlockIcon type="video"/> },
-  { type: 'date',        label: 'Date',          desc: 'Date picker',                icon: <BlockIcon type="date"/> },
-  { type: 'time',        label: 'Time',          desc: 'Time picker',                icon: <BlockIcon type="time"/> },
-  { type: 'dropdown',    label: 'Dropdown',      desc: 'Single choice from a list',  icon: <BlockIcon type="dropdown"/> },
-  { type: 'heading',     label: 'Heading',       desc: 'Section title divider',      icon: <BlockIcon type="heading"/> },
+  { type: 'multiselect', label: 'Checkbox',  desc: 'Tick one or more items',          icon: <BlockIcon type="multiselect"/> },
+  { type: 'yesno',       label: 'Yes / No',  desc: 'Yes or no answer',                icon: <BlockIcon type="yesno"/> },
+  { type: 'text',        label: 'Text',       desc: 'Open-ended text response',        icon: <BlockIcon type="text"/> },
+  { type: 'photo',       label: 'Photo',      desc: 'Staff captures a photo',          icon: <BlockIcon type="photo"/> },
+  { type: 'video',       label: 'Video',      desc: 'Staff records a video',           icon: <BlockIcon type="video"/> },
+  { type: 'date',        label: 'Date',       desc: 'Date picker',                     icon: <BlockIcon type="date"/> },
+  { type: 'time',        label: 'Time',       desc: 'Time picker',                     icon: <BlockIcon type="time"/> },
+  { type: 'dropdown',    label: 'Dropdown',   desc: 'Single choice from a list',       icon: <BlockIcon type="dropdown"/> },
+  { type: 'heading',     label: 'Heading',    desc: 'Section title divider',           icon: <BlockIcon type="heading"/> },
+  { type: 'logic',       label: 'Logic',      desc: 'Show/hide blocks based on answers', icon: <span className="text-[13px]">⚡</span> },
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -219,6 +220,188 @@ function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: 
         </div>
       )}
     </motion.div>
+  );
+}
+
+// ─── Logic Block Editor ───────────────────────────────────────────────────────
+interface LogicBlockEditorProps {
+  field: ChecklistField;
+  allFields: ChecklistField[];
+  onChange: (patch: Partial<ChecklistField>) => void;
+  onRemove: () => void;
+  onMove: (dir: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
+function getOperatorsFor(src: ChecklistField | undefined) {
+  if (!src) return [{ v: 'is_answered', l: 'is answered' }];
+  switch (src.type) {
+    case 'yesno':      return [{ v: 'equals', l: 'is' }];
+    case 'text':       return [{ v: 'is_answered', l: 'is answered' }, { v: 'is_empty', l: 'is empty' }, { v: 'contains', l: 'contains' }];
+    case 'multiselect':
+    case 'dropdown':   return [{ v: 'equals', l: 'is' }, { v: 'not_equals', l: 'is not' }, { v: 'contains', l: 'includes' }];
+    default:           return [{ v: 'is_answered', l: 'is answered' }, { v: 'is_empty', l: 'is empty' }];
+  }
+}
+
+function getValueOptions(src: ChecklistField | undefined, op: string): string[] | null {
+  if (!src || op === 'is_answered' || op === 'is_empty') return null;
+  if (src.type === 'yesno') return ['yes', 'no'];
+  if ((src.type === 'multiselect' || src.type === 'dropdown') && src.options?.length) return src.options;
+  return null; // free-text input
+}
+
+function LogicBlockEditor({ field, allFields, onChange, onRemove, onMove, isFirst, isLast }: LogicBlockEditorProps) {
+  const conditions: LogicCondition[] = field.logicConditions?.length
+    ? field.logicConditions
+    : [{ fieldId: '', operator: 'equals', value: '' }];
+  const logicOperator = field.logicOperator ?? 'and';
+  const logicAction   = field.logicAction ?? 'show';
+  const logicTargets  = field.logicTargets ?? [];
+
+  const eligibleFields = allFields.filter(f => f.type !== 'logic' && f.type !== 'heading' && f.id !== field.id);
+
+  const updateCond = (idx: number, patch: Partial<LogicCondition>) => {
+    const next = conditions.map((c, i) => i === idx ? { ...c, ...patch } : c);
+    onChange({ logicConditions: next });
+  };
+  const addCond = () => onChange({ logicConditions: [...conditions, { fieldId: '', operator: 'equals', value: '' }] });
+  const removeCond = (idx: number) => onChange({ logicConditions: conditions.filter((_, i) => i !== idx) });
+  const toggleTarget = (id: string) => onChange({
+    logicTargets: logicTargets.includes(id) ? logicTargets.filter(t => t !== id) : [...logicTargets, id],
+  });
+
+  return (
+    <div className="my-1 rounded-2xl border-2 border-violet-200 bg-violet-50/60 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-violet-100/60 border-b border-violet-200">
+        <div className="flex flex-col gap-0 shrink-0">
+          <button onClick={() => onMove(-1)} disabled={isFirst} className="p-0.5 text-violet-400 hover:text-violet-700 disabled:opacity-20">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button onClick={() => onMove(1)} disabled={isLast} className="p-0.5 text-violet-400 hover:text-violet-700 disabled:opacity-20">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <span className="text-sm">⚡</span>
+        <span className="text-xs font-bold text-violet-700 uppercase tracking-wider flex-1">Logic</span>
+        <button onClick={onRemove} className="p-1 rounded-lg text-violet-400 hover:text-rose-500 hover:bg-rose-50 transition-colors">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div className="px-4 py-3 space-y-3">
+        {/* IF conditions */}
+        <div className="space-y-2">
+          {conditions.map((cond, idx) => {
+            const srcField = allFields.find(f => f.id === cond.fieldId);
+            const ops = getOperatorsFor(srcField);
+            const valOpts = getValueOptions(srcField, cond.operator);
+            const needsText = valOpts === null && cond.operator !== 'is_answered' && cond.operator !== 'is_empty';
+
+            return (
+              <div key={idx} className="space-y-2">
+                {/* AND/OR joiner */}
+                {idx > 0 && (
+                  <button onClick={() => onChange({ logicOperator: logicOperator === 'and' ? 'or' : 'and' })}
+                    className="text-[10px] font-black text-violet-600 uppercase tracking-widest hover:text-violet-800 transition-colors px-1">
+                    {logicOperator}
+                  </button>
+                )}
+                {idx === 0 && <span className="text-[10px] font-black text-violet-500 uppercase tracking-widest">If</span>}
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Field selector */}
+                  <select value={cond.fieldId}
+                    onChange={e => updateCond(idx, { fieldId: e.target.value, operator: 'equals', value: '' })}
+                    className="input-field text-xs py-1 flex-1 min-w-[120px]">
+                    <option value="">Select a field…</option>
+                    {eligibleFields.map(f => (
+                      <option key={f.id} value={f.id}>{f.label || `(${f.type})`}</option>
+                    ))}
+                  </select>
+
+                  {/* Operator */}
+                  {cond.fieldId && (
+                    <select value={cond.operator}
+                      onChange={e => updateCond(idx, { operator: e.target.value as LogicCondition['operator'], value: '' })}
+                      className="input-field text-xs py-1 shrink-0">
+                      {ops.map(op => <option key={op.v} value={op.v}>{op.l}</option>)}
+                    </select>
+                  )}
+
+                  {/* Value — buttons for yes/no and option chips, text input for contains */}
+                  {cond.fieldId && valOpts && (
+                    <div className="flex gap-1 flex-wrap">
+                      {valOpts.map(v => (
+                        <button key={v} onClick={() => updateCond(idx, { value: v })}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${cond.value === v ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-text-secondary border-border-light hover:border-violet-400 hover:text-violet-600'}`}>
+                          {v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {cond.fieldId && needsText && (
+                    <input value={cond.value ?? ''} onChange={e => updateCond(idx, { value: e.target.value })}
+                      placeholder="Value…" className="input-field text-xs py-1 flex-1 min-w-[80px]"/>
+                  )}
+
+                  {/* Remove condition */}
+                  {conditions.length > 1 && (
+                    <button onClick={() => removeCond(idx)} className="p-1 text-text-tertiary hover:text-rose-500 transition-colors shrink-0">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <button onClick={addCond} className="text-[11px] font-semibold text-violet-600 hover:text-violet-800 transition-colors">
+            + Add condition
+          </button>
+        </div>
+
+        {/* THEN action */}
+        <div className="pt-1 border-t border-violet-200 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-violet-500 uppercase tracking-widest shrink-0">Then</span>
+            <div className="flex rounded-lg border border-border-light overflow-hidden shrink-0">
+              {(['show', 'hide'] as const).map(a => (
+                <button key={a} onClick={() => onChange({ logicAction: a })}
+                  className={`px-3 py-1 text-xs font-bold transition-colors ${logicAction === a ? 'bg-violet-600 text-white' : 'bg-white text-text-secondary hover:bg-violet-50'}`}>
+                  {a === 'show' ? 'Show' : 'Hide'}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-text-tertiary">these blocks:</span>
+          </div>
+
+          {/* Target field chips */}
+          <div className="flex flex-wrap gap-1.5">
+            {eligibleFields.length === 0 && (
+              <p className="text-[11px] text-text-tertiary">No other fields to target</p>
+            )}
+            {eligibleFields.map(f => {
+              const selected = logicTargets.includes(f.id);
+              return (
+                <button key={f.id} onClick={() => toggleTarget(f.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${selected ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-text-secondary border-border-light hover:border-violet-400 hover:text-violet-600'}`}>
+                  {f.label || `(${f.type})`}
+                </button>
+              );
+            })}
+          </div>
+
+          {logicAction === 'show' && logicTargets.length > 0 && (
+            <p className="text-[10px] text-violet-500 flex items-center gap-1">
+              <span>ℹ</span> Selected blocks are hidden by default and revealed when conditions are met
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -494,6 +677,7 @@ export default function ChecklistBuilder({
         <AnimatePresence initial={false}>
           {fields.map((field, idx) => {
             const isHeading = field.type === 'heading';
+            const isLogic   = field.type === 'logic';
             const showingSettings = settingsState?.blockId === field.id;
             const inSlashMode = slashState?.blockId === field.id;
             const displayValue = inSlashMode
@@ -505,6 +689,19 @@ export default function ChecklistBuilder({
                 layout initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
                 className="group relative"
               >
+                {/* Logic blocks get their own full-width editor */}
+                {isLogic ? (
+                  <LogicBlockEditor
+                    field={field}
+                    allFields={fields}
+                    onChange={patch => updateField(field.id, patch)}
+                    onRemove={() => removeField(field.id)}
+                    onMove={dir => moveField(idx, dir)}
+                    isFirst={idx === 0}
+                    isLast={idx === fields.length - 1}
+                  />
+                ) : (
+
                 <div className={`flex items-center gap-2 py-1 rounded-xl transition-colors ${showingSettings ? 'bg-primary/4' : 'hover:bg-surface-elevated/60'} ${isHeading ? 'pt-4 pb-1' : ''}`}>
 
                   {/* Drag / reorder handles — visible on hover */}
@@ -594,6 +791,7 @@ export default function ChecklistBuilder({
                 {isHeading && (
                   <div className="ml-6 h-px bg-border-light mb-2"/>
                 )}
+                )} {/* close isLogic ternary else */}
               </motion.div>
             );
           })}

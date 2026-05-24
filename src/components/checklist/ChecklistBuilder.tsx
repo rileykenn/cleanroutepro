@@ -62,22 +62,54 @@ export default function ChecklistBuilder({
   const [showAddZone, setShowAddZone] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newType, setNewType] = useState<FieldType>('checkbox');
+  const [newOptions, setNewOptions] = useState<string[]>([]);
+  const [newOptionInput, setNewOptionInput] = useState('');
   const newLabelRef = useRef<HTMLInputElement>(null);
+  const newOptionRef = useRef<HTMLInputElement>(null);
 
   const openAddZone = () => {
     setNewLabel('');
     setNewType('checkbox');
+    setNewOptions([]);
+    setNewOptionInput('');
     setShowAddZone(true);
     setTimeout(() => newLabelRef.current?.focus(), 50);
   };
+
+  const changeNewType = (t: FieldType) => {
+    setNewType(t);
+    setNewOptions([]);
+    setNewOptionInput('');
+    if (t === 'dropdown' || t === 'multiselect') {
+      setTimeout(() => newOptionRef.current?.focus(), 80);
+    }
+  };
+
+  const addNewOption = () => {
+    const opt = newOptionInput.trim();
+    if (!opt) return;
+    setNewOptions(prev => [...prev, opt]);
+    setNewOptionInput('');
+    setTimeout(() => newOptionRef.current?.focus(), 30);
+  };
+
+  const removeNewOption = (idx: number) => setNewOptions(prev => prev.filter((_, i) => i !== idx));
 
   const commitAdd = () => {
     const label = newLabel.trim();
     if (!label) return;
     const newId = uid();
-    setFields([...fields, { id: newId, type: newType, label }]);
+    const needsOptions = newType === 'dropdown' || newType === 'multiselect';
+    setFields([...fields, {
+      id: newId,
+      type: newType,
+      label,
+      options: needsOptions && newOptions.length > 0 ? newOptions : undefined,
+    }]);
     setNewLabel('');
     setNewType('checkbox');
+    setNewOptions([]);
+    setNewOptionInput('');
     // keep zone open for rapid entry
     setTimeout(() => newLabelRef.current?.focus(), 50);
   };
@@ -86,6 +118,8 @@ export default function ChecklistBuilder({
     setShowAddZone(false);
     setNewLabel('');
     setNewType('checkbox');
+    setNewOptions([]);
+    setNewOptionInput('');
   };
 
   // ── Single flat field list, one section for DB compat ──────────────────────
@@ -212,7 +246,7 @@ export default function ChecklistBuilder({
                   <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Field type</p>
                   <div className="grid grid-cols-3 gap-1.5">
                     {TYPE_OPTIONS.map(({ type, label }) => (
-                      <button key={type} onClick={() => setNewType(type as FieldType)}
+                      <button key={type} onClick={() => changeNewType(type as FieldType)}
                         className={`px-2 py-1.5 rounded-lg text-xs font-semibold text-center border transition-all ${
                           newType === type
                             ? 'bg-primary text-white border-primary shadow-sm'
@@ -223,6 +257,69 @@ export default function ChecklistBuilder({
                     ))}
                   </div>
                 </div>
+
+                {/* Conditional params based on type */}
+                <AnimatePresence initial={false}>
+                  {(newType === 'dropdown' || newType === 'multiselect') && (
+                    <motion.div key="options-editor"
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden">
+                      <div className="border border-border-light rounded-xl p-3 space-y-2 bg-slate-50">
+                        <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">
+                          {newType === 'multiselect' ? 'Selectable options' : 'Dropdown options'}
+                        </p>
+                        {/* Existing options */}
+                        {newOptions.map((opt, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="flex-1 text-sm text-text-primary bg-white border border-border-light rounded-lg px-3 py-1.5 truncate">{opt}</span>
+                            <button onClick={() => removeNewOption(i)}
+                              className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                          </div>
+                        ))}
+                        {/* Add option input */}
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={newOptionRef}
+                            value={newOptionInput}
+                            onChange={e => setNewOptionInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addNewOption(); } }}
+                            placeholder="Add option…"
+                            className="flex-1 input-field text-sm py-1.5"
+                          />
+                          <button onClick={addNewOption} disabled={!newOptionInput.trim()}
+                            className="shrink-0 px-2.5 py-1.5 text-xs font-semibold text-primary border border-primary rounded-lg hover:bg-primary/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                            + Add
+                          </button>
+                        </div>
+                        {newOptions.length === 0 && (
+                          <p className="text-[11px] text-text-tertiary">Add at least one option for staff to choose from</p>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {(newType === 'photo' || newType === 'video') && (
+                    <motion.div key="media-info"
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden">
+                      <div className="flex items-start gap-2.5 border border-border-light rounded-xl p-3 bg-slate-50">
+                        <span className="text-lg leading-none mt-0.5">{newType === 'photo' ? '📷' : '🎥'}</span>
+                        <div>
+                          <p className="text-xs font-semibold text-text-secondary">
+                            {newType === 'photo' ? 'Staff will take or upload a photo' : 'Staff will record or upload a video'}
+                          </p>
+                          <p className="text-[11px] text-text-tertiary mt-0.5">
+                            {newType === 'photo'
+                              ? 'Captured photos are stored on the job record and visible to admins'
+                              : 'Recorded videos are stored on the job record and visible to admins'}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </motion.div>
           ) : (

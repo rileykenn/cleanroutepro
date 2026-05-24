@@ -15,7 +15,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   text: 'Open Text',
   yesno: 'Yes / No',
   dropdown: 'Dropdown',
-  multiselect: 'Multi-Select',
+  multiselect: 'Checkbox',
   date: 'Date',
   time: 'Time',
   photo: 'Photo',

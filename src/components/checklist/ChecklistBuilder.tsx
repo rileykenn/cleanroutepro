@@ -6,15 +6,14 @@ import { ChecklistField, ChecklistSection, FieldType, FIELD_TYPE_LABELS, FieldRe
 import ChecklistRunner from './ChecklistRunner';
 
 const TYPE_OPTIONS: { type: FieldType; label: string }[] = [
-  { type: 'checkbox',    label: 'Checkbox' },
-  { type: 'yesno',      label: 'Yes / No' },
-  { type: 'text',       label: 'Text answer' },
-  { type: 'photo',      label: 'Photo' },
-  { type: 'video',      label: 'Video' },
-  { type: 'date',       label: 'Date' },
-  { type: 'time',       label: 'Time' },
-  { type: 'dropdown',   label: 'Dropdown' },
-  { type: 'multiselect',label: 'Multi-select' },
+  { type: 'multiselect', label: 'Checkbox' },
+  { type: 'yesno',       label: 'Yes / No' },
+  { type: 'text',        label: 'Text answer' },
+  { type: 'photo',       label: 'Photo' },
+  { type: 'video',       label: 'Video' },
+  { type: 'date',        label: 'Date' },
+  { type: 'time',        label: 'Time' },
+  { type: 'dropdown',    label: 'Dropdown' },
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }

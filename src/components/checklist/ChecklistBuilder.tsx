@@ -58,6 +58,36 @@ export default function ChecklistBuilder({
 
   const [focusId, setFocusId] = useState<string | null>(null);
 
+  // ── New item creation state (define before adding) ─────────────────────────
+  const [showAddZone, setShowAddZone] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newType, setNewType] = useState<FieldType>('checkbox');
+  const newLabelRef = useRef<HTMLInputElement>(null);
+
+  const openAddZone = () => {
+    setNewLabel('');
+    setNewType('checkbox');
+    setShowAddZone(true);
+    setTimeout(() => newLabelRef.current?.focus(), 50);
+  };
+
+  const commitAdd = () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    const newId = uid();
+    setFields([...fields, { id: newId, type: newType, label }]);
+    setNewLabel('');
+    setNewType('checkbox');
+    // keep zone open for rapid entry
+    setTimeout(() => newLabelRef.current?.focus(), 50);
+  };
+
+  const cancelAdd = () => {
+    setShowAddZone(false);
+    setNewLabel('');
+    setNewType('checkbox');
+  };
+
   // ── Single flat field list, one section for DB compat ──────────────────────
   const fields: ChecklistField[] = sections[0]?.fields ?? [];
   const sectionId = sections[0]?.id ?? uid();
@@ -145,19 +175,71 @@ export default function ChecklistBuilder({
         )}
       </div>
 
-      {/* ── Add item button ─────────────────────────────────────────────── */}
-      <div className="shrink-0 px-4 py-2.5 border-b border-border-light bg-white">
-        <button
-          onClick={addField}
-          className="flex items-center gap-2.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group"
-        >
-          <span className="w-6 h-6 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-          </span>
-          Add item
-        </button>
+      {/* ── Add item button / creation zone ────────────────────────────── */}
+      <div className="shrink-0 border-b border-border-light bg-white">
+        <AnimatePresence initial={false}>
+          {showAddZone ? (
+            <motion.div key="zone" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden">
+              <div className="px-4 py-3 space-y-3">
+                {/* Label input */}
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={newLabelRef}
+                    value={newLabel}
+                    onChange={e => setNewLabel(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitAdd(); }
+                      if (e.key === 'Escape') cancelAdd();
+                    }}
+                    placeholder="Item label…"
+                    className="flex-1 input-field text-sm"
+                  />
+                  <button
+                    onClick={commitAdd}
+                    disabled={!newLabel.trim()}
+                    className="shrink-0 px-3 py-2 text-xs font-bold text-white bg-primary rounded-xl hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Add
+                  </button>
+                  <button onClick={cancelAdd}
+                    className="shrink-0 p-2 rounded-xl text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </div>
+                {/* Type picker */}
+                <div>
+                  <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Field type</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {TYPE_OPTIONS.map(({ type, label }) => (
+                      <button key={type} onClick={() => setNewType(type as FieldType)}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-semibold text-center border transition-all ${
+                          newType === type
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'bg-white text-text-secondary border-border-light hover:border-primary/50 hover:text-primary'
+                        }`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div key="btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="px-4 py-2.5">
+              <button onClick={openAddZone}
+                className="flex items-center gap-2.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group">
+                <span className="w-6 h-6 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </span>
+                Add item
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── Item list ──────────────────────────────────────────────────────── */}
@@ -171,7 +253,7 @@ export default function ChecklistBuilder({
               </svg>
             </div>
             <p className="text-sm font-semibold text-text-secondary">No items yet</p>
-            <p className="text-xs text-text-tertiary mt-1">Type above and press Enter to add your first item</p>
+            <p className="text-xs text-text-tertiary mt-1">Click &ldquo;+ Add item&rdquo; to get started</p>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -267,19 +349,6 @@ export default function ChecklistBuilder({
                       >
                         <div className="px-4 py-4 bg-slate-50/80 border-t border-border-light/50 space-y-4">
 
-                          {/* Helper text */}
-                          <div>
-                            <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">
-                              Helper text <span className="font-normal normal-case">(shown to staff below the item)</span>
-                            </label>
-                            <input
-                              value={field.description ?? ''}
-                              onChange={e => updateField(field.id, { description: e.target.value || undefined })}
-                              placeholder="e.g. Check all taps, under sink and around toilet base"
-                              className="input-field text-sm w-full"
-                            />
-                          </div>
-
                           {/* Field type */}
                           <div>
                             <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Field type</label>
@@ -298,6 +367,19 @@ export default function ChecklistBuilder({
                                 </button>
                               ))}
                             </div>
+                          </div>
+
+                          {/* Helper text */}
+                          <div>
+                            <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">
+                              Helper text <span className="font-normal normal-case">(shown to staff below the item)</span>
+                            </label>
+                            <input
+                              value={field.description ?? ''}
+                              onChange={e => updateField(field.id, { description: e.target.value || undefined })}
+                              placeholder="e.g. Check all taps, under sink and around toilet base"
+                              className="input-field text-sm w-full"
+                            />
                           </div>
 
                           {/* Required + N/A */}

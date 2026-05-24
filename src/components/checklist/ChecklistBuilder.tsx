@@ -484,13 +484,6 @@ export default function ChecklistBuilder({
       {/* ── Block list ───────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-5 py-4"
         onClick={e => { if (e.target === e.currentTarget) ghostRef.current?.focus(); }}>
-        {fields.length === 0 && !ghostValue && (
-          <div className="flex items-center gap-2 text-text-tertiary/50 py-2 pointer-events-none select-none">
-            <span className="text-sm">Press</span>
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-surface-elevated border border-border-light rounded-md">/</kbd>
-            <span className="text-sm">to insert a block</span>
-          </div>
-        )}
 
         <AnimatePresence initial={false}>
           {fields.map((field, idx) => {

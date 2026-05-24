@@ -1,635 +1,570 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChecklistField, ChecklistSection, FieldType, FIELD_TYPE_LABELS, FieldResponse } from './types';
+import { ChecklistField, ChecklistSection, FieldType, FieldResponse } from './types';
 import ChecklistRunner from './ChecklistRunner';
 
-const TYPE_OPTIONS: { type: FieldType; label: string }[] = [
-  { type: 'multiselect', label: 'Checkbox' },
-  { type: 'yesno',       label: 'Yes / No' },
-  { type: 'text',        label: 'Text answer' },
-  { type: 'photo',       label: 'Photo' },
-  { type: 'video',       label: 'Video' },
-  { type: 'date',        label: 'Date' },
-  { type: 'time',        label: 'Time' },
-  { type: 'dropdown',    label: 'Dropdown' },
-  { type: 'heading',     label: 'Heading' },
+// ─── Block type catalogue ────────────────────────────────────────────────────
+const BLOCK_TYPES: { type: FieldType; label: string; desc: string; icon: React.ReactNode }[] = [
+  { type: 'multiselect', label: 'Checkbox', desc: 'Tick one or more items', icon: <BlockIcon type="multiselect"/> },
+  { type: 'yesno',       label: 'Yes / No',     desc: 'Yes or no answer',           icon: <BlockIcon type="yesno"/> },
+  { type: 'text',        label: 'Text',          desc: 'Open-ended text response',   icon: <BlockIcon type="text"/> },
+  { type: 'photo',       label: 'Photo',         desc: 'Staff captures a photo',     icon: <BlockIcon type="photo"/> },
+  { type: 'video',       label: 'Video',         desc: 'Staff records a video',      icon: <BlockIcon type="video"/> },
+  { type: 'date',        label: 'Date',          desc: 'Date picker',                icon: <BlockIcon type="date"/> },
+  { type: 'time',        label: 'Time',          desc: 'Time picker',                icon: <BlockIcon type="time"/> },
+  { type: 'dropdown',    label: 'Dropdown',      desc: 'Single choice from a list',  icon: <BlockIcon type="dropdown"/> },
+  { type: 'heading',     label: 'Heading',       desc: 'Section title divider',      icon: <BlockIcon type="heading"/> },
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
+// ─── Type icon ───────────────────────────────────────────────────────────────
+function BlockIcon({ type }: { type: FieldType }) {
+  const cls = 'w-4 h-4 flex items-center justify-center shrink-0';
+  if (type === 'multiselect' || type === 'checkbox') return <div className={cls}><div className="w-3 h-3 rounded border-[1.5px] border-current"/></div>;
+  if (type === 'yesno')    return <div className={cls}><span className="text-[9px] font-black leading-none">Y/N</span></div>;
+  if (type === 'text')     return <div className={cls}><span className="text-[10px] font-black leading-none">T</span></div>;
+  if (type === 'photo')    return <div className={cls}><span className="text-[11px]">📷</span></div>;
+  if (type === 'video')    return <div className={cls}><span className="text-[11px]">🎥</span></div>;
+  if (type === 'date')     return <div className={cls}><span className="text-[11px]">📅</span></div>;
+  if (type === 'time')     return <div className={cls}><span className="text-[11px]">🕐</span></div>;
+  if (type === 'dropdown') return <div className={cls}><span className="text-[10px] font-bold leading-none">▾</span></div>;
+  if (type === 'heading')  return <div className={cls}><span className="text-[10px] font-black leading-none">H</span></div>;
+  return null;
+}
+
+// ─── Slash command menu ───────────────────────────────────────────────────────
+interface SlashMenuProps {
+  query: string;
+  anchorRect: DOMRect | null;
+  onSelect: (type: FieldType) => void;
+  onClose: () => void;
+}
+
+function SlashMenu({ query, anchorRect, onSelect, onClose }: SlashMenuProps) {
+  const [idx, setIdx] = useState(0);
+  const filtered = BLOCK_TYPES.filter(b =>
+    !query || b.label.toLowerCase().includes(query.toLowerCase()) || b.desc.toLowerCase().includes(query.toLowerCase())
+  );
+
+  useEffect(() => { setIdx(0); }, [query]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => Math.min(i + 1, filtered.length - 1)); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+      if (e.key === 'Enter')     { e.preventDefault(); if (filtered[idx]) onSelect(filtered[idx].type); }
+      if (e.key === 'Escape')    { e.preventDefault(); onClose(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [idx, filtered, onSelect, onClose]);
+
+  if (!anchorRect || filtered.length === 0) return null;
+
+  const top = anchorRect.bottom + window.scrollY + 4;
+  const left = Math.min(anchorRect.left + window.scrollX, window.innerWidth - 230);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+      transition={{ duration: 0.12 }}
+      className="fixed z-[999] bg-white rounded-2xl shadow-2xl border border-border-light overflow-hidden"
+      style={{ top, left, width: 220 }}
+    >
+      {query && (
+        <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold text-text-tertiary uppercase tracking-wider">
+          {filtered.length} result{filtered.length !== 1 ? 's' : ''} for "{query}"
+        </p>
+      )}
+      <div className="py-1 max-h-72 overflow-y-auto">
+        {filtered.map((b, i) => (
+          <button key={b.type}
+            onMouseDown={e => { e.preventDefault(); onSelect(b.type); }}
+            onMouseEnter={() => setIdx(i)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${i === idx ? 'bg-primary/8' : 'hover:bg-surface-elevated'}`}
+          >
+            <span className={`text-text-tertiary shrink-0 ${i === idx ? 'text-primary' : ''}`}>
+              <BlockIcon type={b.type}/>
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${i === idx ? 'text-primary' : 'text-text-primary'}`}>{b.label}</p>
+              <p className="text-[11px] text-text-tertiary">{b.desc}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Settings popover per block ───────────────────────────────────────────────
+interface SettingsPopoverProps {
+  field: ChecklistField;
+  yesNoFields: ChecklistField[];
+  onChange: (patch: Partial<ChecklistField>) => void;
+  onClose: () => void;
+  anchorRect: DOMRect | null;
+}
+
+function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: SettingsPopoverProps) {
+  const [newOpt, setNewOpt] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    setTimeout(() => window.addEventListener('mousedown', handler), 0);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  if (!anchorRect) return null;
+  const top = anchorRect.bottom + window.scrollY + 4;
+  const left = Math.min(anchorRect.right + window.scrollX - 240, window.innerWidth - 260);
+  const needsOptions = field.type === 'dropdown' || field.type === 'multiselect';
+  const hasYesNo = yesNoFields.filter(f => f.id !== field.id).length > 0;
+
+  return (
+    <motion.div ref={ref}
+      initial={{ opacity: 0, y: -4, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -4, scale: 0.97 }}
+      transition={{ duration: 0.12 }}
+      className="fixed z-[998] bg-white rounded-2xl shadow-2xl border border-border-light p-4 space-y-4"
+      style={{ top, left, width: 250 }}
+    >
+      {/* Helper text */}
+      <div>
+        <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">Helper text</label>
+        <input value={field.description ?? ''} onChange={e => onChange({ description: e.target.value || undefined })}
+          placeholder="Hint shown to staff below this field…"
+          className="input-field text-xs w-full"/>
+      </div>
+
+      {/* Required + N/A */}
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <button type="button" onClick={() => onChange({ required: !field.required })}
+            className={`relative w-8 h-4 rounded-full transition-colors ${field.required ? 'bg-primary' : 'bg-border-light'}`}>
+            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${field.required ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+          </button>
+          <span className="text-xs font-medium text-text-secondary">Required</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <button type="button" onClick={() => onChange({ allowNA: !field.allowNA })}
+            className={`relative w-8 h-4 rounded-full transition-colors ${field.allowNA ? 'bg-amber-400' : 'bg-border-light'}`}>
+            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${field.allowNA ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+          </button>
+          <span className="text-xs font-medium text-text-secondary">Allow N/A</span>
+        </label>
+      </div>
+
+      {/* Options (dropdown/multiselect) */}
+      {needsOptions && (
+        <div>
+          <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Options</label>
+          <div className="space-y-1.5 mb-2">
+            {(field.options ?? []).map((opt, oi) => (
+              <div key={oi} className="flex items-center gap-1.5">
+                <input value={opt}
+                  onChange={e => onChange({ options: (field.options ?? []).map((o, i) => i === oi ? e.target.value : o) })}
+                  className="input-field text-xs flex-1 py-1"/>
+                <button onClick={() => onChange({ options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                  className="p-1 text-text-tertiary hover:text-rose-500 transition-colors">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <input value={newOpt} onChange={e => setNewOpt(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && newOpt.trim()) { onChange({ options: [...(field.options ?? []), newOpt.trim()] }); setNewOpt(''); } }}
+              placeholder="Add option…" className="input-field text-xs flex-1 py-1"/>
+            <button onClick={() => { if (newOpt.trim()) { onChange({ options: [...(field.options ?? []), newOpt.trim()] }); setNewOpt(''); } }}
+              disabled={!newOpt.trim()}
+              className="px-2 text-xs font-semibold text-primary border border-primary/30 rounded-lg hover:bg-primary/5 disabled:opacity-30 transition-colors">+ Add</button>
+          </div>
+        </div>
+      )}
+
+      {/* Conditional logic */}
+      {hasYesNo && (
+        <div>
+          <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Only show when</label>
+          <div className="flex items-center gap-2">
+            <select value={field.conditionalOn ?? ''}
+              onChange={e => onChange({ conditionalOn: e.target.value || undefined, conditionalValue: e.target.value ? (field.conditionalValue ?? 'yes') : undefined })}
+              className="input-field text-xs flex-1">
+              <option value="">Always visible</option>
+              {yesNoFields.filter(f => f.id !== field.id).map(f => (
+                <option key={f.id} value={f.id}>{f.label || 'Untitled Yes/No'}</option>
+              ))}
+            </select>
+            {field.conditionalOn && (
+              <div className="flex rounded-lg border border-border-light overflow-hidden shrink-0">
+                {(['yes', 'no'] as const).map(v => (
+                  <button key={v} onClick={() => onChange({ conditionalValue: v })}
+                    className={`px-2.5 py-1 text-xs font-semibold transition-colors ${field.conditionalValue === v ? 'bg-primary text-white' : 'bg-white text-text-secondary hover:bg-surface-elevated'}`}>
+                    {v === 'yes' ? 'Yes' : 'No'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Main ChecklistBuilder ────────────────────────────────────────────────────
 interface ChecklistBuilderProps {
   sections: ChecklistSection[];
   onChange: (sections: ChecklistSection[]) => void;
-  initialName?: string;
+  initialName: string;
   initialIsDefault?: boolean;
+  mode?: 'client-profile' | 'template';
   saving?: boolean;
-  mode: 'client-profile' | 'schedule-panel';
-  onSave: (name: string, sections: ChecklistSection[], isDefault: boolean) => Promise<void>;
-  onSaveAsNew?: (name: string, sections: ChecklistSection[]) => Promise<void>;
-  onSaveJobOnly?: (sections: ChecklistSection[]) => void;
+  onSave: (name: string, sections: ChecklistSection[], isDefault: boolean) => void;
   onCancel?: () => void;
+  onSaveAsNew?: (name: string, sections: ChecklistSection[]) => Promise<void>;
 }
 
 export default function ChecklistBuilder({
-  sections, onChange,
-  initialName = '',
-  initialIsDefault = false,
-  saving = false,
-  mode,
-  onSave, onSaveAsNew, onSaveJobOnly, onCancel,
+  sections, onChange, initialName, initialIsDefault = false,
+  mode, saving, onSave, onCancel, onSaveAsNew,
 }: ChecklistBuilderProps) {
   const [name, setName] = useState(initialName);
   const [isDefault, setIsDefault] = useState(initialIsDefault);
-  const [addText, setAddText] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [newOption, setNewOption] = useState<string>('');
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewResponses, setPreviewResponses] = useState<FieldResponse[]>([]);
-  const [showSaveAsNew, setShowSaveAsNew] = useState(false);
-  const [saveAsNewName, setSaveAsNewName] = useState('');
 
-  const openPreview = () => { setPreviewResponses([]); setShowPreview(true); };
+  // Flat field list (single section for DB compat)
+  const fields: ChecklistField[] = useMemo(() => sections[0]?.fields ?? [], [sections]);
+  const sectionId = useMemo(() => sections[0]?.id ?? uid(), [sections]);
 
-  // Auto-focus the name input on mount
-  const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { nameRef.current?.focus(); }, []);
-
-  const [focusId, setFocusId] = useState<string | null>(null);
-
-  // ── New item creation state (define before adding) ─────────────────────────
-  const [showAddZone, setShowAddZone] = useState(false);
-  const [newLabel, setNewLabel] = useState('');
-  const [newType, setNewType] = useState<FieldType>('checkbox');
-  const [newOptions, setNewOptions] = useState<string[]>([]);
-  const [newOptionInput, setNewOptionInput] = useState('');
-  const newLabelRef = useRef<HTMLInputElement>(null);
-  const newOptionRef = useRef<HTMLInputElement>(null);
-
-  const openAddZone = () => {
-    setNewLabel('');
-    setNewType('checkbox');
-    setNewOptions([]);
-    setNewOptionInput('');
-    setShowAddZone(true);
-    setTimeout(() => newLabelRef.current?.focus(), 50);
-  };
-
-  const changeNewType = (t: FieldType) => {
-    setNewType(t);
-    setNewOptions([]);
-    setNewOptionInput('');
-    if (t === 'dropdown' || t === 'multiselect') {
-      setTimeout(() => newOptionRef.current?.focus(), 80);
-    }
-  };
-
-  const addNewOption = () => {
-    const opt = newOptionInput.trim();
-    if (!opt) return;
-    setNewOptions(prev => [...prev, opt]);
-    setNewOptionInput('');
-    setTimeout(() => newOptionRef.current?.focus(), 30);
-  };
-
-  const removeNewOption = (idx: number) => setNewOptions(prev => prev.filter((_, i) => i !== idx));
-
-  const commitAdd = () => {
-    const label = newLabel.trim();
-    if (!label) return;
-    const newId = uid();
-    const needsOptions = newType === 'dropdown' || newType === 'multiselect';
-    setFields([...fields, {
-      id: newId,
-      type: newType,
-      label,
-      options: needsOptions && newOptions.length > 0 ? newOptions : undefined,
-    }]);
-    setNewLabel('');
-    setNewType('checkbox');
-    setNewOptions([]);
-    setNewOptionInput('');
-    // keep zone open for rapid entry
-    setTimeout(() => newLabelRef.current?.focus(), 50);
-  };
-
-  const cancelAdd = () => {
-    setShowAddZone(false);
-    setNewLabel('');
-    setNewType('checkbox');
-    setNewOptions([]);
-    setNewOptionInput('');
-  };
-
-  // ── Single flat field list, one section for DB compat ──────────────────────
-  const fields: ChecklistField[] = sections[0]?.fields ?? [];
-  const sectionId = sections[0]?.id ?? uid();
-
-  const setFields = (next: ChecklistField[]) => {
+  const setFields = useCallback((next: ChecklistField[]) => {
     onChange([{ id: sectionId, title: '', fields: next }]);
-  };
+  }, [onChange, sectionId]);
 
-  // ── CRUD ───────────────────────────────────────────────────────────────────
-  const addField = () => {
-    const newId = uid();
-    setFields([...fields, { id: newId, type: 'checkbox', label: '' }]);
-    setFocusId(newId);
-  };
+  const updateField = useCallback((id: string, patch: Partial<ChecklistField>) =>
+    setFields(fields.map(f => f.id === id ? { ...f, ...patch } : f)), [fields, setFields]);
 
-  const updateField = (id: string, patch: Partial<ChecklistField>) =>
-    setFields(fields.map(f => f.id === id ? { ...f, ...patch } : f));
+  const removeField = useCallback((id: string) =>
+    setFields(fields.filter(f => f.id !== id)), [fields, setFields]);
 
-  const removeField = (id: string) => {
-    setFields(fields.filter(f => f.id !== id));
-    if (expandedId === id) setExpandedId(null);
-  };
-
-  const moveField = (idx: number, dir: -1 | 1) => {
+  const moveField = useCallback((idx: number, dir: -1 | 1) => {
     const next = [...fields];
     const target = idx + dir;
     if (target < 0 || target >= next.length) return;
     [next[idx], next[target]] = [next[target], next[idx]];
     setFields(next);
-  };
+  }, [fields, setFields]);
 
-  const addOption = (fieldId: string) => {
-    const opt = newOption.trim();
-    if (!opt) return;
-    const f = fields.find(f => f.id === fieldId);
-    if (!f) return;
-    updateField(fieldId, { options: [...(f.options ?? []), opt] });
-    setNewOption('');
-  };
+  // Add new block after a given index (or at end)
+  const addBlock = useCallback((afterIdx: number, type: FieldType = 'multiselect') => {
+    const newId = uid();
+    const next = [...fields];
+    next.splice(afterIdx + 1, 0, { id: newId, type, label: '' });
+    setFields(next);
+    return newId;
+  }, [fields, setFields]);
 
-  const yesNoFields = fields.filter(f => f.type === 'yesno');
+  const yesNoFields = useMemo(() => fields.filter(f => f.type === 'yesno'), [fields]);
+
+  // ── Slash menu state ─────────────────────────────────────────────────────
+  const [slashState, setSlashState] = useState<{
+    blockId: string;
+    prefix: string;       // text before the /
+    query: string;        // text after the /
+    anchorRect: DOMRect | null;
+  } | null>(null);
+
+  // ── Settings popover state ───────────────────────────────────────────────
+  const [settingsState, setSettingsState] = useState<{
+    blockId: string;
+    anchorRect: DOMRect | null;
+  } | null>(null);
+
+  // ── Preview modal ────────────────────────────────────────────────────────
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewResponses, setPreviewResponses] = useState<FieldResponse[]>([]);
+
+  // ── Save-as-new modal ────────────────────────────────────────────────────
+  const [showSaveAsNew, setShowSaveAsNew] = useState(false);
+  const [saveAsNewName, setSaveAsNewName] = useState('');
+
+  // Per-block input refs (for focusing after operations)
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const focusBlock = useCallback((id: string) => {
+    setTimeout(() => {
+      const el = inputRefs.current[id];
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 30);
+  }, []);
+
+  // Close slash menu on outside click
+  useEffect(() => {
+    if (!slashState) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-slash-menu]') && !target.closest('[data-block-input]')) {
+        // Restore the label to prefix (discard slash+query)
+        updateField(slashState.blockId, { label: slashState.prefix });
+        setSlashState(null);
+      }
+    };
+    setTimeout(() => window.addEventListener('mousedown', handler), 0);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [slashState, updateField]);
+
+  // ── Handle input change for a block ──────────────────────────────────────
+  const handleInputChange = useCallback((field: ChecklistField, idx: number, value: string, inputEl: HTMLInputElement | null) => {
+    // Check for slash trigger
+    const slashIdx = value.lastIndexOf('/');
+
+    if (slashState?.blockId === field.id) {
+      // Already in slash mode for this block — update query
+      const prefix = slashState.prefix;
+      if (slashIdx >= prefix.length) {
+        const query = value.slice(prefix.length + 1); // text after /
+        setSlashState(s => s ? { ...s, query } : s);
+        // Don't update field label while in slash mode
+        return;
+      } else {
+        // Slash was deleted
+        setSlashState(null);
+      }
+    }
+
+    // New slash detection — trigger on '/' at any position
+    if (value.endsWith('/') && !slashState) {
+      const prefix = value.slice(0, -1);
+      const rect = inputEl?.getBoundingClientRect() ?? null;
+      setSlashState({ blockId: field.id, prefix, query: '', anchorRect: rect });
+      // Show the slash in the input temporarily (controlled by slashState)
+      updateField(field.id, { label: value });
+      return;
+    }
+
+    updateField(field.id, { label: value });
+  }, [slashState, updateField]);
+
+  // ── Select a type from the slash menu ────────────────────────────────────
+  const selectSlashType = useCallback((type: FieldType) => {
+    if (!slashState) return;
+    const { blockId, prefix } = slashState;
+    updateField(blockId, { type, label: prefix, options: undefined, conditionalOn: undefined, conditionalValue: undefined });
+    setSlashState(null);
+    focusBlock(blockId);
+  }, [slashState, updateField, focusBlock]);
+
+  // ── Handle keydown for a block ────────────────────────────────────────────
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, field: ChecklistField, idx: number) => {
+    if (slashState?.blockId === field.id) return; // let slash menu handle keys
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const newId = addBlock(idx);
+      focusBlock(newId);
+    }
+
+    if (e.key === 'Backspace' && field.label === '') {
+      e.preventDefault();
+      removeField(field.id);
+      // Focus previous block
+      const prev = fields[idx - 1];
+      if (prev) focusBlock(prev.id);
+    }
+
+    if (e.key === 'ArrowUp' && idx > 0) {
+      const prev = fields[idx - 1];
+      if (prev) { e.preventDefault(); focusBlock(prev.id); }
+    }
+    if (e.key === 'ArrowDown' && idx < fields.length - 1) {
+      const next = fields[idx + 1];
+      if (next) { e.preventDefault(); focusBlock(next.id); }
+    }
+  }, [slashState, addBlock, removeField, fields, focusBlock]);
 
   const handleSave = () => onSave(name.trim() || 'Untitled', sections, isDefault);
-
   const handleSaveAsNew = async () => {
     await onSaveAsNew?.(saveAsNewName.trim() || 'Untitled', sections);
     setShowSaveAsNew(false);
     setSaveAsNewName('');
   };
 
-  return (
-    <div className="flex flex-col h-full min-h-0">
+  const activeField = settingsState ? fields.find(f => f.id === settingsState.blockId) : null;
 
-      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border-light bg-surface-elevated/60">
-        <input
-          ref={nameRef}
-          value={name}
-          onChange={e => setName(e.target.value)}
+  return (
+    <div className="flex flex-col h-full min-h-0" onClick={() => { if (settingsState) setSettingsState(null); }}>
+
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-border-light bg-white">
+        <input value={name} onChange={e => setName(e.target.value)}
           placeholder="Checklist name…"
-          className="input-field text-sm font-semibold flex-1 py-2"
-        />
-        {/* Preview button */}
-        <button
-          onClick={openPreview}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-light text-xs font-semibold text-text-secondary hover:text-primary hover:border-primary hover:bg-primary/5 transition-all"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
+          className="flex-1 text-sm font-bold text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0"/>
+        <button onClick={() => { setPreviewResponses([]); setShowPreview(true); }}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-light text-xs font-semibold text-text-secondary hover:text-primary hover:border-primary hover:bg-primary/5 transition-all">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
           </svg>
           Preview
         </button>
         {mode === 'client-profile' && (
           <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsDefault(v => !v)}
-              className={`relative w-9 h-5 rounded-full transition-colors ${isDefault ? 'bg-primary' : 'bg-border-light'}`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isDefault ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            <button type="button" onClick={() => setIsDefault(v => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${isDefault ? 'bg-primary' : 'bg-border-light'}`}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isDefault ? 'translate-x-4' : 'translate-x-0.5'}`}/>
             </button>
             <span className="text-xs font-semibold text-text-secondary whitespace-nowrap">Default</span>
           </label>
         )}
       </div>
 
-      {/* ── Add item button / creation zone ────────────────────────────── */}
-      <div className="shrink-0 border-b border-border-light bg-white">
-        <AnimatePresence initial={false}>
-          {showAddZone ? (
-            <motion.div key="zone" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden">
-              <div className="px-4 py-3 space-y-3">
-                {/* Label input */}
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={newLabelRef}
-                    value={newLabel}
-                    onChange={e => setNewLabel(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') { e.preventDefault(); commitAdd(); }
-                      if (e.key === 'Escape') cancelAdd();
-                    }}
-                    placeholder="Item label…"
-                    className="flex-1 input-field text-sm"
-                  />
-                  <button
-                    onClick={commitAdd}
-                    disabled={!newLabel.trim()}
-                    className="shrink-0 px-3 py-2 text-xs font-bold text-white bg-primary rounded-xl hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Add
-                  </button>
-                  <button onClick={cancelAdd}
-                    className="shrink-0 p-2 rounded-xl text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
-                </div>
-                {/* Type picker */}
-                <div>
-                  <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Field type</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {TYPE_OPTIONS.map(({ type, label }) => (
-                      <button key={type} onClick={() => changeNewType(type as FieldType)}
-                        className={`px-2 py-1.5 rounded-lg text-xs font-semibold text-center border transition-all ${
-                          newType === type
-                            ? 'bg-primary text-white border-primary shadow-sm'
-                            : 'bg-white text-text-secondary border-border-light hover:border-primary/50 hover:text-primary'
-                        }`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Conditional params based on type */}
-                <AnimatePresence initial={false}>
-                  {(newType === 'dropdown' || newType === 'multiselect') && (
-                    <motion.div key="options-editor"
-                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden">
-                      <div className="border border-border-light rounded-xl p-3 space-y-2 bg-slate-50">
-                        <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">
-                          {newType === 'multiselect' ? 'Selectable options' : 'Dropdown options'}
-                        </p>
-                        {/* Existing options */}
-                        {newOptions.map((opt, i) => (
-                          <div key={i} className="flex items-center gap-2">
-                            <span className="flex-1 text-sm text-text-primary bg-white border border-border-light rounded-lg px-3 py-1.5 truncate">{opt}</span>
-                            <button onClick={() => removeNewOption(i)}
-                              className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors">
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                            </button>
-                          </div>
-                        ))}
-                        {/* Add option input */}
-                        <div className="flex items-center gap-2">
-                          <input
-                            ref={newOptionRef}
-                            value={newOptionInput}
-                            onChange={e => setNewOptionInput(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addNewOption(); } }}
-                            placeholder="Add option…"
-                            className="flex-1 input-field text-sm py-1.5"
-                          />
-                          <button onClick={addNewOption} disabled={!newOptionInput.trim()}
-                            className="shrink-0 px-2.5 py-1.5 text-xs font-semibold text-primary border border-primary rounded-lg hover:bg-primary/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                            + Add
-                          </button>
-                        </div>
-                        {newOptions.length === 0 && (
-                          <p className="text-[11px] text-text-tertiary">Add at least one option for staff to choose from</p>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {(newType === 'photo' || newType === 'video') && (
-                    <motion.div key="media-info"
-                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden">
-                      <div className="flex items-start gap-2.5 border border-border-light rounded-xl p-3 bg-slate-50">
-                        <span className="text-lg leading-none mt-0.5">{newType === 'photo' ? '📷' : '🎥'}</span>
-                        <div>
-                          <p className="text-xs font-semibold text-text-secondary">
-                            {newType === 'photo' ? 'Staff will take or upload a photo' : 'Staff will record or upload a video'}
-                          </p>
-                          <p className="text-[11px] text-text-tertiary mt-0.5">
-                            {newType === 'photo'
-                              ? 'Captured photos are stored on the job record and visible to admins'
-                              : 'Recorded videos are stored on the job record and visible to admins'}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div key="btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="px-4 py-2.5">
-              <button onClick={openAddZone}
-                className="flex items-center gap-2.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group">
-                <span className="w-6 h-6 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                </span>
-                Add item
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* ── Item list ──────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-        {fields.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full py-12 text-center px-6">
-            <div className="w-10 h-10 rounded-2xl bg-surface-elevated flex items-center justify-center mb-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-              </svg>
-            </div>
-            <p className="text-sm font-semibold text-text-secondary">No items yet</p>
-            <p className="text-xs text-text-tertiary mt-1">Click &ldquo;+ Add item&rdquo; to get started</p>
+      {/* ── Block list ───────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-5 py-4">
+        {fields.length === 0 && (
+          <div className="flex items-center gap-2 text-text-tertiary/60 py-2 cursor-text"
+            onClick={() => { const newId = addBlock(-1); focusBlock(newId); }}>
+            <span className="text-sm">Start typing, or press</span>
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-surface-elevated border border-border-light rounded-md">/</kbd>
+            <span className="text-sm">to insert a block</span>
           </div>
-        ) : (
-          <AnimatePresence initial={false}>
-            {fields.map((field, idx) => {
-              const expanded = expandedId === field.id;
-              const needsOptions = field.type === 'dropdown' || field.type === 'multiselect';
+        )}
 
-              return (
-                <motion.div
-                  key={field.id}
-                  layout
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="border-b border-border-light/60 last:border-0"
-                >
-                  {/* ── Heading row — rendered as a section divider ── */}
-                  {field.type === 'heading' ? (
-                    <div className="flex items-center gap-3 px-4 py-2.5 group border-t-2 border-border-light/40 bg-slate-50/60">
-                      {/* Reorder */}
-                      <div className="flex flex-col gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
-                          className="text-text-tertiary hover:text-text-primary disabled:opacity-20 p-0.5">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-                        </button>
-                        <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
-                          className="text-text-tertiary hover:text-text-primary disabled:opacity-20 p-0.5">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                        </button>
-                      </div>
-                      {/* Heading icon */}
-                      <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest shrink-0">H</span>
-                      {/* Editable heading label */}
-                      <input
-                        value={field.label}
-                        onChange={e => updateField(field.id, { label: e.target.value })}
-                        placeholder="Section heading…"
-                        className="flex-1 text-sm font-bold text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0 uppercase tracking-wide"
-                      />
-                      {/* Delete */}
-                      <button onClick={() => removeField(field.id)}
-                        className="p-1.5 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                  <>
-                  {/* ── Regular field row ── */}
-                  <div className="flex items-center gap-3 px-4 py-3 group hover:bg-surface-elevated/40 transition-colors">
-                    {/* Reorder */}
-                    <div className="flex flex-col gap-0.5 shrink-0 opacity-30 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
-                        className="text-text-tertiary hover:text-text-primary disabled:opacity-20 transition-colors p-0.5">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-                      </button>
-                      <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
-                        className="text-text-tertiary hover:text-text-primary disabled:opacity-20 transition-colors p-0.5">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                      </button>
-                    </div>
+        <AnimatePresence initial={false}>
+          {fields.map((field, idx) => {
+            const isHeading = field.type === 'heading';
+            const showingSettings = settingsState?.blockId === field.id;
+            const inSlashMode = slashState?.blockId === field.id;
+            const displayValue = inSlashMode
+              ? slashState!.prefix + '/' + slashState!.query
+              : field.label;
 
-                    {/* Type icon */}
-                    <div className="w-4 h-4 rounded shrink-0 border-2 border-border-light flex items-center justify-center">
-                      <span className="text-[9px] font-bold text-text-tertiary leading-none">
-                        {field.type === 'multiselect' ? '✓' : field.type === 'yesno' ? 'Y/N' : field.type === 'photo' ? '📷' : field.type === 'text' ? 'T' : field.type === 'date' ? 'D' : field.type === 'time' ? '⏱' : field.type === 'video' ? '🎥' : field.type === 'dropdown' ? '▾' : ''}
-                      </span>
-                    </div>
+            return (
+              <motion.div key={field.id}
+                layout initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
+                className="group relative"
+              >
+                <div className={`flex items-center gap-2 py-1 rounded-xl transition-colors ${showingSettings ? 'bg-primary/4' : 'hover:bg-surface-elevated/60'} ${isHeading ? 'pt-4 pb-1' : ''}`}>
 
-                    {/* Label */}
-                    <input
-                      autoFocus={focusId === field.id}
-                      value={field.label}
-                      onChange={e => updateField(field.id, { label: e.target.value })}
-                      onFocus={() => setFocusId(null)}
-                      placeholder="Item label…"
-                      className="flex-1 text-sm text-text-primary placeholder-text-tertiary bg-transparent outline-none min-w-0"
-                    />
-
-                    {/* Badges */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {field.type !== 'multiselect' && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 whitespace-nowrap">
-                          {FIELD_TYPE_LABELS[field.type]}
-                        </span>
-                      )}
-                      {field.required && (
-                        <span className="text-[10px] font-bold text-rose-400">Required</span>
-                      )}
-                      {field.conditionalOn && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 whitespace-nowrap">Conditional</span>
-                      )}
-                    </div>
-
-                    {/* Settings toggle */}
-                    <button
-                      onClick={() => setExpandedId(expanded ? null : field.id)}
-                      className={`p-1.5 rounded-lg transition-colors shrink-0 ${expanded ? 'bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                        className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>
-                        <polyline points="6 9 12 15 18 9"/>
-                      </svg>
+                  {/* Drag / reorder handles — visible on hover */}
+                  <div className="flex flex-col gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-5">
+                    <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
+                      className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
                     </button>
+                    <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
+                      className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                  </div>
 
-                    {/* Delete */}
+                  {/* Type icon — clickable to open slash menu on this block */}
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                      setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
+                      focusBlock(field.id);
+                    }}
+                    className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
+                    title="Change block type"
+                  >
+                    <BlockIcon type={field.type}/>
+                  </button>
+
+                  {/* Label input */}
+                  <input
+                    ref={el => { inputRefs.current[field.id] = el; }}
+                    data-block-input
+                    value={displayValue}
+                    onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
+                    onKeyDown={e => handleKeyDown(e, field, idx)}
+                    onFocus={() => setSettingsState(null)}
+                    placeholder={
+                      isHeading ? 'Section heading…' :
+                      field.type === 'multiselect' ? 'Checkbox item…' :
+                      field.type === 'yesno' ? 'Yes / No question…' :
+                      field.type === 'text' ? 'Text question…' :
+                      field.type === 'photo' ? 'Photo caption…' :
+                      field.type === 'video' ? 'Video caption…' :
+                      field.type === 'dropdown' ? 'Dropdown question…' :
+                      'Label…'
+                    }
+                    className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
+                      isHeading
+                        ? 'text-sm font-bold uppercase tracking-wider'
+                        : 'text-sm'
+                    }`}
+                  />
+
+                  {/* Badges */}
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
+                    {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
+                  </div>
+
+                  {/* Settings ⋯ */}
+                  {!isHeading && (
                     <button
-                      onClick={() => removeField(field.id)}
-                      className="p-1.5 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (showingSettings) { setSettingsState(null); return; }
+                        const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                        setSettingsState({ blockId: field.id, anchorRect: rect });
+                      }}
+                      className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+                        <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
                       </svg>
                     </button>
-                  </div>
-                  </>
                   )}
 
-                  {/* ── Expanded settings ── */}
-                  <AnimatePresence>
-                    {expanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="px-4 py-4 bg-slate-50/80 border-t border-border-light/50 space-y-4">
+                  {/* Delete */}
+                  <button onClick={() => removeField(field.id)}
+                    className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
 
-                          {/* Field type */}
-                          <div>
-                            <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Field type</label>
-                            <div className="grid grid-cols-3 gap-1.5">
-                              {TYPE_OPTIONS.map(({ type, label }) => (
-                                <button
-                                  key={type}
-                                  onClick={() => updateField(field.id, { type, options: undefined, conditionalOn: undefined, conditionalValue: undefined })}
-                                  className={`px-2 py-2 rounded-xl text-xs font-semibold text-center border transition-all ${
-                                    field.type === type
-                                      ? 'bg-primary text-white border-primary shadow-sm'
-                                      : 'bg-white text-text-secondary border-border-light hover:border-primary/50 hover:text-primary'
-                                  }`}
-                                >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                {/* Heading separator line */}
+                {isHeading && (
+                  <div className="ml-6 h-px bg-border-light mb-2"/>
+                )}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
 
-                          {/* Helper text */}
-                          <div>
-                            <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">
-                              Helper text <span className="font-normal normal-case">(shown to staff below the item)</span>
-                            </label>
-                            <input
-                              value={field.description ?? ''}
-                              onChange={e => updateField(field.id, { description: e.target.value || undefined })}
-                              placeholder="e.g. Check all taps, under sink and around toilet base"
-                              className="input-field text-sm w-full"
-                            />
-                          </div>
-
-                          {/* Required + N/A */}
-                          <div className="flex items-center gap-6">
-                            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                              <button
-                                type="button"
-                                onClick={() => updateField(field.id, { required: !field.required })}
-                                className={`relative w-9 h-5 rounded-full transition-colors ${field.required ? 'bg-primary' : 'bg-border-light'}`}
-                              >
-                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${field.required ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                              </button>
-                              <span className="text-sm font-medium text-text-secondary">Required</span>
-                            </label>
-                            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                              <button
-                                type="button"
-                                onClick={() => updateField(field.id, { allowNA: !field.allowNA })}
-                                className={`relative w-9 h-5 rounded-full transition-colors ${field.allowNA ? 'bg-amber-400' : 'bg-border-light'}`}
-                              >
-                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${field.allowNA ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                              </button>
-                              <span className="text-sm font-medium text-text-secondary">Allow N/A</span>
-                            </label>
-                          </div>
-
-                          {/* Dropdown / multiselect options */}
-                          {needsOptions && (
-                            <div>
-                              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Options</label>
-                              <div className="space-y-1.5 mb-2">
-                                {(field.options ?? []).map((opt, oi) => (
-                                  <div key={oi} className="flex items-center gap-2">
-                                    <input
-                                      value={opt}
-                                      onChange={e => updateField(field.id, { options: (field.options ?? []).map((o, i) => i === oi ? e.target.value : o) })}
-                                      className="input-field text-sm flex-1"
-                                    />
-                                    <button
-                                      onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
-                                      className="p-1.5 text-text-tertiary hover:text-rose-500 transition-colors"
-                                    >
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex gap-2">
-                                <input
-                                  value={newOption}
-                                  onChange={e => setNewOption(e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOption(field.id); } }}
-                                  placeholder="Add option…"
-                                  className="input-field text-sm flex-1"
-                                />
-                                <button onClick={() => addOption(field.id)}
-                                  className="px-3 text-sm font-semibold text-primary border border-primary/30 rounded-xl hover:bg-primary/5 transition-colors">
-                                  Add
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Conditional logic */}
-                          {yesNoFields.filter(f => f.id !== field.id).length > 0 && (
-                            <div>
-                              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Only show when</label>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <select
-                                  value={field.conditionalOn ?? ''}
-                                  onChange={e => updateField(field.id, {
-                                    conditionalOn: e.target.value || undefined,
-                                    conditionalValue: e.target.value ? (field.conditionalValue ?? 'yes') : undefined,
-                                  })}
-                                  className="input-field text-sm flex-1 min-w-[140px]"
-                                >
-                                  <option value="">Always visible</option>
-                                  {yesNoFields.filter(f => f.id !== field.id).map(f => (
-                                    <option key={f.id} value={f.id}>{f.label || 'Untitled Yes/No'}</option>
-                                  ))}
-                                </select>
-                                {field.conditionalOn && (
-                                  <div className="flex rounded-xl border border-border-light overflow-hidden shrink-0">
-                                    {(['yes', 'no'] as const).map(v => (
-                                      <button key={v}
-                                        onClick={() => updateField(field.id, { conditionalValue: v })}
-                                        className={`px-4 py-2 text-sm font-semibold transition-colors ${field.conditionalValue === v ? 'bg-primary text-white' : 'bg-white text-text-secondary hover:bg-surface-elevated'}`}>
-                                        {v === 'yes' ? 'Yes' : 'No'}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+        {/* "Add block" hint at bottom */}
+        {fields.length > 0 && (
+          <button
+            onClick={() => { const newId = addBlock(fields.length - 1); focusBlock(newId); }}
+            className="flex items-center gap-2 mt-3 text-text-tertiary/50 hover:text-text-tertiary text-xs transition-colors group/add"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>Add block  ·  Type <kbd className="px-1 py-0.5 text-[10px] font-mono bg-surface-elevated border border-border-light rounded">/</kbd> to insert a specific type</span>
+          </button>
         )}
       </div>
 
-      {/* ── Save bar ───────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-t border-border-light p-4 bg-white flex gap-2">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {saving
-            ? <svg width="14" height="14" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            : null
-          }
-          Save Checklist
+      {/* ── Bottom action bar ─────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-t border-border-light bg-surface-elevated/60">
+        <button onClick={handleSave} disabled={saving}
+          className="btn-primary text-sm px-5 disabled:opacity-50 flex items-center gap-2">
+          {saving && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>}
+          {saving ? 'Saving…' : 'Save'}
         </button>
         {onSaveAsNew && (
           <button onClick={() => setShowSaveAsNew(true)} disabled={saving}
@@ -642,34 +577,37 @@ export default function ChecklistBuilder({
         )}
       </div>
 
-      {/* ── Save-as-new modal ──────────────────────────────────────────────── */}
+      {/* ── Slash command menu (portal) ───────────────────────────────────── */}
       <AnimatePresence>
-        {showSaveAsNew && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
-              <h3 className="text-sm font-bold text-text-primary mb-1">Name this checklist</h3>
-              <p className="text-xs text-text-secondary mb-4">Saves a copy without changing the original.</p>
-              <input
-                autoFocus
-                value={saveAsNewName}
-                onChange={e => setSaveAsNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveAsNew(); if (e.key === 'Escape') setShowSaveAsNew(false); }}
-                placeholder="e.g. Deep Clean, End of Lease…"
-                className="input-field text-sm w-full mb-4"
-              />
-              <div className="flex gap-2">
-                <button onClick={handleSaveAsNew} disabled={!saveAsNewName.trim() || saving}
-                  className="btn-primary text-sm flex-1 disabled:opacity-50">Save</button>
-                <button onClick={() => setShowSaveAsNew(false)} className="btn-ghost text-sm px-4">Cancel</button>
-              </div>
-            </motion.div>
-          </motion.div>
+        {slashState && (
+          <div data-slash-menu>
+            <SlashMenu
+              query={slashState.query}
+              anchorRect={slashState.anchorRect}
+              onSelect={selectSlashType}
+              onClose={() => {
+                updateField(slashState.blockId, { label: slashState.prefix });
+                setSlashState(null);
+              }}
+            />
+          </div>
         )}
       </AnimatePresence>
 
-      {/* ── Preview modal ───────────────────────────────────────────────────── */}
+      {/* ── Settings popover ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {settingsState && activeField && (
+          <SettingsPopover
+            field={activeField}
+            yesNoFields={yesNoFields}
+            onChange={patch => updateField(settingsState.blockId, patch)}
+            onClose={() => setSettingsState(null)}
+            anchorRect={settingsState.anchorRect}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Preview modal ─────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showPreview && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -678,7 +616,6 @@ export default function ChecklistBuilder({
             <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
               className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
               style={{ height: '85vh' }}>
-              {/* Preview header */}
               <div className="shrink-0 flex items-center justify-between px-5 py-3.5 border-b border-border-light bg-slate-50">
                 <div>
                   <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Staff Preview</p>
@@ -686,22 +623,34 @@ export default function ChecklistBuilder({
                 </div>
                 <button onClick={() => setShowPreview(false)}
                   className="p-2 rounded-xl text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 6L6 18M6 6l12 12"/>
-                  </svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
-              {/* Runner — staff view, responses are local preview only */}
               <div className="flex-1 min-h-0 overflow-hidden">
-                <ChecklistRunner
-                  sections={sections}
-                  responses={previewResponses}
-                  onChange={setPreviewResponses}
-                  onSubmit={async () => { setShowPreview(false); }}
-                  orgId="preview"
-                  completionId={null}
-                  isAdmin={false}
-                />
+                <ChecklistRunner sections={sections} responses={previewResponses} onChange={setPreviewResponses}
+                  onSubmit={async () => setShowPreview(false)} orgId="preview" completionId={null} isAdmin={false}/>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Save-as-new modal ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showSaveAsNew && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+              <h3 className="text-sm font-bold text-text-primary mb-1">Name this checklist</h3>
+              <p className="text-xs text-text-secondary mb-4">Saves a copy without changing the original.</p>
+              <input autoFocus value={saveAsNewName} onChange={e => setSaveAsNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveAsNew(); if (e.key === 'Escape') setShowSaveAsNew(false); }}
+                placeholder="e.g. Deep Clean, End of Lease…" className="input-field text-sm w-full mb-4"/>
+              <div className="flex gap-2">
+                <button onClick={handleSaveAsNew} disabled={!saveAsNewName.trim() || saving}
+                  className="btn-primary text-sm flex-1 disabled:opacity-50">Save</button>
+                <button onClick={() => setShowSaveAsNew(false)} className="btn-ghost text-sm px-4">Cancel</button>
               </div>
             </motion.div>
           </motion.div>

@@ -252,6 +252,7 @@ interface SortableBlockProps {
   isDragging: boolean;
   updateField: (id: string, patch: Partial<ChecklistField>) => void;
   removeField: (id: string) => void;
+  addBlock: (afterIdx: number, type?: FieldType) => string;
   handleInputChange: (field: ChecklistField, idx: number, val: string, el: HTMLInputElement | null) => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, field: ChecklistField, idx: number) => void;
   setSettingsState: (s: { blockId: string; anchorRect: DOMRect | null } | null) => void;
@@ -261,7 +262,7 @@ interface SortableBlockProps {
 
 function SortableBlock({
   field, idx, fields, settingsState, slashState, inputRefs, isDragging,
-  updateField, removeField, handleInputChange, handleKeyDown,
+  updateField, removeField, addBlock, handleInputChange, handleKeyDown,
   setSettingsState, setSlashState, focusBlock,
 }: SortableBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: field.id });
@@ -321,13 +322,13 @@ function SortableBlock({
       {/* Regular / Heading blocks */}
       {!isLogic && (
         <>
-          <div className={`flex items-center gap-2 py-1 rounded-xl transition-all ${
+          <div className={`flex items-center gap-1.5 py-1 rounded-xl transition-all ${
             showingSettings ? 'bg-primary/4' :
             (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
             'hover:bg-surface-elevated/60'
           } ${isHeading ? 'pt-4 pb-1' : ''}`}>
 
-            {/* ⋮⋮ Drag handle — visible on hover */}
+            {/* ⋮⋮ Drag handle */}
             <div
               {...attributes} {...listeners}
               className="shrink-0 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity -ml-5 p-1 text-text-tertiary hover:text-text-secondary"
@@ -340,7 +341,27 @@ function SortableBlock({
               </svg>
             </div>
 
-            {/* Type icon — clickable to open slash menu */}
+            {/* ⋯ Settings — left of type icon */}
+            {!isHeading && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  if (showingSettings) { setSettingsState(null); return; }
+                  const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                  setSettingsState({ blockId: field.id, anchorRect: rect });
+                }}
+                className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
+                  showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'
+                }`}
+                title="Field settings"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+                </svg>
+              </button>
+            )}
+
+            {/* Type icon */}
             <button
               onClick={e => {
                 e.stopPropagation();
@@ -388,28 +409,33 @@ function SortableBlock({
               {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
             </div>
 
-            {/* Settings ⋯ */}
-            {!isHeading && (
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  if (showingSettings) { setSettingsState(null); return; }
-                  const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                  setSettingsState({ blockId: field.id, anchorRect: rect });
-                }}
-                className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
-                </svg>
-              </button>
-            )}
+            {/* + Insert below — opens slash menu below this block */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                const newId = addBlock(idx, 'text');
+                const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                setSlashState({ blockId: newId, prefix: '', query: '', anchorRect: rect });
+                setTimeout(() => focusBlock(newId), 20);
+              }}
+              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-primary hover:bg-primary/8 transition-colors opacity-0 group-hover:opacity-100"
+              title="Insert block below"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
 
-            {/* Delete */}
+            {/* 🗑 Delete */}
             <button onClick={() => removeField(field.id)}
-              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+              title="Delete block"
+            >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M18 6L6 18M6 6l12 12"/>
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/>
+                <path d="M9 6V4h6v2"/>
               </svg>
             </button>
           </div>
@@ -993,6 +1019,7 @@ export default function ChecklistBuilder({
                   isDragging={draggingId === field.id}
                   updateField={updateField}
                   removeField={removeField}
+                  addBlock={addBlock}
                   handleInputChange={handleInputChange}
                   handleKeyDown={handleKeyDown}
                   setSettingsState={setSettingsState}

@@ -1,17 +1,18 @@
 // ─── Field types ─────────────────────────────────────────────────────────────
 export type FieldType =
-  | 'heading'     // visual section title / divider
-  | 'paragraph'   // plain body text for staff to read
-  | 'logic'       // conditional logic rule block
-  | 'checkbox'    // simple tick item
-  | 'text'        // open text input
-  | 'yesno'       // Yes / No toggle
-  | 'dropdown'    // single-select from admin-defined options
-  | 'multiselect' // multi-select from admin-defined options
-  | 'date'        // date picker
-  | 'time'        // time picker
-  | 'photo'       // image upload
-  | 'video';      // video upload
+  | 'heading'       // visual section title / divider
+  | 'paragraph'     // plain body text for staff to read
+  | 'logic'         // conditional logic rule block
+  | 'checkbox'      // simple tick item
+  | 'text'          // open text input
+  | 'yesno'         // Yes / No toggle
+  | 'dropdown'      // single-select from admin-defined options
+  | 'multiselect'   // multi-select checkbox list (all options expanded)
+  | 'multidropdown' // multi-select dropdown (collapsed picker with chips)
+  | 'date'          // date picker
+  | 'time'          // time picker
+  | 'photo'         // image upload
+  | 'video';        // video upload
 
 // Condition for a logic block
 export interface LogicCondition {
@@ -28,7 +29,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   text: 'Open Text',
   yesno: 'Yes / No',
   dropdown: 'Dropdown',
-  multiselect: 'Checkbox',
+  multiselect: 'Checkbox List',
+  multidropdown: 'Multi-select',
   date: 'Date',
   time: 'Time',
   photo: 'Photo',
@@ -37,13 +39,14 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   logic: '⚡',
-  heading: '𝖴',
+  heading: 'H',
   paragraph: '📝',
   checkbox: '☑',
   text: '📝',
   yesno: '👍',
   dropdown: '🔽',
   multiselect: '☰',
+  multidropdown: '🔲',
   date: '📅',
   time: '🕐',
   photo: '📷',

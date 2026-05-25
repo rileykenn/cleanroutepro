@@ -17,17 +17,18 @@ import ChecklistRunner from './ChecklistRunner';
 
 // ─── Block type catalogue ────────────────────────────────────────────────────
 const BLOCK_TYPES: { type: FieldType; label: string; desc: string; icon: React.ReactNode }[] = [
-  { type: 'paragraph',   label: 'Text',       desc: 'Body text for staff to read',      icon: <BlockIcon type="paragraph"/> },
-  { type: 'multiselect', label: 'Checkbox',   desc: 'Tick one or more items',           icon: <BlockIcon type="multiselect"/> },
-  { type: 'yesno',       label: 'Yes / No',   desc: 'Yes or no answer',                 icon: <BlockIcon type="yesno"/> },
-  { type: 'text',        label: 'Response',   desc: 'Open-ended text response',         icon: <BlockIcon type="text"/> },
-  { type: 'photo',       label: 'Photo',      desc: 'Staff captures a photo',           icon: <BlockIcon type="photo"/> },
-  { type: 'video',       label: 'Video',      desc: 'Staff records a video',            icon: <BlockIcon type="video"/> },
-  { type: 'date',        label: 'Date',       desc: 'Date picker',                      icon: <BlockIcon type="date"/> },
-  { type: 'time',        label: 'Time',       desc: 'Time picker',                      icon: <BlockIcon type="time"/> },
-  { type: 'dropdown',    label: 'Dropdown',   desc: 'Single choice from a list',        icon: <BlockIcon type="dropdown"/> },
-  { type: 'heading',     label: 'Heading',    desc: 'Section title divider',            icon: <BlockIcon type="heading"/> },
-  { type: 'logic',       label: 'Logic',      desc: 'Show/hide blocks based on answers', icon: <span className="text-[13px]">⚡</span> },
+  { type: 'paragraph',     label: 'Text',          desc: 'Body text for staff to read',        icon: <BlockIcon type="paragraph"/> },
+  { type: 'multiselect',   label: 'Checkbox',      desc: 'Tick one or more items',             icon: <BlockIcon type="multiselect"/> },
+  { type: 'yesno',         label: 'Yes / No',      desc: 'Yes or no answer',                   icon: <BlockIcon type="yesno"/> },
+  { type: 'text',          label: 'Response',      desc: 'Open-ended text response',           icon: <BlockIcon type="text"/> },
+  { type: 'photo',         label: 'Photo',         desc: 'Staff captures a photo',             icon: <BlockIcon type="photo"/> },
+  { type: 'video',         label: 'Video',         desc: 'Staff records a video',              icon: <BlockIcon type="video"/> },
+  { type: 'date',          label: 'Date',          desc: 'Date picker',                        icon: <BlockIcon type="date"/> },
+  { type: 'time',          label: 'Time',          desc: 'Time picker',                        icon: <BlockIcon type="time"/> },
+  { type: 'dropdown',      label: 'Dropdown',      desc: 'Single choice from a list',          icon: <BlockIcon type="dropdown"/> },
+  { type: 'multidropdown', label: 'Multi-select',  desc: 'Pick multiple from a dropdown',      icon: <BlockIcon type="multidropdown"/> },
+  { type: 'heading',       label: 'Heading',       desc: 'Section title divider',              icon: <BlockIcon type="heading"/> },
+  { type: 'logic',         label: 'Logic',         desc: 'Show/hide blocks based on answers',  icon: <span className="text-[13px]">⚡</span> },
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -42,6 +43,15 @@ function BlockIcon({ type }: { type: FieldType }) {
         <line x1="8" y1="3.5" x2="15" y2="3.5"/>
         <rect x="1" y="9" width="5" height="5" rx="1"/>
         <line x1="8" y1="11.5" x2="15" y2="11.5"/>
+      </svg>
+    </div>
+  );
+  if (type === 'multidropdown') return (
+    <div className={cls}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="1" y="2" width="14" height="5" rx="1.5"/>
+        <polyline points="5 11 8 14 11 11"/>
+        <line x1="8" y1="14" x2="8" y2="9"/>
       </svg>
     </div>
   );
@@ -100,17 +110,21 @@ function SlashMenu({ query, anchorRect, onSelect, onClose }: SlashMenuProps) {
 
   if (!anchorRect || filtered.length === 0) return null;
 
-  const top = anchorRect.bottom + window.scrollY + 4;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+  const flipUp = spaceBelow < 320; // not enough room below → open above
   const left = Math.min(anchorRect.left + window.scrollX, window.innerWidth - 230);
+  const posStyle = flipUp
+    ? { bottom: window.innerHeight - anchorRect.top + 4, left, width: 220 }
+    : { top: anchorRect.bottom + window.scrollY + 4, left, width: 220 };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -6, scale: 0.97 }}
+      initial={{ opacity: 0, y: flipUp ? 6 : -6, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -6, scale: 0.97 }}
+      exit={{ opacity: 0, y: flipUp ? 6 : -6, scale: 0.97 }}
       transition={{ duration: 0.12 }}
       className="fixed z-[999] bg-white rounded-2xl shadow-2xl border border-border-light overflow-hidden"
-      style={{ top, left, width: 220 }}
+      style={posStyle}
     >
       {query && (
         <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold text-text-tertiary uppercase tracking-wider">
@@ -160,20 +174,24 @@ function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: 
   }, [onClose]);
 
   if (!anchorRect) return null;
-  const top = anchorRect.bottom + window.scrollY + 4;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+  const flipUp = spaceBelow < 360; // not enough room below → open above
   const left = Math.min(anchorRect.right + window.scrollX - 240, window.innerWidth - 260);
-  const needsOptions = field.type === 'dropdown' || field.type === 'multiselect';
+  const posStyle = flipUp
+    ? { bottom: window.innerHeight - anchorRect.top + 4, left, width: 250 }
+    : { top: anchorRect.bottom + window.scrollY + 4, left, width: 250 };
+  const needsOptions = field.type === 'dropdown' || field.type === 'multiselect' || field.type === 'multidropdown';
   const hasYesNo = yesNoFields.filter(f => f.id !== field.id).length > 0;
 
   return (
     <motion.div ref={ref}
-      initial={{ opacity: 0, y: -4, scale: 0.97 }}
+      initial={{ opacity: 0, y: flipUp ? 4 : -4, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -4, scale: 0.97 }}
+      exit={{ opacity: 0, y: flipUp ? 4 : -4, scale: 0.97 }}
       transition={{ duration: 0.12 }}
       onClick={e => e.stopPropagation()}
       className="fixed z-[998] bg-white rounded-2xl shadow-2xl border border-border-light p-4 space-y-4"
-      style={{ top, left, width: 250 }}
+      style={posStyle}
     >
       {/* Helper text */}
       <div>
@@ -447,6 +465,7 @@ function SortableBlock({
                   isHeading ? 'Section heading…' :
                   field.type === 'paragraph' ? 'Body text…' :
                   field.type === 'multiselect' ? 'Checkbox title…' :
+                  field.type === 'multidropdown' ? 'Multi-select title…' :
                   field.type === 'yesno' ? 'Yes / No question…' :
                   field.type === 'text' ? 'Text question…' :
                   field.type === 'photo' ? 'Photo caption…' :
@@ -470,8 +489,8 @@ function SortableBlock({
               </div>
             </div>
 
-            {/* ── Inline options (multiselect / dropdown) — naturally aligned under label ── */}
-            {(field.type === 'multiselect' || field.type === 'dropdown') && (
+            {/* ── Inline options (multiselect / multidropdown / dropdown) ── */}
+            {(field.type === 'multiselect' || field.type === 'dropdown' || field.type === 'multidropdown') && (
               <div className="mt-1 mb-1 space-y-0.5">
                 {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
                   <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
@@ -489,7 +508,11 @@ function SortableBlock({
                     )}
                     {field.type === 'multiselect'
                       ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
-                      : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
+                      : field.type === 'multidropdown'
+                        ? <div className="shrink-0 w-3.5 h-3.5 rounded-sm border border-primary/40 bg-primary/5 flex items-center justify-center">
+                            <svg width="7" height="7" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="2 4 5 7 8 4"/></svg>
+                          </div>
+                        : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
                     }
                     <input
                       value={opt}
@@ -582,7 +605,7 @@ function getOperatorsFor(src: ChecklistField | undefined) {
 function getValueOptions(src: ChecklistField | undefined, op: string): string[] | null {
   if (!src || op === 'is_answered' || op === 'is_empty') return null;
   if (src.type === 'yesno') return ['yes', 'no'];
-  if ((src.type === 'multiselect' || src.type === 'dropdown') && src.options?.length) return src.options;
+  if ((src.type === 'multiselect' || src.type === 'multidropdown' || src.type === 'dropdown') && src.options?.length) return src.options;
   return null; // free-text input
 }
 

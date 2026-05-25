@@ -1,8 +1,97 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { ChecklistField, FieldResponse } from './types';
 import { createClient } from '@/lib/supabase/client';
+
+// ─── Multi-select dropdown (extracted to avoid hooks-in-switch) ───────────────
+function MultiDropdownInput({
+  field, selected, readOnly, fieldDisabled, onToggle,
+}: {
+  field: ChecklistField;
+  selected: string[];
+  readOnly: boolean;
+  fieldDisabled: boolean;
+  onToggle: (opt: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={dropRef}>
+      {/* Trigger — div with role=combobox avoids nested <button> inside <button> */}
+      <div
+        role="combobox"
+        aria-expanded={open}
+        tabIndex={fieldDisabled ? -1 : 0}
+        onClick={() => !fieldDisabled && setOpen(o => !o)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!fieldDisabled) setOpen(o => !o); } }}
+        className={`w-full min-h-[48px] px-3 py-2 rounded-xl border-2 text-left transition-all flex items-center gap-2 flex-wrap cursor-pointer select-none ${
+          fieldDisabled ? 'opacity-40 pointer-events-none' : ''
+        } ${
+          open ? 'border-primary bg-primary/5' : 'border-border-light bg-white hover:border-primary/50'
+        }`}
+      >
+        {selected.length === 0 ? (
+          <span className="text-sm text-text-tertiary">Select options…</span>
+        ) : (
+          selected.map(s => (
+            <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+              {s}
+              {!readOnly && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={e => { e.stopPropagation(); onToggle(s); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onToggle(s); } }}
+                  className="cursor-pointer hover:text-rose-500 transition-colors leading-none"
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </span>
+              )}
+            </span>
+          ))
+        )}
+        <svg className="ml-auto shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points={open ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}/>
+        </svg>
+      </div>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-30 w-full bg-white rounded-xl shadow-xl border border-border-light py-1.5 max-h-52 overflow-y-auto">
+          {(field.options || []).map(opt => {
+            const checked = selected.includes(opt);
+            return (
+              <button key={opt} type="button"
+                onClick={() => onToggle(opt)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left transition-colors ${
+                  checked ? 'bg-primary/10 text-primary' : 'text-text-primary hover:bg-surface-elevated'
+                }`}
+              >
+                <div className={`shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
+                  checked ? 'bg-primary border-primary' : 'border-gray-300'
+                }`}>
+                  {checked && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                </div>
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 interface ChecklistFieldInputProps {
   field: ChecklistField;
@@ -155,6 +244,24 @@ export default function ChecklistFieldInput({ field, response, onChange, orgId, 
               );
             })}
           </div>
+        );
+      }
+
+      case 'multidropdown': {
+        const selected: string[] = (response.value as string[]) || [];
+        const toggle = (opt: string) => {
+          if (readOnly || fieldDisabled) return;
+          const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
+          update({ value: next.length ? next : null });
+        };
+        return (
+          <MultiDropdownInput
+            field={field}
+            selected={selected}
+            readOnly={readOnly ?? false}
+            fieldDisabled={fieldDisabled}
+            onToggle={toggle}
+          />
         );
       }
 

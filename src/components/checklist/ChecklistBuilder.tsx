@@ -808,6 +808,84 @@ export default function ChecklistBuilder({
                       </button>
                     </div>
 
+                    {/* ── Inline options editor (multiselect / dropdown) ── */}
+                    {(field.type === 'multiselect' || field.type === 'dropdown') && (
+                      <div className="ml-6 mt-1 mb-1 space-y-0.5">
+                        {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
+                          <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
+                            {/* Visual checkbox / radio hint */}
+                            {field.type === 'multiselect'
+                              ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
+                              : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
+                            }
+                            <input
+                              value={opt}
+                              placeholder={`Option ${oi + 1}`}
+                              onChange={e => {
+                                const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                                opts[oi] = e.target.value;
+                                updateField(field.id, { options: opts });
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' || e.key === 'Tab') {
+                                  e.preventDefault();
+                                  const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                                  if (oi === opts.length - 1) {
+                                    // add new option below
+                                    opts.push('');
+                                    updateField(field.id, { options: opts });
+                                    setTimeout(() => {
+                                      const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                                      (inputs[oi + 1] as HTMLInputElement)?.focus();
+                                    }, 20);
+                                  } else {
+                                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                                    (inputs[oi + 1] as HTMLInputElement)?.focus();
+                                  }
+                                }
+                                if (e.key === 'Backspace' && opt === '') {
+                                  e.preventDefault();
+                                  const opts = (field.options ?? ['Option 1']).filter((_, i) => i !== oi);
+                                  updateField(field.id, { options: opts.length ? opts : [''] });
+                                  setTimeout(() => {
+                                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                                    (inputs[Math.max(0, oi - 1)] as HTMLInputElement)?.focus();
+                                  }, 20);
+                                }
+                              }}
+                              data-opt-field={field.id}
+                              className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
+                            />
+                            {/* Delete option */}
+                            {(field.options?.length ?? 0) > 1 && (
+                              <button
+                                onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                                className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {/* Add option */}
+                        <button
+                          onClick={() => {
+                            const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                            opts.push('');
+                            updateField(field.id, { options: opts });
+                            setTimeout(() => {
+                              const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                              (inputs[opts.length - 1] as HTMLInputElement)?.focus();
+                            }, 20);
+                          }}
+                          className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-text-tertiary/60 hover:text-primary transition-colors"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          Add option
+                        </button>
+                      </div>
+                    )}
+
                     {/* Heading separator line */}
                     {isHeading && (
                       <div className="ml-6 h-px bg-border-light mb-2"/>

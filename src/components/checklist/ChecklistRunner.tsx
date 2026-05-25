@@ -248,6 +248,15 @@ export default function ChecklistRunner({
 
               <div className="space-y-4">
                 {visibleSectionFields.map(field => {
+                  // Paragraph — plain readable body text, no input
+                  if (field.type === 'paragraph') {
+                    return (
+                      <p key={field.id} className="text-sm text-text-secondary leading-relaxed py-0.5">
+                        {field.label}
+                      </p>
+                    );
+                  }
+
                   // Heading — renders as a section divider, not an interactive field
                   if (field.type === 'heading') {
                     return (

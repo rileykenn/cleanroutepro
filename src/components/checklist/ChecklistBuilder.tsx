@@ -16,15 +16,16 @@ import ChecklistRunner from './ChecklistRunner';
 
 // ─── Block type catalogue ────────────────────────────────────────────────────
 const BLOCK_TYPES: { type: FieldType; label: string; desc: string; icon: React.ReactNode }[] = [
-  { type: 'multiselect', label: 'Checkbox',  desc: 'Tick one or more items',          icon: <BlockIcon type="multiselect"/> },
-  { type: 'yesno',       label: 'Yes / No',  desc: 'Yes or no answer',                icon: <BlockIcon type="yesno"/> },
-  { type: 'text',        label: 'Text',       desc: 'Open-ended text response',        icon: <BlockIcon type="text"/> },
-  { type: 'photo',       label: 'Photo',      desc: 'Staff captures a photo',          icon: <BlockIcon type="photo"/> },
-  { type: 'video',       label: 'Video',      desc: 'Staff records a video',           icon: <BlockIcon type="video"/> },
-  { type: 'date',        label: 'Date',       desc: 'Date picker',                     icon: <BlockIcon type="date"/> },
-  { type: 'time',        label: 'Time',       desc: 'Time picker',                     icon: <BlockIcon type="time"/> },
-  { type: 'dropdown',    label: 'Dropdown',   desc: 'Single choice from a list',       icon: <BlockIcon type="dropdown"/> },
-  { type: 'heading',     label: 'Heading',    desc: 'Section title divider',           icon: <BlockIcon type="heading"/> },
+  { type: 'paragraph',   label: 'Text',       desc: 'Body text for staff to read',      icon: <BlockIcon type="paragraph"/> },
+  { type: 'multiselect', label: 'Checkbox',   desc: 'Tick one or more items',           icon: <BlockIcon type="multiselect"/> },
+  { type: 'yesno',       label: 'Yes / No',   desc: 'Yes or no answer',                 icon: <BlockIcon type="yesno"/> },
+  { type: 'text',        label: 'Response',   desc: 'Open-ended text response',         icon: <BlockIcon type="text"/> },
+  { type: 'photo',       label: 'Photo',      desc: 'Staff captures a photo',           icon: <BlockIcon type="photo"/> },
+  { type: 'video',       label: 'Video',      desc: 'Staff records a video',            icon: <BlockIcon type="video"/> },
+  { type: 'date',        label: 'Date',       desc: 'Date picker',                      icon: <BlockIcon type="date"/> },
+  { type: 'time',        label: 'Time',       desc: 'Time picker',                      icon: <BlockIcon type="time"/> },
+  { type: 'dropdown',    label: 'Dropdown',   desc: 'Single choice from a list',        icon: <BlockIcon type="dropdown"/> },
+  { type: 'heading',     label: 'Heading',    desc: 'Section title divider',            icon: <BlockIcon type="heading"/> },
   { type: 'logic',       label: 'Logic',      desc: 'Show/hide blocks based on answers', icon: <span className="text-[13px]">⚡</span> },
 ];
 
@@ -40,6 +41,15 @@ function BlockIcon({ type }: { type: FieldType }) {
         <line x1="8" y1="3.5" x2="15" y2="3.5"/>
         <rect x="1" y="9" width="5" height="5" rx="1"/>
         <line x1="8" y1="11.5" x2="15" y2="11.5"/>
+      </svg>
+    </div>
+  );
+  if (type === 'paragraph') return (
+    <div className={cls}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <line x1="2" y1="4" x2="14" y2="4"/>
+        <line x1="2" y1="8" x2="14" y2="8"/>
+        <line x1="2" y1="12" x2="9" y2="12"/>
       </svg>
     </div>
   );
@@ -323,7 +333,7 @@ function SortableBlock({
       {!isLogic && (
         <div className={`flex items-start gap-1.5 py-1 rounded-xl transition-all ${
           showingSettings ? 'bg-primary/4' :
-          (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
+          (!isHeading && field.type !== 'paragraph' && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
           'hover:bg-surface-elevated/60'
         } ${isHeading ? 'pt-4 pb-1' : ''}`}>
 
@@ -422,6 +432,7 @@ function SortableBlock({
                 onFocus={() => setSettingsState(null)}
                 placeholder={
                   isHeading ? 'Section heading…' :
+                  field.type === 'paragraph' ? 'Body text…' :
                   field.type === 'multiselect' ? 'Checkbox title…' :
                   field.type === 'yesno' ? 'Yes / No question…' :
                   field.type === 'text' ? 'Text question…' :
@@ -436,7 +447,7 @@ function SortableBlock({
               />
               {/* Badges */}
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                {!isHeading && !field.label.trim() && (
+                {!isHeading && field.type !== 'paragraph' && !field.label.trim() && (
                   <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
                     Title required
                   </span>
@@ -753,7 +764,7 @@ export default function ChecklistBuilder({
   }, [fields, setFields]);
 
   // Add new block after a given index (or at end)
-  const addBlock = useCallback((afterIdx: number, type: FieldType = 'text') => {
+  const addBlock = useCallback((afterIdx: number, type: FieldType = 'paragraph') => {
     const newId = uid();
     const next = [...fields];
     next.splice(afterIdx + 1, 0, { id: newId, type, label: '' });
@@ -833,7 +844,7 @@ export default function ChecklistBuilder({
       const label = ghostValue.trim();
       if (!label) return;
       const newId = uid();
-      setFields([...fields, { id: newId, type: 'text', label }]);
+      setFields([...fields, { id: newId, type: 'paragraph', label }]);
       setGhostValue('');
       focusBlock(newId);
     }
@@ -916,7 +927,7 @@ export default function ChecklistBuilder({
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      const newId = addBlock(idx, field.type === 'heading' ? 'text' : field.type);
+      const newId = addBlock(idx, field.type === 'heading' ? 'paragraph' : field.type);
       focusBlock(newId);
     }
 
@@ -941,7 +952,7 @@ export default function ChecklistBuilder({
   }, [slashState, addBlock, removeField, fields, focusBlock]);
 
   const unlabeledFields = useMemo(() =>
-    fields.filter(f => f.type !== 'heading' && f.type !== 'logic' && !f.label.trim()),
+    fields.filter(f => f.type !== 'heading' && f.type !== 'paragraph' && f.type !== 'logic' && !f.label.trim()),
     [fields]
   );
   const hasUnlabeled = unlabeledFields.length > 0;

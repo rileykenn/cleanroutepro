@@ -1,6 +1,7 @@
 // ─── Field types ─────────────────────────────────────────────────────────────
 export type FieldType =
   | 'heading'     // visual section title / divider
+  | 'paragraph'   // plain body text for staff to read
   | 'logic'       // conditional logic rule block
   | 'checkbox'    // simple tick item
   | 'text'        // open text input

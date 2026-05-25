@@ -291,12 +291,24 @@ export default function SchedulePage() {
       // Store ALL org teams — used by addTeam, template save, template load, etc.
       allOrgTeamsRef.current = teamsList;
 
-      // ── Always show ALL org teams in week view ──
-      // Teams without jobs this week appear as empty columns instead of disappearing.
-      // The user explicitly created those teams and expects to see them.
+      // ── Only show teams that have at least one schedule row this week ──
+      // Teams are global per-org, but each week is independent. A team only
+      // appears in a given week if it has a `schedules` row for any day of that week.
+      // Navigating to a week you've never touched shows zero teams (correct).
       if (viewModeRef.current !== 'day') {
         const today = state.selectedDate;
-        const teamsWithClients = teamsList.map((team: TeamSchedule) => {
+
+        // Filter: only teams with at least one non-null scheduleId this week
+        const teamsThisWeek = teamsList.filter((team: TeamSchedule) => {
+          const teamMap = allTeamMaps.get(team.id);
+          if (!teamMap) return false;
+          for (const [, day] of teamMap) {
+            if (day.scheduleId !== null) return true;
+          }
+          return false;
+        });
+
+        const teamsWithClients = teamsThisWeek.map((team: TeamSchedule) => {
           const teamMap = allTeamMaps.get(team.id);
           const dayData = teamMap?.get(today);
           return {
@@ -308,12 +320,18 @@ export default function SchedulePage() {
             returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
           };
         });
-        dispatch({
-          type: 'LOAD_STATE',
-          teams: teamsWithClients,
-          activeTeamId: teamsWithClients.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
-          selectedDate: today,
-        });
+
+        // Empty week — dispatch empty teams array so the UI shows the "no teams" empty state
+        if (teamsWithClients.length === 0) {
+          dispatch({ type: 'LOAD_STATE', teams: [], activeTeamId: '', selectedDate: today });
+        } else {
+          dispatch({
+            type: 'LOAD_STATE',
+            teams: teamsWithClients,
+            activeTeamId: teamsWithClients.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
+            selectedDate: today,
+          });
+        }
       }
       setDbLoaded(true);
     } catch (err) {
@@ -660,20 +678,24 @@ export default function SchedulePage() {
           returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
         };
       });
-      // Show teams that have any schedule this week
+      // Show only teams that have a schedule row this week — same logic as loadWeekSchedules
       const teamsWithWeekSchedule = restoredTeams.filter((t: TeamSchedule) => {
         const teamMap = weekSchedules.get(t.id);
         if (!teamMap) return false;
         for (const [, d] of teamMap) { if (d.scheduleId !== null) return true; }
         return false;
       });
-      const visibleTeams = teamsWithWeekSchedule.length > 0 ? teamsWithWeekSchedule : [restoredTeams[0]];
-      dispatch({
-        type: 'LOAD_STATE',
-        teams: visibleTeams,
-        activeTeamId: visibleTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || visibleTeams[0].id,
-        selectedDate: today,
-      });
+      // Empty week: dispatch empty array rather than falling back to showing a random team
+      if (teamsWithWeekSchedule.length === 0) {
+        dispatch({ type: 'LOAD_STATE', teams: [], activeTeamId: '', selectedDate: today });
+      } else {
+        dispatch({
+          type: 'LOAD_STATE',
+          teams: teamsWithWeekSchedule,
+          activeTeamId: teamsWithWeekSchedule.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithWeekSchedule[0].id,
+          selectedDate: today,
+        });
+      }
     }
 
     // Background refresh to pick up any changes made during day editing
@@ -1259,22 +1281,55 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* Team tabs */}
-          <div className="pb-3 -mx-1 overflow-x-auto">
-            <TeamTabs
-              state={state}
-              dispatch={dispatch}
-              onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
-              onAddTeam={isStaff ? undefined : handleAddTeam}
-              onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
-              teamStaffMap={teamStaffMap}
-            />
-          </div>
+          {/* Team tabs — only render when there are teams */}
+          {state.teams.length > 0 && (
+            <div className="pb-3 -mx-1 overflow-x-auto">
+              <TeamTabs
+                state={state}
+                dispatch={dispatch}
+                onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
+                onAddTeam={isStaff ? undefined : handleAddTeam}
+                onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
+                teamStaffMap={teamStaffMap}
+              />
+            </div>
+          )}
         </header>
 
         {/* Content */}
         <div className="flex-1 min-h-0">
-          {state.viewMode === 'week' ? (
+          {state.viewMode === 'week' && state.teams.length === 0 ? (
+            // ── Empty week state ──
+            <div className="h-full flex flex-col items-center justify-center gap-4 text-center px-6">
+              <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.5">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-text-primary">Nothing planned for this week</h3>
+                <p className="text-sm text-text-tertiary mt-1 max-w-xs">Switch to Day view to start building your schedule, or load a saved template.</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' }); loadDayForEdit(state.focusedDate); }}
+                  className="btn-primary text-sm px-4 py-2 flex items-center gap-2"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Start Planning This Week
+                </button>
+                {!isStaff && (
+                  <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-sm px-4 py-2 flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Load Template
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : state.viewMode === 'week' ? (
             <WeekView
               weekDates={weekDates}
               daySchedules={activeWeekSchedules}

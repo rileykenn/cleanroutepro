@@ -21,11 +21,13 @@ interface ClientCardProps {
   dispatch: React.Dispatch<ScheduleAction>;
   availableStaff?: StaffMember[];
   staffBusyPeriods?: Map<string, StaffBusyPeriod[]>;
+  /** Staff driving for other teams today — staffId → teamName */
+  driverAssignments?: Map<string, string>;
   savedClients?: SavedClient[];
   onOpenChecklist?: (client: Client) => void;
 }
 
-export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, savedClients, onOpenChecklist }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist }: ClientCardProps) {
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
@@ -89,24 +91,35 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
 
   // Staff assignment helpers
   const assignedStaffMembers = (availableStaff || []).filter(s => assignedIds.includes(s.id));
-  // Separate staff into available vs busy (for this job's time window)
-  const { freeStaff, busyStaff } = (() => {
+  // Separate staff into available vs busy (for this job's time window) vs driving-other-team
+  const { freeStaff, busyStaff, drivingOtherStaff } = (() => {
     const notAssigned = (availableStaff || []).filter(s => !assignedIds.includes(s.id));
+    // First, pull out staff driving for other teams
+    const driving: { staff: StaffMember; teamName: string }[] = [];
+    const remaining: StaffMember[] = [];
+    for (const s of notAssigned) {
+      const drivingTeam = driverAssignments?.get(s.id);
+      if (drivingTeam) {
+        driving.push({ staff: s, teamName: drivingTeam });
+      } else {
+        remaining.push(s);
+      }
+    }
     if (!client.startTime || !client.endTime || !staffBusyPeriods) {
-      return { freeStaff: notAssigned, busyStaff: [] as { staff: StaffMember; conflict: StaffBusyPeriod }[] };
+      return { freeStaff: remaining, busyStaff: [] as { staff: StaffMember; conflict: StaffBusyPeriod }[], drivingOtherStaff: driving };
     }
     const jobStart = parseTime(client.startTime);
     const jobEnd = parseTime(client.endTime);
     const free: StaffMember[] = [];
     const busy: { staff: StaffMember; conflict: StaffBusyPeriod }[] = [];
-    for (const s of notAssigned) {
+    for (const s of remaining) {
       const periods = staffBusyPeriods.get(s.id) || [];
       // Find the first overlapping period (excluding this same job)
       const conflict = periods.find(p => p.clientId !== client.id && p.start < jobEnd && p.end > jobStart);
       if (conflict) busy.push({ staff: s, conflict });
       else free.push(s);
     }
-    return { freeStaff: free, busyStaff: busy };
+    return { freeStaff: free, busyStaff: busy, drivingOtherStaff: driving };
   })();
 
   const assignStaff = (staffId: string) => {
@@ -465,7 +478,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                     className="absolute bottom-full left-0 mb-1.5 z-30 w-52 bg-white rounded-xl shadow-lg border border-border-light p-2"
                   >
                     <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1">Available Staff</div>
-                    {freeStaff.length === 0 && busyStaff.length === 0 ? (
+                    {freeStaff.length === 0 && busyStaff.length === 0 && drivingOtherStaff.length === 0 ? (
                       <div className="text-xs text-text-tertiary px-2 py-3 text-center">All staff assigned</div>
                     ) : (
                       <div className="max-h-48 overflow-y-auto custom-scrollbar">
@@ -500,6 +513,33 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                                 <div className="min-w-0 flex-1">
                                   <span className="font-medium text-text-tertiary block truncate">{s.name}</span>
                                   <span className="text-[10px] text-red-400">@ {conflict.clientName} · {conflict.teamName}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {/* Driving for another team (greyed out) */}
+                        {drivingOtherStaff.length > 0 && (
+                          <>
+                            <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2 pb-1 mt-1 border-t border-border-light">Driving Other Team</div>
+                            {drivingOtherStaff.map(({ staff: s, teamName }) => (
+                              <div
+                                key={s.id}
+                                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-xs text-left opacity-45 cursor-not-allowed"
+                                title={`Driving for ${teamName} today`}
+                              >
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-400">
+                                  {s.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-medium text-text-tertiary block truncate">{s.name}</span>
+                                  <span className="text-[10px] text-red-400 flex items-center gap-1">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+                                      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+                                    </svg>
+                                    Driving for {teamName}
+                                  </span>
                                 </div>
                               </div>
                             ))}

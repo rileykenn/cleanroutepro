@@ -164,6 +164,7 @@ function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: 
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -4, scale: 0.97 }}
       transition={{ duration: 0.12 }}
+      onClick={e => e.stopPropagation()}
       className="fixed z-[998] bg-white rounded-2xl shadow-2xl border border-border-light p-4 space-y-4"
       style={{ top, left, width: 250 }}
     >
@@ -429,7 +430,7 @@ function SortableBlock({
                 value={displayValue}
                 onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
                 onKeyDown={e => handleKeyDown(e, field, idx)}
-                onFocus={() => setSettingsState(null)}
+                onFocus={() => { /* keep settings open */ }}
                 placeholder={
                   isHeading ? 'Section heading…' :
                   field.type === 'paragraph' ? 'Body text…' :
@@ -976,7 +977,7 @@ export default function ChecklistBuilder({
   const activeField = settingsState ? fields.find(f => f.id === settingsState.blockId) : null;
 
   return (
-    <div className="flex flex-col h-full min-h-0" onClick={() => { if (settingsState) setSettingsState(null); }}>
+    <div className="flex flex-col h-full min-h-0">
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-border-light bg-white">
@@ -1076,7 +1077,7 @@ export default function ChecklistBuilder({
             value={slashState?.blockId === GHOST_ID ? (slashState.prefix + '/' + slashState.query) : ghostValue}
             onChange={e => handleGhostChange(e.target.value, ghostRef.current)}
             onKeyDown={handleGhostKeyDown}
-            onFocus={() => setSettingsState(null)}
+            onFocus={() => { /* intentionally blank — don't close settings */ }}
             placeholder="Type / to insert a block…"
             className="flex-1 bg-transparent outline-none text-sm text-text-tertiary placeholder-text-tertiary/40 min-w-0"
           />

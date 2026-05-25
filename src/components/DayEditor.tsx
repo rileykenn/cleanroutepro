@@ -286,6 +286,18 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     return periods;
   }, [state.teams]);
 
+  // Build cross-team driver assignments map (staffId → teamName)
+  // Used by both the driver picker and per-job staff pickers
+  const crossTeamDrivers = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const team of state.teams) {
+      if (team.driverStaffId && team.id !== activeTeam.id) {
+        map.set(team.driverStaffId, team.name);
+      }
+    }
+    return map;
+  }, [state.teams, activeTeam.id]);
+
   // ─── Auto-save ───
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStateRef = useRef<string>('');
@@ -809,13 +821,6 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
             {/* Driver for Today — Rich Picker */}
             {allStaff && allStaff.length > 0 && (() => {
-              // Cross-team driver detection
-              const driverAssignments = new Map<string, string>();
-              for (const team of state.teams) {
-                if (team.driverStaffId && team.id !== activeTeam.id) {
-                  driverAssignments.set(team.driverStaffId, team.name);
-                }
-              }
               // Partition staff: available, driving-other-team, unavailable-today
               const parts = state.selectedDate.split('-').map(Number);
               const dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
@@ -827,8 +832,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                 const isAvailableToday = !availDays || availDays.length === 0 || availDays.includes(dayOfWeek);
                 if (!isAvailableToday) {
                   unavailableToday.push(s);
-                } else if (driverAssignments.has(s.id)) {
-                  drivingOther.push({ staff: s, teamName: driverAssignments.get(s.id)! });
+                } else if (crossTeamDrivers.has(s.id)) {
+                  drivingOther.push({ staff: s, teamName: crossTeamDrivers.get(s.id)! });
                 } else {
                   freeForDriver.push(s);
                 }
@@ -913,7 +918,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     {segment && <TravelSegmentComponent segment={segment} teamColor={activeTeam.color.primary} />}
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
-                      staffBusyPeriods={staffBusyPeriods} savedClients={savedClients}
+                      staffBusyPeriods={staffBusyPeriods} driverAssignments={crossTeamDrivers}
+                      savedClients={savedClients}
                       onOpenChecklist={setActiveChecklistClient} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}

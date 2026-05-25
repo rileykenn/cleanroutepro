@@ -238,9 +238,13 @@ interface DayEditorProps {
   /** Increments each time loadDayForEdit completes — signals a fresh DB load so
    *  the autosave baseline is re-recorded and no spurious save fires. */
   loadGeneration?: number;
+  /** When true, disables all auto-save DB persistence. Used by the schedule
+   *  template editor so the same DayEditor UI operates on in-memory state only.
+   *  All future UI additions to DayEditor automatically appear in template mode. */
+  disableAutoSave?: boolean;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0 }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -474,17 +478,20 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   useEffect(() => { saveNowRef.current = saveNow; }, [saveNow]);
 
   useEffect(() => {
+    if (disableAutoSave) return; // Template mode: parent handles persistence
     if (saveRef) saveRef.current = saveNow;
     return () => { if (saveRef) saveRef.current = null; };
-  }, [saveRef, saveNow]);
+  }, [saveRef, saveNow, disableAutoSave]);
 
   // Flush any pending debounced save when navigating away (sidebar, browser back, etc.)
   // saveNow reads stateRef.current so it always has fresh data even in this closure.
   useEffect(() => {
+    if (disableAutoSave) return; // Template mode: no flush needed
     return () => { saveNowRef.current(); };
-  }, []);
+  }, [disableAutoSave]);
 
   useEffect(() => {
+    if (disableAutoSave) return; // Template mode: skip auto-save entirely
     if (!dbLoaded || !orgId) return;
 
     const totalClients = state.teams.reduce((sum, t) => sum + t.clients.length, 0);
@@ -722,23 +729,32 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           <div className="flex items-center justify-between px-4 py-2 border-b border-border-light bg-white">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-text-primary">{formatDateDisplay(state.selectedDate)}</span>
-              {saveStatus === 'saving' && (
-                <span className="text-[10px] text-text-tertiary flex items-center gap-1">
-                  <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  Saving…
+              {disableAutoSave ? (
+                <span className="text-[10px] text-primary font-medium flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Template Mode
                 </span>
-              )}
-              {saveStatus === 'saved' && (
-                <span className="text-[10px] text-emerald-500 flex items-center gap-1">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                  Saved
-                </span>
-              )}
-              {saveStatus === 'error' && (
-                <span className="text-[10px] text-red-500 flex items-center gap-1" title="Save failed — check connection">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  Save failed
-                </span>
+              ) : (
+                <>
+                  {saveStatus === 'saving' && (
+                    <span className="text-[10px] text-text-tertiary flex items-center gap-1">
+                      <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                      Saving…
+                    </span>
+                  )}
+                  {saveStatus === 'saved' && (
+                    <span className="text-[10px] text-emerald-500 flex items-center gap-1">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      Saved
+                    </span>
+                  )}
+                  {saveStatus === 'error' && (
+                    <span className="text-[10px] text-red-500 flex items-center gap-1" title="Save failed — check connection">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      Save failed
+                    </span>
+                  )}
+                </>
               )}
             </div>
             <button onClick={() => setMobileShowMap(!mobileShowMap)} className="md:hidden btn-ghost">

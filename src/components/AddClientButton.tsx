@@ -157,7 +157,8 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setTimeout(() => setIsFocused(false), 150)}
                 placeholder={`Search ${savedClients.length} clients...`}
-                className="input-field text-sm pl-10"
+                className="input-field text-sm"
+                style={{ paddingLeft: '2.5rem' }}
                 autoFocus
               />
             </div>

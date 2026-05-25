@@ -309,7 +309,8 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                   value={swapQuery}
                   onChange={(e) => setSwapQuery(e.target.value)}
                   placeholder={`Search ${savedClients?.length ?? 0} clients...`}
-                  className="input-field text-xs pl-10 py-2"
+                  className="input-field text-xs py-2"
+                  style={{ paddingLeft: '2.5rem' }}
                 />
               </div>
               {/* Results */}

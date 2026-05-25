@@ -8,6 +8,7 @@ import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 import ClientProfileView from '@/components/ClientProfileView';
+import { useChecklistMasters } from '@/lib/hooks/useChecklistMasters';
 
 type ClientChecklist = {
   id: string;
@@ -101,6 +102,18 @@ export default function ChecklistsPage() {
   const [builderName, setBuilderName] = useState('');
   const [builderIsDefault, setBuilderIsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedAsTemplate, setSavedAsTemplate] = useState(false);
+  const { addMaster } = useChecklistMasters(orgId);
+
+  const handleSaveAsTemplate = useCallback(async () => {
+    if (!selectedChecklistId || selectedChecklistId === 'new') return;
+    const checklist = allChecklists.find(c => c.id === selectedChecklistId);
+    if (!checklist) return;
+    const migrated = (checklist.sections as Record<string, unknown>[]).map(s => migrateOldSection(s));
+    await addMaster(checklist.name || 'Untitled Template', migrated);
+    setSavedAsTemplate(true);
+    setTimeout(() => setSavedAsTemplate(false), 2000);
+  }, [selectedChecklistId, allChecklists, addMaster]);
 
   const handleSave = useCallback(async (name: string, sections: ChecklistSection[], isDefault: boolean) => {
     if (!orgId || !selectedClientId) return;
@@ -165,7 +178,8 @@ export default function ChecklistsPage() {
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input value={clientSearch} onChange={e => setClientSearch(e.target.value)}
-              placeholder="Search clients…" className="input-field text-sm w-full pl-10 py-2"/>
+              placeholder="Search clients…" className="input-field text-sm w-full py-2"
+              style={{ paddingLeft: '2.5rem' }}/>
           </div>
         </div>
 
@@ -277,10 +291,24 @@ export default function ChecklistsPage() {
                   </h2>
                 </div>
                 {selectedChecklist && (
-                  <button onClick={() => handleDelete(selectedChecklist.id, selectedChecklist.name)}
-                    className="text-xs font-semibold text-text-tertiary hover:text-rose-500 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors shrink-0">
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {savedAsTemplate ? (
+                      <span className="text-xs font-semibold text-emerald-500 flex items-center gap-1 px-2 py-1">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        Saved!
+                      </span>
+                    ) : (
+                      <button onClick={handleSaveAsTemplate}
+                        className="text-xs font-semibold text-text-tertiary hover:text-primary px-2 py-1 rounded-lg hover:bg-primary/5 transition-colors"
+                        title="Save this checklist as a reusable master template">
+                        Save as Template
+                      </button>
+                    )}
+                    <button onClick={() => handleDelete(selectedChecklist.id, selectedChecklist.name)}
+                      className="text-xs font-semibold text-text-tertiary hover:text-rose-500 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors">
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
 

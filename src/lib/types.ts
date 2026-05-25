@@ -58,6 +58,19 @@ export interface ClientChecklist {
   sections: any[]; // use migrateOldSection() at runtime to normalise to ChecklistSection[]
   created_at: string;
   updated_at: string;
+  /** ID of the checklist_masters row this checklist was created from (if any) */
+  source_template_id?: string | null;
+}
+
+/** Org-wide master checklist template — can be bulk-assigned to clients */
+export interface ChecklistMaster {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string;
+  sections: ChecklistSection[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ChecklistItemCompletion {

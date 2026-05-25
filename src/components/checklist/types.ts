@@ -23,6 +23,7 @@ export interface LogicCondition {
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   logic: 'Logic',
   heading: 'Heading',
+  paragraph: 'Text',
   checkbox: 'Checkbox',
   text: 'Open Text',
   yesno: 'Yes / No',
@@ -36,7 +37,8 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   logic: '⚡',
-  heading: '𝐇',
+  heading: '𝖴',
+  paragraph: '📝',
   checkbox: '☑',
   text: '📝',
   yesno: '👍',

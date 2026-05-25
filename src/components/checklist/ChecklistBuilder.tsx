@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
-  DragEndEvent, DragOverlay, DragStartEvent,
+  DragEndEvent, DragOverlay, DragStartEvent, DragOverEvent,
 } from '@dnd-kit/core';
+import { restrictToVerticalAxis, restrictToWindowEdges } from '@dnd-kit/modifiers';
 import {
   SortableContext, verticalListSortingStrategy,
   useSortable, arrayMove,
@@ -960,6 +961,7 @@ export default function ChecklistBuilder({
 
   // ── DnD state ──────────────────────────────────────────────────────────────
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overId, setOverId]         = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
@@ -1009,9 +1011,12 @@ export default function ChecklistBuilder({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragStart={(e: DragStartEvent) => setDraggingId(String(e.active.id))}
+          modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+          onDragStart={(e: DragStartEvent) => { setDraggingId(String(e.active.id)); setOverId(String(e.active.id)); }}
+          onDragOver={(e: DragOverEvent) => setOverId(e.over ? String(e.over.id) : null)}
           onDragEnd={(e: DragEndEvent) => {
             setDraggingId(null);
+            setOverId(null);
             const { active, over } = e;
             if (!over || active.id === over.id) return;
             const sec = sections[0];
@@ -1022,30 +1027,55 @@ export default function ChecklistBuilder({
               si === 0 ? { ...s, fields: arrayMove(s.fields, oldIdx, newIdx) } : s
             ));
           }}
-          onDragCancel={() => setDraggingId(null)}
+          onDragCancel={() => { setDraggingId(null); setOverId(null); }}
         >
           <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
             <AnimatePresence initial={false}>
-              {fields.map((field, idx) => (
-                <SortableBlock
-                  key={field.id}
-                  field={field}
-                  idx={idx}
-                  fields={fields}
-                  settingsState={settingsState}
-                  slashState={slashState}
-                  inputRefs={inputRefs}
-                  isDragging={draggingId === field.id}
-                  updateField={updateField}
-                  removeField={removeField}
-                  addBlock={addBlock}
-                  handleInputChange={handleInputChange}
-                  handleKeyDown={handleKeyDown}
-                  setSettingsState={setSettingsState}
-                  setSlashState={setSlashState}
-                  focusBlock={focusBlock}
-                />
-              ))}
+              {fields.map((field, idx) => {
+                // Compute whether to show drop line ABOVE this block.
+                // Line appears above the over-item when dragging item comes from below,
+                // or below the over-item when dragging from above. dnd-kit's
+                // arrayMove gives us the destination index = index of over item.
+                const draggingIdx = draggingId ? fields.findIndex(f => f.id === draggingId) : -1;
+                const overIdx     = overId     ? fields.findIndex(f => f.id === overId)     : -1;
+                const showLineAbove = draggingId && overIdx !== -1 && (
+                  // line goes above the over item when dragging down into it
+                  (draggingIdx < overIdx && field.id === overId) ||
+                  // line goes above the over item when dragging up into it (actually below previous)
+                  (draggingIdx > overIdx && field.id === overId)
+                );
+
+                return (
+                  <div key={field.id}>
+                    {/* Drop indicator line — shown above the target slot */}
+                    {showLineAbove && (
+                      <div className="relative h-0.5 mx-2 my-0.5 overflow-visible">
+                        <div className="absolute inset-0 bg-primary rounded-full"
+                          style={{ boxShadow: '0 0 6px 1px rgba(99,102,241,0.5)' }}/>
+                        <div className="absolute -left-1 -top-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-white"
+                          style={{ boxShadow: '0 0 4px rgba(99,102,241,0.6)' }}/>
+                      </div>
+                    )}
+                    <SortableBlock
+                      field={field}
+                      idx={idx}
+                      fields={fields}
+                      settingsState={settingsState}
+                      slashState={slashState}
+                      inputRefs={inputRefs}
+                      isDragging={draggingId === field.id}
+                      updateField={updateField}
+                      removeField={removeField}
+                      addBlock={addBlock}
+                      handleInputChange={handleInputChange}
+                      handleKeyDown={handleKeyDown}
+                      setSettingsState={setSettingsState}
+                      setSlashState={setSlashState}
+                      focusBlock={focusBlock}
+                    />
+                  </div>
+                );
+              })}
             </AnimatePresence>
           </SortableContext>
 

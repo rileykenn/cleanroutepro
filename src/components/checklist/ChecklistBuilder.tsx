@@ -60,7 +60,13 @@ function BlockIcon({ type }: { type: FieldType }) {
   if (type === 'video')    return <div className={cls}><span className="text-[11px]">🎥</span></div>;
   if (type === 'date')     return <div className={cls}><span className="text-[11px]">📅</span></div>;
   if (type === 'time')     return <div className={cls}><span className="text-[11px]">🕐</span></div>;
-  if (type === 'dropdown') return <div className={cls}><span className="text-[10px] font-bold leading-none">▾</span></div>;
+  if (type === 'dropdown') return (
+    <div className={cls}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </div>
+  );
   if (type === 'heading')  return <div className={cls}><span className="text-[10px] font-black leading-none">H</span></div>;
   return null;
 }
@@ -203,14 +209,17 @@ function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: 
           <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Options</label>
           <div className="space-y-1.5 mb-2">
             {(field.options ?? []).map((opt, oi) => (
-              <div key={oi} className="flex items-center gap-1.5">
+              <div key={oi} className="flex items-center gap-1.5 group/popt">
+                <button onClick={() => onChange({ options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                  className="shrink-0 p-1 text-text-tertiary hover:text-rose-500 transition-colors opacity-0 group-hover/popt:opacity-100">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                  </svg>
+                </button>
                 <input value={opt}
                   onChange={e => onChange({ options: (field.options ?? []).map((o, i) => i === oi ? e.target.value : o) })}
                   className="input-field text-xs flex-1 py-1"/>
-                <button onClick={() => onChange({ options: (field.options ?? []).filter((_, i) => i !== oi) })}
-                  className="p-1 text-text-tertiary hover:text-rose-500 transition-colors">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
               </div>
             ))}
           </div>
@@ -466,6 +475,18 @@ function SortableBlock({
               <div className="mt-1 mb-1 space-y-0.5">
                 {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
                   <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
+                    {/* Trash bin — appears on hover, left of the circle/box */}
+                    {(field.options?.length ?? 0) > 1 && (
+                      <button
+                        onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                        className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6"/>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                      </button>
+                    )}
                     {field.type === 'multiselect'
                       ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
                       : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
@@ -507,14 +528,7 @@ function SortableBlock({
                       data-opt-field={field.id}
                       className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
                     />
-                    {(field.options?.length ?? 0) > 1 && (
-                      <button
-                        onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
-                        className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                      </button>
-                    )}
+                    {/* remove button now on left — see above */}
                   </div>
                 ))}
                 <button

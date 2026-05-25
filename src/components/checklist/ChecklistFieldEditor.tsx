@@ -134,17 +134,20 @@ export default function ChecklistFieldEditor({
             <label className="block text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-1.5">Options</label>
             <div className="space-y-1.5 mb-2">
               {(field.options || []).map((opt, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <div key={i} className="flex items-center gap-2 group/feopt">
+                  <button onClick={() => removeOption(i)}
+                    className="shrink-0 p-0.5 rounded hover:text-danger text-text-tertiary transition-colors opacity-0 group-hover/feopt:opacity-100">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                  </button>
                   <div className="w-4 h-4 rounded border border-border-light shrink-0 flex items-center justify-center">
                     <div className="w-1.5 h-1.5 rounded-full bg-text-tertiary" />
                   </div>
                   <input value={opt}
                     onChange={e => update({ options: (field.options || []).map((o, idx) => idx === i ? e.target.value : o) })}
                     className="input-field text-sm flex-1 py-1.5" />
-                  <button onClick={() => removeOption(i)}
-                    className="p-0.5 rounded hover:text-danger text-text-tertiary transition-colors shrink-0">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
                 </div>
               ))}
             </div>

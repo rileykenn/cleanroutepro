@@ -1104,15 +1104,16 @@ export default function SchedulePage() {
   // ─── Clear entire week ───
   const handleClearWeek = useCallback(async () => {
     if (!orgId) return;
-    // Find all schedule rows for ALL teams across all 7 days of this week
+    // Scope strictly to this org's teams to avoid touching other orgs' data
     const { data: schedRows } = await supabase
       .from('schedules')
       .select('id')
+      .eq('org_id', orgId)          // ⚠️ Critical: must be scoped to this org
       .in('schedule_date', weekDates);
     if (schedRows && schedRows.length > 0) {
       const ids = schedRows.map((r: { id: string }) => r.id);
       await supabase.from('schedule_jobs').delete().in('schedule_id', ids);
-      await supabase.from('schedules').delete().in('id', ids);
+      await supabase.from('schedules').delete().eq('org_id', orgId).in('id', ids);
     }
     setShowClearWeek(false);
     await loadWeekSchedules(weekDates);
@@ -1143,8 +1144,9 @@ export default function SchedulePage() {
     return m;
   }, [weekSchedules]);
 
+  // Guard: state.teams may be empty for an untouched week
   const activeTeam = useMemo(
-    () => state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0],
+    () => state.teams.find((t) => t.id === state.activeTeamId) ?? state.teams[0] ?? null,
     [state.teams, state.activeTeamId]
   );
 

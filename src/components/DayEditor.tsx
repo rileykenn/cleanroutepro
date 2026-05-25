@@ -252,8 +252,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   // Saved client database — used for the swap-client feature on each card
   const { clients: savedClients } = useClients(orgId ?? null);
 
+  // Guard: state.teams may be empty for an untouched/cleared week
   const activeTeam = useMemo(
-    () => state.teams.find((t) => t.id === state.activeTeamId) || state.teams[0],
+    () => state.teams.find((t) => t.id === state.activeTeamId) ?? state.teams[0] ?? null,
     [state.teams, state.activeTeamId]
   );
 
@@ -592,10 +593,11 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     }
   }, [dbLoaded, state.teams, dispatch]);
 
-  // ─── Schedule calculations ───
-  const scheduleResult = useMemo(() => calculateScheduleTimes(activeTeam), [activeTeam]);
+  // ─── Schedule calculations (guard: activeTeam may be null for empty weeks) ───
+  const scheduleResult = useMemo(() => activeTeam ? calculateScheduleTimes(activeTeam) : { clients: [], baseDepartureTime: null }, [activeTeam]);
   const baseDepartureTime = scheduleResult.baseDepartureTime;
   useEffect(() => {
+    if (!activeTeam) return;
     if (scheduleResult.clients.length > 0) {
       const hasChanges = scheduleResult.clients.some((c, i) => {
         const original = activeTeam.clients[i];
@@ -603,16 +605,17 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       });
       if (hasChanges) dispatch({ type: 'SET_CLIENT_TIMES', teamId: activeTeam.id, clients: scheduleResult.clients });
     }
-  }, [scheduleResult, activeTeam.id, activeTeam.clients, dispatch]);
+  }, [scheduleResult, activeTeam, dispatch]);
 
-  const summary = useMemo(() => calculateDaySummary(activeTeam), [activeTeam]);
+  const summary = useMemo(() => activeTeam ? calculateDaySummary(activeTeam) : null, [activeTeam]);
 
   const routeKey = useMemo(() => {
+    if (!activeTeam) return 'empty';
     const base = activeTeam.baseAddress ? `${activeTeam.baseAddress.lat},${activeTeam.baseAddress.lng}` : 'none';
     const ret = activeTeam.returnAddress === 'none' ? 'no-return' : (activeTeam.returnAddress ? `${activeTeam.returnAddress.lat},${activeTeam.returnAddress.lng}` : 'default');
     const clients = activeTeam.clients.map((c) => `${c.id}:${c.location.lat},${c.location.lng}`).join('|');
     return `${activeTeam.id}::${base}::${ret}::${clients}`;
-  }, [activeTeam.id, activeTeam.baseAddress, activeTeam.returnAddress, activeTeam.clients]);
+  }, [activeTeam]);
 
   const activeTeamRef = useRef(activeTeam);
   activeTeamRef.current = activeTeam;
@@ -675,7 +678,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
   // Build per-job staff rates for DailySummary
   const jobStaffRates = useMemo(() => {
-    if (!allStaff || allStaff.length === 0) return [];
+    if (!activeTeam || !allStaff || allStaff.length === 0) return [];
     const staffMap = new Map(allStaff.map(s => [s.id, s]));
     const rates: { id: string; name: string; hourly_rate: number }[] = [];
     const seen = new Set<string>();
@@ -689,18 +692,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       }
     }
     return rates;
-  }, [activeTeam.clients, allStaff]);
+  }, [activeTeam, allStaff]);
 
   // ─── Auto-assign driver to newly-added jobs ───
-  // When a driver is already set and new clients are added (e.g. via Add Client
-  // or template load), ensure the driver appears in their assignedStaffIds.
-  const prevClientCountRef2 = useRef(activeTeam.clients.length);
+  const prevClientCountRef2 = useRef(activeTeam?.clients.length ?? 0);
   useEffect(() => {
-    if (!activeTeam.driverStaffId) {
-      prevClientCountRef2.current = activeTeam.clients.length;
+    if (!activeTeam?.driverStaffId) {
+      prevClientCountRef2.current = activeTeam?.clients.length ?? 0;
       return;
     }
-    // Only run when client count increased (new job added)
     if (activeTeam.clients.length <= prevClientCountRef2.current) {
       prevClientCountRef2.current = activeTeam.clients.length;
       return;
@@ -718,7 +718,19 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         });
       }
     }
-  }, [activeTeam.clients.length, activeTeam.driverStaffId, activeTeam.id, activeTeam.clients, dispatch]);
+  }, [activeTeam, dispatch]);
+
+  // Guard: if there are no teams yet (empty/cleared week), don't attempt to render
+  if (!activeTeam) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-center px-6">
+        <div>
+          <p className="text-sm font-semibold text-text-primary">No teams for this day</p>
+          <p className="text-xs text-text-tertiary mt-1">Use the + button in the team tabs to add a team for this week.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1073,7 +1085,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               <div className="pt-2">
                 <DailySummaryCard
                   team={activeTeam}
-                  summary={summary}
+                  summary={summary!}
                   dispatch={dispatch}
                   staffNames={jobStaffRates.map(s => s.name)}
                   staffRates={jobStaffRates}

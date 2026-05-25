@@ -341,7 +341,7 @@ function SortableBlock({
               </svg>
             </div>
 
-            {/* ⋯ Settings — left of type icon */}
+            {/* ⋯ Settings */}
             {!isHeading && (
               <button
                 onClick={e => {
@@ -360,6 +360,36 @@ function SortableBlock({
                 </svg>
               </button>
             )}
+
+            {/* + Insert below */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                const newId = addBlock(idx, 'text');
+                const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                setSlashState({ blockId: newId, prefix: '', query: '', anchorRect: rect });
+                setTimeout(() => focusBlock(newId), 20);
+              }}
+              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-primary hover:bg-primary/8 transition-colors opacity-0 group-hover:opacity-100"
+              title="Insert block below"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+
+            {/* 🗑 Delete */}
+            <button onClick={() => removeField(field.id)}
+              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+              title="Delete block"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/>
+                <path d="M9 6V4h6v2"/>
+              </svg>
+            </button>
 
             {/* Type icon */}
             <button
@@ -408,36 +438,6 @@ function SortableBlock({
               {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
               {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
             </div>
-
-            {/* + Insert below — opens slash menu below this block */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                const newId = addBlock(idx, 'text');
-                const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                setSlashState({ blockId: newId, prefix: '', query: '', anchorRect: rect });
-                setTimeout(() => focusBlock(newId), 20);
-              }}
-              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-primary hover:bg-primary/8 transition-colors opacity-0 group-hover:opacity-100"
-              title="Insert block below"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </button>
-
-            {/* 🗑 Delete */}
-            <button onClick={() => removeField(field.id)}
-              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
-              title="Delete block"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                <path d="M10 11v6"/><path d="M14 11v6"/>
-                <path d="M9 6V4h6v2"/>
-              </svg>
-            </button>
           </div>
 
           {/* ── Inline options editor (multiselect / dropdown) ── */}

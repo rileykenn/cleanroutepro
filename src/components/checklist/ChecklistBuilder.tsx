@@ -1051,8 +1051,15 @@ export default function ChecklistBuilder({
         </DndContext>
 
         {/* ── Ghost input — always-visible new-block line ──────────────── */}
-        <div className="flex items-center gap-2 py-1 mt-1 group/ghost">
-          <div className="w-4 h-4 shrink-0 opacity-0"/>{/* spacer for icon column */}
+        <div className="flex items-center gap-1.5 py-1 mt-1 group/ghost">
+          {/* Spacer matching the left controls column: -ml-5 + drag + settings + plus + bin + type icon */}
+          <div className="flex items-center gap-1 shrink-0 -ml-5 opacity-0 pointer-events-none" aria-hidden>
+            <div className="p-1"><svg width="10" height="14" viewBox="0 0 10 14"/></div>{/* drag */}
+            <div className="p-1"><svg width="13" height="13" viewBox="0 0 24 24"/></div>{/* settings */}
+            <div className="p-1"><svg width="13" height="13" viewBox="0 0 24 24"/></div>{/* + */}
+            <div className="p-1"><svg width="13" height="13" viewBox="0 0 24 24"/></div>{/* bin */}
+            <div className="p-0.5"><svg width="16" height="16" viewBox="0 0 16 16"/></div>{/* type icon */}
+          </div>
           <input
             ref={ghostRef}
             value={slashState?.blockId === GHOST_ID ? (slashState.prefix + '/' + slashState.query) : ghostValue}

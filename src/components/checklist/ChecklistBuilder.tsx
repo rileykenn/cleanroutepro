@@ -24,7 +24,16 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 // ─── Type icon ───────────────────────────────────────────────────────────────
 function BlockIcon({ type }: { type: FieldType }) {
   const cls = 'w-4 h-4 flex items-center justify-center shrink-0';
-  if (type === 'multiselect' || type === 'checkbox') return <div className={cls}><div className="w-3 h-3 rounded border-[1.5px] border-current"/></div>;
+  if (type === 'multiselect' || type === 'checkbox') return (
+    <div className={cls}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="1" y="1" width="5" height="5" rx="1"/>
+        <line x1="8" y1="3.5" x2="15" y2="3.5"/>
+        <rect x="1" y="9" width="5" height="5" rx="1"/>
+        <line x1="8" y1="11.5" x2="15" y2="11.5"/>
+      </svg>
+    </div>
+  );
   if (type === 'yesno')    return <div className={cls}><span className="text-[9px] font-black leading-none">Y/N</span></div>;
   if (type === 'text')     return <div className={cls}><span className="text-[10px] font-black leading-none">T</span></div>;
   if (type === 'photo')    return <div className={cls}><span className="text-[11px]">📷</span></div>;

@@ -2,6 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  DragEndEvent, DragOverlay, DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { ChecklistField, ChecklistSection, FieldType, FieldResponse, LogicCondition } from './types';
 import ChecklistRunner from './ChecklistRunner';
 
@@ -227,6 +236,260 @@ function SettingsPopover({ field, yesNoFields, onChange, onClose, anchorRect }: 
             )}
           </div>
         </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Sortable block wrapper ────────────────────────────────────────────────────
+interface SortableBlockProps {
+  field: ChecklistField;
+  idx: number;
+  fields: ChecklistField[];
+  settingsState: { blockId: string; anchorRect: DOMRect | null } | null;
+  slashState: { blockId: string; prefix: string; query: string; anchorRect: DOMRect | null } | null;
+  inputRefs: React.MutableRefObject<Record<string, HTMLInputElement | null>>;
+  isDragging: boolean;
+  updateField: (id: string, patch: Partial<ChecklistField>) => void;
+  removeField: (id: string) => void;
+  handleInputChange: (field: ChecklistField, idx: number, val: string, el: HTMLInputElement | null) => void;
+  handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, field: ChecklistField, idx: number) => void;
+  setSettingsState: (s: { blockId: string; anchorRect: DOMRect | null } | null) => void;
+  setSlashState: (s: { blockId: string; prefix: string; query: string; anchorRect: DOMRect | null } | null) => void;
+  focusBlock: (id: string) => void;
+}
+
+function SortableBlock({
+  field, idx, fields, settingsState, slashState, inputRefs, isDragging,
+  updateField, removeField, handleInputChange, handleKeyDown,
+  setSettingsState, setSlashState, focusBlock,
+}: SortableBlockProps) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: field.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1,
+  };
+
+  const isHeading = field.type === 'heading';
+  const isLogic   = field.type === 'logic';
+  const showingSettings = settingsState?.blockId === field.id;
+  const inSlashMode = slashState?.blockId === field.id;
+  const displayValue = inSlashMode
+    ? slashState!.prefix + '/' + slashState!.query
+    : field.label;
+
+  return (
+    <motion.div
+      ref={setNodeRef}
+      style={style}
+      layout
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: isDragging ? 0.35 : 1, y: 0 }}
+      exit={{ opacity: 0, height: 0 }}
+      className="group relative"
+    >
+      {/* Logic blocks */}
+      {isLogic && (
+        <div className="flex items-start gap-1">
+          {/* Drag handle for logic blocks */}
+          <div
+            {...attributes} {...listeners}
+            className="shrink-0 mt-3 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity text-text-tertiary hover:text-text-secondary p-1"
+          >
+            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+              <circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/>
+              <circle cx="2.5" cy="7" r="1.5"/><circle cx="7.5" cy="7" r="1.5"/>
+              <circle cx="2.5" cy="11.5" r="1.5"/><circle cx="7.5" cy="11.5" r="1.5"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <LogicBlockEditor
+              field={field}
+              allFields={fields}
+              onChange={patch => updateField(field.id, patch)}
+              onRemove={() => removeField(field.id)}
+              onMove={() => {}}
+              isFirst={false}
+              isLast={false}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Regular / Heading blocks */}
+      {!isLogic && (
+        <>
+          <div className={`flex items-center gap-2 py-1 rounded-xl transition-all ${
+            showingSettings ? 'bg-primary/4' :
+            (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
+            'hover:bg-surface-elevated/60'
+          } ${isHeading ? 'pt-4 pb-1' : ''}`}>
+
+            {/* ⋮⋮ Drag handle — visible on hover */}
+            <div
+              {...attributes} {...listeners}
+              className="shrink-0 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity -ml-5 p-1 text-text-tertiary hover:text-text-secondary"
+              title="Drag to reorder"
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+                <circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/>
+                <circle cx="2.5" cy="7" r="1.5"/><circle cx="7.5" cy="7" r="1.5"/>
+                <circle cx="2.5" cy="11.5" r="1.5"/><circle cx="7.5" cy="11.5" r="1.5"/>
+              </svg>
+            </div>
+
+            {/* Type icon — clickable to open slash menu */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
+                focusBlock(field.id);
+              }}
+              className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
+              title="Change block type"
+            >
+              <BlockIcon type={field.type}/>
+            </button>
+
+            {/* Label input */}
+            <input
+              ref={el => { inputRefs.current[field.id] = el; }}
+              data-block-input
+              value={displayValue}
+              onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
+              onKeyDown={e => handleKeyDown(e, field, idx)}
+              onFocus={() => setSettingsState(null)}
+              placeholder={
+                isHeading ? 'Section heading…' :
+                field.type === 'multiselect' ? 'Checkbox title…' :
+                field.type === 'yesno' ? 'Yes / No question…' :
+                field.type === 'text' ? 'Text question…' :
+                field.type === 'photo' ? 'Photo caption…' :
+                field.type === 'video' ? 'Video caption…' :
+                field.type === 'dropdown' ? 'Dropdown question…' :
+                'Label…'
+              }
+              className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
+                isHeading ? 'text-sm font-bold uppercase tracking-wider' : 'text-sm'
+              }`}
+            />
+
+            {/* Badges */}
+            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!isHeading && !field.label.trim() && (
+                <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                  Title required
+                </span>
+              )}
+              {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
+              {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
+            </div>
+
+            {/* Settings ⋯ */}
+            {!isHeading && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  if (showingSettings) { setSettingsState(null); return; }
+                  const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
+                  setSettingsState({ blockId: field.id, anchorRect: rect });
+                }}
+                className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+                </svg>
+              </button>
+            )}
+
+            {/* Delete */}
+            <button onClick={() => removeField(field.id)}
+              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* ── Inline options editor (multiselect / dropdown) ── */}
+          {(field.type === 'multiselect' || field.type === 'dropdown') && (
+            <div className="ml-6 mt-1 mb-1 space-y-0.5">
+              {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
+                <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
+                  {field.type === 'multiselect'
+                    ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
+                    : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
+                  }
+                  <input
+                    value={opt}
+                    placeholder={`Option ${oi + 1}`}
+                    onChange={e => {
+                      const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                      opts[oi] = e.target.value;
+                      updateField(field.id, { options: opts });
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault();
+                        const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                        if (oi === opts.length - 1) {
+                          opts.push('');
+                          updateField(field.id, { options: opts });
+                          setTimeout(() => {
+                            const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                            (inputs[oi + 1] as HTMLInputElement)?.focus();
+                          }, 20);
+                        } else {
+                          const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                          (inputs[oi + 1] as HTMLInputElement)?.focus();
+                        }
+                      }
+                      if (e.key === 'Backspace' && opt === '') {
+                        e.preventDefault();
+                        const opts = (field.options ?? ['Option 1']).filter((_, i) => i !== oi);
+                        updateField(field.id, { options: opts.length ? opts : [''] });
+                        setTimeout(() => {
+                          const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                          (inputs[Math.max(0, oi - 1)] as HTMLInputElement)?.focus();
+                        }, 20);
+                      }
+                    }}
+                    data-opt-field={field.id}
+                    className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
+                  />
+                  {(field.options?.length ?? 0) > 1 && (
+                    <button
+                      onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                      className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                  opts.push('');
+                  updateField(field.id, { options: opts });
+                  setTimeout(() => {
+                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                    (inputs[opts.length - 1] as HTMLInputElement)?.focus();
+                  }, 20);
+                }}
+                className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-text-tertiary/60 hover:text-primary transition-colors"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add option
+              </button>
+            </div>
+          )}
+
+          {isHeading && <div className="ml-6 h-px bg-border-light mb-2"/>}
+        </>
       )}
     </motion.div>
   );
@@ -650,6 +913,12 @@ export default function ChecklistBuilder({
   );
   const hasUnlabeled = unlabeledFields.length > 0;
 
+  // ── DnD state ──────────────────────────────────────────────────────────────
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
   const handleSave = () => {
     if (hasUnlabeled) return;
     onSave(name.trim() || 'Untitled', sections, isDefault);
@@ -692,219 +961,60 @@ export default function ChecklistBuilder({
       <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-5 py-4"
         onClick={e => { if (e.target === e.currentTarget) ghostRef.current?.focus(); }}>
 
-        <AnimatePresence initial={false}>
-          {fields.map((field, idx) => {
-            const isHeading = field.type === 'heading';
-            const isLogic   = field.type === 'logic';
-            const showingSettings = settingsState?.blockId === field.id;
-            const inSlashMode = slashState?.blockId === field.id;
-            const displayValue = inSlashMode
-              ? slashState!.prefix + '/' + slashState!.query
-              : field.label;
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e: DragStartEvent) => setDraggingId(String(e.active.id))}
+          onDragEnd={(e: DragEndEvent) => {
+            setDraggingId(null);
+            const { active, over } = e;
+            if (!over || active.id === over.id) return;
+            const sec = sections[0];
+            const oldIdx = sec.fields.findIndex(f => f.id === active.id);
+            const newIdx = sec.fields.findIndex(f => f.id === over.id);
+            if (oldIdx === -1 || newIdx === -1) return;
+            onChange(sections.map((s, si) =>
+              si === 0 ? { ...s, fields: arrayMove(s.fields, oldIdx, newIdx) } : s
+            ));
+          }}
+          onDragCancel={() => setDraggingId(null)}
+        >
+          <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+            <AnimatePresence initial={false}>
+              {fields.map((field, idx) => (
+                <SortableBlock
+                  key={field.id}
+                  field={field}
+                  idx={idx}
+                  fields={fields}
+                  settingsState={settingsState}
+                  slashState={slashState}
+                  inputRefs={inputRefs}
+                  isDragging={draggingId === field.id}
+                  updateField={updateField}
+                  removeField={removeField}
+                  handleInputChange={handleInputChange}
+                  handleKeyDown={handleKeyDown}
+                  setSettingsState={setSettingsState}
+                  setSlashState={setSlashState}
+                  focusBlock={focusBlock}
+                />
+              ))}
+            </AnimatePresence>
+          </SortableContext>
 
-            return (
-              <motion.div key={field.id}
-                layout initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }}
-                className="group relative"
-              >
-                {/* Logic blocks render as their own full-width editor */}
-                {isLogic && (
-                  <LogicBlockEditor
-                    field={field}
-                    allFields={fields}
-                    onChange={patch => updateField(field.id, patch)}
-                    onRemove={() => removeField(field.id)}
-                    onMove={dir => moveField(idx, dir)}
-                    isFirst={idx === 0}
-                    isLast={idx === fields.length - 1}
-                  />
-                )}
-
-                {/* Regular / Heading blocks */}
-                {!isLogic && (
-                  <>
-                    <div className={`flex items-center gap-2 py-1 rounded-xl transition-all ${
-                      showingSettings ? 'bg-primary/4' :
-                      (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
-                      'hover:bg-surface-elevated/60'
-                    } ${isHeading ? 'pt-4 pb-1' : ''}`}>
-
-                      {/* Drag / reorder handles — visible on hover */}
-                      <div className="flex flex-col gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-5">
-                        <button onClick={() => moveField(idx, -1)} disabled={idx === 0}
-                          className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-                        </button>
-                        <button onClick={() => moveField(idx, 1)} disabled={idx === fields.length - 1}
-                          className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-20">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                        </button>
-                      </div>
-
-                      {/* Type icon — clickable to open slash menu on this block */}
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                          setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
-                          focusBlock(field.id);
-                        }}
-                        className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
-                        title="Change block type"
-                      >
-                        <BlockIcon type={field.type}/>
-                      </button>
-
-                      {/* Label input */}
-                      <input
-                        ref={el => { inputRefs.current[field.id] = el; }}
-                        data-block-input
-                        value={displayValue}
-                        onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
-                        onKeyDown={e => handleKeyDown(e, field, idx)}
-                        onFocus={() => setSettingsState(null)}
-                        placeholder={
-                          isHeading ? 'Section heading…' :
-                          field.type === 'multiselect' ? 'Checkbox title…' :
-                          field.type === 'yesno' ? 'Yes / No question…' :
-                          field.type === 'text' ? 'Text question…' :
-                          field.type === 'photo' ? 'Photo caption…' :
-                          field.type === 'video' ? 'Video caption…' :
-                          field.type === 'dropdown' ? 'Dropdown question…' :
-                          'Label…'
-                        }
-                        className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
-                          isHeading
-                            ? 'text-sm font-bold uppercase tracking-wider'
-                            : 'text-sm'
-                        }`}
-                      />
-
-                      {/* Badges */}
-                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {!isHeading && !field.label.trim() && (
-                          <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
-                            Title required
-                          </span>
-                        )}
-                        {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
-                        {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
-                      </div>
-
-                      {/* Settings ⋯ */}
-                      {!isHeading && (
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            if (showingSettings) { setSettingsState(null); return; }
-                            const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
-                            setSettingsState({ blockId: field.id, anchorRect: rect });
-                          }}
-                          className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'}`}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
-                          </svg>
-                        </button>
-                      )}
-
-                      {/* Delete */}
-                      <button onClick={() => removeField(field.id)}
-                        className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                          <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                      </button>
-                    </div>
-
-                    {/* ── Inline options editor (multiselect / dropdown) ── */}
-                    {(field.type === 'multiselect' || field.type === 'dropdown') && (
-                      <div className="ml-6 mt-1 mb-1 space-y-0.5">
-                        {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
-                          <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
-                            {/* Visual checkbox / radio hint */}
-                            {field.type === 'multiselect'
-                              ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
-                              : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
-                            }
-                            <input
-                              value={opt}
-                              placeholder={`Option ${oi + 1}`}
-                              onChange={e => {
-                                const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                                opts[oi] = e.target.value;
-                                updateField(field.id, { options: opts });
-                              }}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' || e.key === 'Tab') {
-                                  e.preventDefault();
-                                  const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                                  if (oi === opts.length - 1) {
-                                    // add new option below
-                                    opts.push('');
-                                    updateField(field.id, { options: opts });
-                                    setTimeout(() => {
-                                      const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                                      (inputs[oi + 1] as HTMLInputElement)?.focus();
-                                    }, 20);
-                                  } else {
-                                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                                    (inputs[oi + 1] as HTMLInputElement)?.focus();
-                                  }
-                                }
-                                if (e.key === 'Backspace' && opt === '') {
-                                  e.preventDefault();
-                                  const opts = (field.options ?? ['Option 1']).filter((_, i) => i !== oi);
-                                  updateField(field.id, { options: opts.length ? opts : [''] });
-                                  setTimeout(() => {
-                                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                                    (inputs[Math.max(0, oi - 1)] as HTMLInputElement)?.focus();
-                                  }, 20);
-                                }
-                              }}
-                              data-opt-field={field.id}
-                              className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
-                            />
-                            {/* Delete option */}
-                            {(field.options?.length ?? 0) > 1 && (
-                              <button
-                                onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
-                                className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
-                              >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                        {/* Add option */}
-                        <button
-                          onClick={() => {
-                            const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                            opts.push('');
-                            updateField(field.id, { options: opts });
-                            setTimeout(() => {
-                              const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                              (inputs[opts.length - 1] as HTMLInputElement)?.focus();
-                            }, 20);
-                          }}
-                          className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-text-tertiary/60 hover:text-primary transition-colors"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                          Add option
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Heading separator line */}
-                    {isHeading && (
-                      <div className="ml-6 h-px bg-border-light mb-2"/>
-                    )}
-                  </>
-                )}
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+          <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+            {draggingId && (() => {
+              const f = fields.find(x => x.id === draggingId);
+              if (!f) return null;
+              return (
+                <div className="bg-white border border-primary/30 shadow-xl rounded-xl px-3 py-2 opacity-95">
+                  <span className="text-sm font-medium text-text-primary">{f.label || `(${f.type})`}</span>
+                </div>
+              );
+            })()}
+          </DragOverlay>
+        </DndContext>
 
         {/* ── Ghost input — always-visible new-block line ──────────────── */}
         <div className="flex items-center gap-2 py-1 mt-1 group/ghost">

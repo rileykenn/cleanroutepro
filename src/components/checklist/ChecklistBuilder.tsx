@@ -635,7 +635,16 @@ export default function ChecklistBuilder({
     }
   }, [slashState, addBlock, removeField, fields, focusBlock]);
 
-  const handleSave = () => onSave(name.trim() || 'Untitled', sections, isDefault);
+  const unlabeledFields = useMemo(() =>
+    fields.filter(f => f.type !== 'heading' && f.type !== 'logic' && !f.label.trim()),
+    [fields]
+  );
+  const hasUnlabeled = unlabeledFields.length > 0;
+
+  const handleSave = () => {
+    if (hasUnlabeled) return;
+    onSave(name.trim() || 'Untitled', sections, isDefault);
+  };
   const handleSaveAsNew = async () => {
     await onSaveAsNew?.(saveAsNewName.trim() || 'Untitled', sections);
     setShowSaveAsNew(false);
@@ -705,7 +714,11 @@ export default function ChecklistBuilder({
                 {/* Regular / Heading blocks */}
                 {!isLogic && (
                   <>
-                    <div className={`flex items-center gap-2 py-1 rounded-xl transition-colors ${showingSettings ? 'bg-primary/4' : 'hover:bg-surface-elevated/60'} ${isHeading ? 'pt-4 pb-1' : ''}`}>
+                    <div className={`flex items-center gap-2 py-1 rounded-xl transition-all ${
+                      showingSettings ? 'bg-primary/4' :
+                      (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
+                      'hover:bg-surface-elevated/60'
+                    } ${isHeading ? 'pt-4 pb-1' : ''}`}>
 
                       {/* Drag / reorder handles — visible on hover */}
                       <div className="flex flex-col gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-5">
@@ -743,7 +756,7 @@ export default function ChecklistBuilder({
                         onFocus={() => setSettingsState(null)}
                         placeholder={
                           isHeading ? 'Section heading…' :
-                          field.type === 'multiselect' ? 'Checkbox item…' :
+                          field.type === 'multiselect' ? 'Checkbox title…' :
                           field.type === 'yesno' ? 'Yes / No question…' :
                           field.type === 'text' ? 'Text question…' :
                           field.type === 'photo' ? 'Photo caption…' :
@@ -760,6 +773,11 @@ export default function ChecklistBuilder({
 
                       {/* Badges */}
                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!isHeading && !field.label.trim() && (
+                          <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                            Title required
+                          </span>
+                        )}
                         {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
                         {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
                       </div>
@@ -817,12 +835,22 @@ export default function ChecklistBuilder({
       </div>
 
       {/* ── Bottom action bar ─────────────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-2 px-5 py-3 border-t border-border-light bg-surface-elevated/60">
-        <button onClick={handleSave} disabled={saving}
-          className="btn-primary text-sm px-5 disabled:opacity-50 flex items-center gap-2">
-          {saving && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>}
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+      <div className="shrink-0 border-t border-border-light bg-surface-elevated/60">
+        {hasUnlabeled && (
+          <div className="flex items-center gap-2 px-5 py-2 bg-rose-50 border-b border-rose-100">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-rose-400 shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p className="text-[11px] font-semibold text-rose-600">
+              {unlabeledFields.length} block{unlabeledFields.length > 1 ? 's are' : ' is'} missing a title — add titles before saving
+            </p>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-5 py-3">
+          <button onClick={handleSave} disabled={saving || hasUnlabeled}
+            title={hasUnlabeled ? 'Add titles to all blocks before saving' : undefined}
+            className="btn-primary text-sm px-5 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2">
+            {saving && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         {onSaveAsNew && (
           <button onClick={() => setShowSaveAsNew(true)} disabled={saving}
             className="btn-ghost text-sm px-4 disabled:opacity-50">
@@ -832,7 +860,8 @@ export default function ChecklistBuilder({
         {onCancel && (
           <button onClick={onCancel} className="btn-ghost text-sm px-4">Cancel</button>
         )}
-      </div>
+        </div> {/* close inner flex div */}
+      </div> {/* close outer action bar */}
 
       {/* ── Slash command menu (portal) ───────────────────────────────────── */}
       <AnimatePresence>

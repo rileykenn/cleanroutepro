@@ -300,7 +300,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
               </div>
               {/* Search input */}
               <div className="relative mb-2">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input
@@ -309,7 +309,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                   value={swapQuery}
                   onChange={(e) => setSwapQuery(e.target.value)}
                   placeholder={`Search ${savedClients?.length ?? 0} clients...`}
-                  className="input-field text-xs pl-8 py-2"
+                  className="input-field text-xs pl-10 py-2"
                 />
               </div>
               {/* Results */}

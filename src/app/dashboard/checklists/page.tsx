@@ -161,11 +161,11 @@ export default function ChecklistsPage() {
         {/* Search */}
         <div className="shrink-0 p-3 border-b border-border-light">
           <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input value={clientSearch} onChange={e => setClientSearch(e.target.value)}
-              placeholder="Search clients…" className="input-field text-sm w-full pl-8 py-2"/>
+              placeholder="Search clients…" className="input-field text-sm w-full pl-10 py-2"/>
           </div>
         </div>
 

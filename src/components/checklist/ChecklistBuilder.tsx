@@ -321,17 +321,19 @@ function SortableBlock({
 
       {/* Regular / Heading blocks */}
       {!isLogic && (
-        <>
-          <div className={`flex items-center gap-1.5 py-1 rounded-xl transition-all ${
-            showingSettings ? 'bg-primary/4' :
-            (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
-            'hover:bg-surface-elevated/60'
-          } ${isHeading ? 'pt-4 pb-1' : ''}`}>
+        <div className={`flex items-start gap-1.5 py-1 rounded-xl transition-all ${
+          showingSettings ? 'bg-primary/4' :
+          (!isHeading && !field.label.trim()) ? 'ring-1 ring-rose-300 bg-rose-50/40' :
+          'hover:bg-surface-elevated/60'
+        } ${isHeading ? 'pt-4 pb-1' : ''}`}>
+
+          {/* ── LEFT COLUMN: all controls ── */}
+          <div className="flex items-center gap-1 shrink-0 -ml-5">
 
             {/* ⋮⋮ Drag handle */}
             <div
               {...attributes} {...listeners}
-              className="shrink-0 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity -ml-5 p-1 text-text-tertiary hover:text-text-secondary"
+              className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity p-1 text-text-tertiary hover:text-text-secondary"
               title="Drag to reorder"
             >
               <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
@@ -350,7 +352,7 @@ function SortableBlock({
                   const rect = (e.target as HTMLElement).closest('button')?.getBoundingClientRect() ?? null;
                   setSettingsState({ blockId: field.id, anchorRect: rect });
                 }}
-                className={`shrink-0 p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
+                className={`p-1 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
                   showingSettings ? 'opacity-100 bg-primary/10 text-primary' : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'
                 }`}
                 title="Field settings"
@@ -370,7 +372,7 @@ function SortableBlock({
                 setSlashState({ blockId: newId, prefix: '', query: '', anchorRect: rect });
                 setTimeout(() => focusBlock(newId), 20);
               }}
-              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-primary hover:bg-primary/8 transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1 rounded-lg text-text-tertiary hover:text-primary hover:bg-primary/8 transition-colors opacity-0 group-hover:opacity-100"
               title="Insert block below"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -380,7 +382,7 @@ function SortableBlock({
 
             {/* 🗑 Delete */}
             <button onClick={() => removeField(field.id)}
-              className="shrink-0 p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1 rounded-lg text-text-tertiary hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
               title="Delete block"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -399,123 +401,128 @@ function SortableBlock({
                 setSlashState({ blockId: field.id, prefix: field.label, query: '', anchorRect: rect });
                 focusBlock(field.id);
               }}
-              className="shrink-0 text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
+              className="text-text-tertiary hover:text-primary transition-colors p-0.5 rounded"
               title="Change block type"
             >
               <BlockIcon type={field.type}/>
             </button>
-
-            {/* Label input */}
-            <input
-              ref={el => { inputRefs.current[field.id] = el; }}
-              data-block-input
-              value={displayValue}
-              onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
-              onKeyDown={e => handleKeyDown(e, field, idx)}
-              onFocus={() => setSettingsState(null)}
-              placeholder={
-                isHeading ? 'Section heading…' :
-                field.type === 'multiselect' ? 'Checkbox title…' :
-                field.type === 'yesno' ? 'Yes / No question…' :
-                field.type === 'text' ? 'Text question…' :
-                field.type === 'photo' ? 'Photo caption…' :
-                field.type === 'video' ? 'Video caption…' :
-                field.type === 'dropdown' ? 'Dropdown question…' :
-                'Label…'
-              }
-              className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
-                isHeading ? 'text-sm font-bold uppercase tracking-wider' : 'text-sm'
-              }`}
-            />
-
-            {/* Badges */}
-            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-              {!isHeading && !field.label.trim() && (
-                <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
-                  Title required
-                </span>
-              )}
-              {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
-              {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
-            </div>
           </div>
 
-          {/* ── Inline options editor (multiselect / dropdown) ── */}
-          {(field.type === 'multiselect' || field.type === 'dropdown') && (
-            <div className="ml-6 mt-1 mb-1 space-y-0.5">
-              {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
-                <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
-                  {field.type === 'multiselect'
-                    ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
-                    : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
-                  }
-                  <input
-                    value={opt}
-                    placeholder={`Option ${oi + 1}`}
-                    onChange={e => {
-                      const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                      opts[oi] = e.target.value;
-                      updateField(field.id, { options: opts });
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === 'Tab') {
-                        e.preventDefault();
+          {/* ── RIGHT COLUMN: label + options stacked ── */}
+          <div className="flex-1 min-w-0">
+
+            {/* Label row */}
+            <div className="flex items-center gap-1 min-w-0">
+              <input
+                ref={el => { inputRefs.current[field.id] = el; }}
+                data-block-input
+                value={displayValue}
+                onChange={e => handleInputChange(field, idx, e.target.value, inputRefs.current[field.id])}
+                onKeyDown={e => handleKeyDown(e, field, idx)}
+                onFocus={() => setSettingsState(null)}
+                placeholder={
+                  isHeading ? 'Section heading…' :
+                  field.type === 'multiselect' ? 'Checkbox title…' :
+                  field.type === 'yesno' ? 'Yes / No question…' :
+                  field.type === 'text' ? 'Text question…' :
+                  field.type === 'photo' ? 'Photo caption…' :
+                  field.type === 'video' ? 'Video caption…' :
+                  field.type === 'dropdown' ? 'Dropdown question…' :
+                  'Label…'
+                }
+                className={`flex-1 bg-transparent outline-none min-w-0 text-text-primary placeholder-text-tertiary/50 ${
+                  isHeading ? 'text-sm font-bold uppercase tracking-wider' : 'text-sm'
+                }`}
+              />
+              {/* Badges */}
+              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {!isHeading && !field.label.trim() && (
+                  <span className="text-[9px] font-bold text-rose-400 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                    Title required
+                  </span>
+                )}
+                {field.required && <span className="text-[9px] font-bold text-rose-400">REQ</span>}
+                {field.conditionalOn && <span className="text-[9px] font-bold text-amber-500">COND</span>}
+              </div>
+            </div>
+
+            {/* ── Inline options (multiselect / dropdown) — naturally aligned under label ── */}
+            {(field.type === 'multiselect' || field.type === 'dropdown') && (
+              <div className="mt-1 mb-1 space-y-0.5">
+                {(field.options?.length ? field.options : ['Option 1']).map((opt, oi) => (
+                  <div key={oi} className="flex items-center gap-2 group/opt py-0.5">
+                    {field.type === 'multiselect'
+                      ? <div className="shrink-0 w-3.5 h-3.5 rounded border border-border-light bg-white"/>
+                      : <div className="shrink-0 w-3.5 h-3.5 rounded-full border border-border-light bg-white"/>
+                    }
+                    <input
+                      value={opt}
+                      placeholder={`Option ${oi + 1}`}
+                      onChange={e => {
                         const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                        if (oi === opts.length - 1) {
-                          opts.push('');
-                          updateField(field.id, { options: opts });
-                          setTimeout(() => {
+                        opts[oi] = e.target.value;
+                        updateField(field.id, { options: opts });
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === 'Tab') {
+                          e.preventDefault();
+                          const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                          if (oi === opts.length - 1) {
+                            opts.push('');
+                            updateField(field.id, { options: opts });
+                            setTimeout(() => {
+                              const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                              (inputs[oi + 1] as HTMLInputElement)?.focus();
+                            }, 20);
+                          } else {
                             const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
                             (inputs[oi + 1] as HTMLInputElement)?.focus();
-                          }, 20);
-                        } else {
-                          const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                          (inputs[oi + 1] as HTMLInputElement)?.focus();
+                          }
                         }
-                      }
-                      if (e.key === 'Backspace' && opt === '') {
-                        e.preventDefault();
-                        const opts = (field.options ?? ['Option 1']).filter((_, i) => i !== oi);
-                        updateField(field.id, { options: opts.length ? opts : [''] });
-                        setTimeout(() => {
-                          const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                          (inputs[Math.max(0, oi - 1)] as HTMLInputElement)?.focus();
-                        }, 20);
-                      }
-                    }}
-                    data-opt-field={field.id}
-                    className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
-                  />
-                  {(field.options?.length ?? 0) > 1 && (
-                    <button
-                      onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
-                      className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
-                    >
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={() => {
-                  const opts = field.options?.length ? [...field.options] : ['Option 1'];
-                  opts.push('');
-                  updateField(field.id, { options: opts });
-                  setTimeout(() => {
-                    const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
-                    (inputs[opts.length - 1] as HTMLInputElement)?.focus();
-                  }, 20);
-                }}
-                className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-text-tertiary/60 hover:text-primary transition-colors"
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add option
-              </button>
-            </div>
-          )}
+                        if (e.key === 'Backspace' && opt === '') {
+                          e.preventDefault();
+                          const opts = (field.options ?? ['Option 1']).filter((_, i) => i !== oi);
+                          updateField(field.id, { options: opts.length ? opts : [''] });
+                          setTimeout(() => {
+                            const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                            (inputs[Math.max(0, oi - 1)] as HTMLInputElement)?.focus();
+                          }, 20);
+                        }
+                      }}
+                      data-opt-field={field.id}
+                      className="flex-1 bg-transparent outline-none text-sm text-text-secondary placeholder-text-tertiary/40 min-w-0"
+                    />
+                    {(field.options?.length ?? 0) > 1 && (
+                      <button
+                        onClick={() => updateField(field.id, { options: (field.options ?? []).filter((_, i) => i !== oi) })}
+                        className="shrink-0 opacity-0 group-hover/opt:opacity-100 p-0.5 text-text-tertiary hover:text-rose-500 transition-all"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  onClick={() => {
+                    const opts = field.options?.length ? [...field.options] : ['Option 1'];
+                    opts.push('');
+                    updateField(field.id, { options: opts });
+                    setTimeout(() => {
+                      const inputs = document.querySelectorAll(`[data-opt-field="${field.id}"]`);
+                      (inputs[opts.length - 1] as HTMLInputElement)?.focus();
+                    }, 20);
+                  }}
+                  className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-text-tertiary/60 hover:text-primary transition-colors"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add option
+                </button>
+              </div>
+            )}
 
-          {isHeading && <div className="ml-6 h-px bg-border-light mb-2"/>}
-        </>
+            {isHeading && <div className="h-px bg-border-light mt-1 mb-2"/>}
+          </div>
+        </div>
       )}
     </motion.div>
   );

@@ -148,10 +148,10 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
                     onClick={() => selectDriver(s.id)}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left transition-all ${
                       currentDriver?.id === s.id
-                        ? 'bg-primary-light/40 ring-1'
+                        ? 'bg-primary-light/40'
                         : 'hover:bg-surface-hover'
                     }`}
-                    style={currentDriver?.id === s.id ? { ringColor: activeTeam.color.primary + '40' } : {}}
+                    style={currentDriver?.id === s.id ? { outline: `2px solid ${activeTeam.color.primary}40`, outlineOffset: '-2px' } : {}}
                   >
                     <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: activeTeam.color.primary }}>
                       {s.name.charAt(0).toUpperCase()}
@@ -852,7 +852,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             })()}
 
             {/* Available staff summary */}
-            {availableStaff.length > 0 && (
+            {(() => {
+              const teamAvailableStaff = availableStaff.filter(s => !crossTeamDrivers.has(s.id));
+              return teamAvailableStaff.length > 0 ? (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
                 className="card p-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -861,36 +863,34 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
                   </svg>
                   <span className="text-xs font-bold text-text-primary">Available Today</span>
-                  <span className="text-[10px] text-text-tertiary">{availableStaff.length} staff</span>
+                  <span className="text-[10px] text-text-tertiary">{teamAvailableStaff.length} staff</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {availableStaff.map((s) => {
-                    const drivingForTeam = state.teams.find(t => t.driverStaffId === s.id);
+                  {teamAvailableStaff.map((s) => {
+                    const isDriver = activeTeam.driverStaffId === s.id;
                     return (
                       <span key={s.id}
                         className={`text-[11px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors ${
-                          drivingForTeam
+                          isDriver
                             ? 'text-white'
                             : 'bg-surface-elevated text-text-secondary'
                         }`}
-                        style={drivingForTeam ? { backgroundColor: state.teams.find(t => t.id === drivingForTeam.id)?.color.primary || activeTeam.color.primary } : {}}
+                        style={isDriver ? { backgroundColor: activeTeam.color.primary } : {}}
                       >
-                        {drivingForTeam && (
+                        {isDriver && (
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
                             <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
                           </svg>
                         )}
                         {s.name}
-                        {drivingForTeam && drivingForTeam.id !== activeTeam.id && (
-                          <span className="text-[9px] opacity-75">({drivingForTeam.name})</span>
-                        )}
                       </span>
                     );
                   })}
                 </div>
               </motion.div>
-            )}
+              ) : null;
+            })()}
 
             {/* Optimize */}
             {activeTeam.clients.length >= 2 && (

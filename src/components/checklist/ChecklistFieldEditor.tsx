@@ -82,7 +82,7 @@ export default function ChecklistFieldEditor({
         {/* Required toggle */}
         <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
           <button onClick={() => update({ required: !field.required })}
-            className={`relative w-8 h-4 rounded-full transition-colors ${field.required ? 'bg-primary' : 'bg-border-light'}`}>
+            className={`relative w-8 h-4 rounded-full transition-colors ${field.required ? 'bg-primary' : 'bg-gray-300'}`}>
             <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${field.required ? 'translate-x-4' : 'translate-x-0.5'}`} />
           </button>
           <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">Required</span>
@@ -91,7 +91,7 @@ export default function ChecklistFieldEditor({
         {/* N/A toggle */}
         <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
           <button onClick={() => update({ allowNA: !field.allowNA })}
-            className={`relative w-8 h-4 rounded-full transition-colors ${field.allowNA ? 'bg-amber-500' : 'bg-border-light'}`}>
+            className={`relative w-8 h-4 rounded-full transition-colors ${field.allowNA ? 'bg-amber-500' : 'bg-gray-300'}`}>
             <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${field.allowNA ? 'translate-x-4' : 'translate-x-0.5'}`} />
           </button>
           <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">N/A</span>

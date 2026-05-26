@@ -168,6 +168,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         savedClientId: saved.id,
         notes: saved.notes || undefined,
         clientColor: saved.color || undefined,
+        rate: saved.rate ?? undefined,
         assignedStaffIds: [],
       },
     });

@@ -76,6 +76,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
       savedClientId: saved.id,
       notes: saved.notes || undefined,
       clientColor: saved.color || undefined,
+      rate: saved.rate ?? undefined,
     };
 
     dispatch({ type: 'ADD_CLIENT', teamId, client });

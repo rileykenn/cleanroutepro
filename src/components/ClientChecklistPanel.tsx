@@ -1,14 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SupabaseClient } from '@supabase/supabase-js';
 
 import { Client } from '@/lib/types';
-import { ChecklistSection, migrateOldSection, PreFillMeta } from '@/components/checklist/types';
+import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
-import { useChecklistCompletion } from '@/lib/hooks/useChecklistCompletion';
-import ChecklistRunner from '@/components/checklist/ChecklistRunner';
+import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 
 interface ClientChecklistPanelProps {
@@ -17,63 +15,98 @@ interface ClientChecklistPanelProps {
   isAdmin?: boolean;
   scheduleJobId?: string;
   onClose: () => void;
-  preFill?: PreFillMeta;
 }
 
 export default function ClientChecklistPanel({
-  client, orgId, isAdmin = false, scheduleJobId,
-  onClose, preFill,
+  client, orgId, isAdmin = false,
+  onClose,
 }: ClientChecklistPanelProps) {
-  const supabase: SupabaseClient = useMemo(() => createSupabaseClient(), []);
+  const supabase = useMemo(() => createSupabaseClient(), []);
 
   const savedClientId = client.savedClientId || '';
-  const { checklists, defaultChecklist, loading: checklistsLoading } = useClientChecklists(
-    savedClientId || null,
-    orgId,
-  );
+  const {
+    checklists, defaultChecklist, loading: checklistsLoading,
+    addChecklist, updateChecklist, reload: reloadChecklists,
+  } = useClientChecklists(savedClientId || null, orgId);
 
+  // Which checklist is currently selected
   const [activeChecklistId, setActiveChecklistId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'created'>('idle');
 
+  // Resolve the active checklist
   const activeChecklist = useMemo(() => {
-    if (client.checklistOverride) {
-      return {
-        id: '__override__',
-        name: 'Custom (this job only)',
-        sections: (client.checklistOverride as unknown[]).map(s => migrateOldSection(s as Record<string, unknown>)),
-        is_default: false,
-      };
-    }
     if (activeChecklistId) return checklists.find(c => c.id === activeChecklistId) || null;
     if (client.checklistId) return checklists.find(c => c.id === client.checklistId) || null;
     return defaultChecklist || null;
-  }, [client.checklistOverride, client.checklistId, activeChecklistId, checklists, defaultChecklist]);
+  }, [activeChecklistId, client.checklistId, checklists, defaultChecklist]);
 
-  const activeSections: ChecklistSection[] = useMemo(() => {
-    if (!activeChecklist) return [];
-    return activeChecklist.sections.map(s => migrateOldSection(s as unknown as Record<string, unknown>));
+  // Editable sections (initially loaded from the active checklist)
+  const [editorSections, setEditorSections] = useState<ChecklistSection[]>([]);
+  const [editorInitialized, setEditorInitialized] = useState(false);
+
+  // Load sections when active checklist changes
+  useEffect(() => {
+    if (!activeChecklist) {
+      setEditorSections([{ id: crypto.randomUUID(), title: '', fields: [] }]);
+      setEditorInitialized(true);
+      return;
+    }
+    const migrated = activeChecklist.sections.map(s =>
+      migrateOldSection(s as unknown as Record<string, unknown>)
+    );
+    setEditorSections(migrated.length > 0 ? migrated : [{ id: crypto.randomUUID(), title: '', fields: [] }]);
+    setEditorInitialized(true);
+    setSaveStatus('idle');
   }, [activeChecklist]);
-
-  // Completion hook
-  const { completionId, responses, status, saving: autoSaving, handleResponseChange, submit } = useChecklistCompletion({
-    supabase,
-    orgId,
-    clientId: savedClientId,
-    checklistId: activeChecklist?.id && activeChecklist.id !== '__override__' ? activeChecklist.id : null,
-    scheduleJobId: scheduleJobId || null,
-    preFill,
-  });
 
   // Access instructions
   const [accessInstructions, setAccessInstructions] = useState<string | null>(null);
   const [showAccess, setShowAccess] = useState(false);
-  useMemo(() => {
+  useEffect(() => {
     if (!savedClientId) return;
     supabase.from('clients').select('access_instructions').eq('id', savedClientId).single()
       .then(({ data }: { data: { access_instructions: string | null } | null }) => {
         setAccessInstructions(data?.access_instructions || null);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedClientId]);
+  }, [savedClientId, supabase]);
+
+  // ── Save: overwrite current checklist ──
+  const handleSave = useCallback(async (name: string, sections: ChecklistSection[], isDefault: boolean) => {
+    if (!activeChecklist || !savedClientId) return;
+    setSaving(true);
+    try {
+      await updateChecklist(activeChecklist.id, { name, sections, is_default: isDefault });
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } finally {
+      setSaving(false);
+    }
+  }, [activeChecklist, savedClientId, updateChecklist]);
+
+  // ── Save As New: create a new checklist for this client ──
+  const handleSaveAsNew = useCallback(async (name: string, sections: ChecklistSection[]) => {
+    if (!savedClientId) return;
+    setSaving(true);
+    try {
+      const newCl = await addChecklist(name, sections, false);
+      if (newCl) {
+        await reloadChecklists();
+        setActiveChecklistId(newCl.id);
+        setSaveStatus('created');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [savedClientId, addChecklist, reloadChecklists]);
+
+  // Handle switching checklists
+  const handleSwitchChecklist = useCallback((id: string) => {
+    setActiveChecklistId(id);
+    setEditorInitialized(false);
+    setSaveStatus('idle');
+  }, []);
 
   if (!savedClientId) {
     return (
@@ -89,7 +122,7 @@ export default function ClientChecklistPanel({
   return (
     <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-border-light overflow-hidden">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Header ── */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border-light">
         <button onClick={onClose}
           className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-text-primary transition-colors shrink-0">
@@ -100,26 +133,42 @@ export default function ClientChecklistPanel({
 
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-text-primary truncate">{client.name}</h2>
-          {activeChecklist && (
-            <p className="text-[11px] text-text-tertiary truncate">{activeChecklist.name}</p>
-          )}
+          <p className="text-[11px] text-text-tertiary truncate">
+            {activeChecklist ? `Editing: ${activeChecklist.name}` : 'No checklist selected'}
+          </p>
         </div>
 
-        {/* Checklist selector — only when client has multiple */}
-        {checklists.length > 1 && (
+        {/* Save status indicator */}
+        <AnimatePresence>
+          {saveStatus !== 'idle' && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 shrink-0"
+            >
+              {saveStatus === 'saved' ? '✓ Saved' : '✓ Created'}
+            </motion.span>
+          )}
+        </AnimatePresence>
+
+        {/* Checklist picker */}
+        {checklists.length > 0 && (
           <select
             value={activeChecklistId || activeChecklist?.id || ''}
-            onChange={e => setActiveChecklistId(e.target.value)}
-            className="input-field text-xs py-1.5 max-w-[130px]"
+            onChange={e => handleSwitchChecklist(e.target.value)}
+            className="input-field text-xs py-1.5 max-w-[140px] shrink-0"
           >
             {checklists.map(cl => (
-              <option key={cl.id} value={cl.id}>{cl.name}</option>
+              <option key={cl.id} value={cl.id}>
+                {cl.name}{cl.is_default ? ' (default)' : ''}
+              </option>
             ))}
           </select>
         )}
       </div>
 
-      {/* ── Access instructions accordion ────────────────────────────────────── */}
+      {/* ── Access instructions accordion ── */}
       {accessInstructions && (
         <div className="shrink-0 border-b border-border-light">
           <button onClick={() => setShowAccess(!showAccess)}
@@ -145,26 +194,26 @@ export default function ClientChecklistPanel({
         </div>
       )}
 
-      {/* ── Content ──────────────────────────────────────────────────────────── */}
-      {checklistsLoading ? (
+      {/* ── Content ── */}
+      {checklistsLoading || !editorInitialized ? (
         <div className="flex-1 flex items-center justify-center">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin text-text-tertiary">
             <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
           </svg>
         </div>
-      ) : activeSections.length > 0 ? (
-        <div className="flex-1 min-h-0">
-          <ChecklistRunner
-            sections={activeSections}
-            responses={responses}
-            onChange={handleResponseChange}
-            onSubmit={submit}
-            orgId={orgId}
-            completionId={completionId}
-            preFilledMeta={preFill}
-            isAdmin={isAdmin}
-            readOnly={status === 'submitted'}
-            saving={autoSaving}
+      ) : activeChecklist ? (
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          <ChecklistBuilder
+            key={activeChecklist.id}
+            sections={editorSections}
+            onChange={setEditorSections}
+            initialName={activeChecklist.name}
+            initialIsDefault={activeChecklist.is_default}
+            mode="client-profile"
+            saving={saving}
+            onSave={handleSave}
+            onSaveAsNew={handleSaveAsNew}
+            onCancel={onClose}
           />
         </div>
       ) : (
@@ -175,7 +224,7 @@ export default function ClientChecklistPanel({
               <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
             </svg>
             <p className="text-sm text-text-secondary font-medium">No checklist for this client</p>
-            <p className="text-xs text-text-tertiary mt-1">Add one from the client's profile.</p>
+            <p className="text-xs text-text-tertiary mt-1">Add one from the Checklists tab.</p>
           </div>
         </div>
       )}

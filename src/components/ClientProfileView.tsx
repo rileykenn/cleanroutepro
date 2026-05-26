@@ -2,11 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClientChecklists } from '@/lib/hooks/useClientChecklists';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { CLIENT_COLORS } from '@/lib/types';
-import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
-import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 
 // ── Media section ─────────────────────────────────────────────────────────────
 function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) {
@@ -132,7 +129,6 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     setClient(prev => prev ? { ...prev, [field]: value } : prev);
   }, [clientId, supabase]);
 
-  const { checklists, loading: checklistsLoading, addChecklist, updateChecklist, deleteChecklist, setDefault } = useClientChecklists(clientId, orgId);
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -141,8 +137,6 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     rate: '' as string | number,
     notes: '', access_instructions: '',
   });
-  const [editingChecklistId, setEditingChecklistId] = useState<string | 'new' | null>(null);
-  const [builderSections, setBuilderSections] = useState<ChecklistSection[]>([]);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -190,9 +184,6 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     );
   }
 
-  const totalFields = checklists.reduce((sum: number, cl) =>
-    sum + cl.sections.reduce((s2: number, sec) =>
-      s2 + ((sec as unknown as { fields?: unknown[] }).fields?.length ?? (sec as unknown as { items?: unknown[] }).items?.length ?? 0), 0), 0);
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -320,155 +311,34 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
           </div>
         </div>
 
-        {/* Access Instructions */}
-        <div className="card p-5">
-          <h3 className="text-sm font-bold text-text-primary mb-3 flex items-center gap-2">
+        {/* Notes / Access */}
+        <div className="card p-5 space-y-4">
+          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
             </svg>
-            Access Instructions
+            Notes / Access
           </h3>
-          <textarea value={form.access_instructions}
-            onChange={e => setForm(f => ({ ...f, access_instructions: e.target.value }))}
-            onBlur={() => saveField('access_instructions', form.access_instructions)}
-            placeholder="How to get in, alarm code, key location, gate code, pets, special notes for staff…"
-            className="input-field text-sm resize-none w-full" rows={4}/>
-          <p className="text-[11px] text-text-tertiary mt-1.5">Auto-saves on blur · Shown to staff in the schedule job panel</p>
-        </div>
-
-        {/* Notes */}
-        <div className="card p-5">
-          <h3 className="text-sm font-bold text-text-primary mb-3">Internal Notes</h3>
-          <textarea value={form.notes}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            onBlur={() => saveField('notes', form.notes)}
-            placeholder="Internal admin notes…"
-            className="input-field text-sm resize-none w-full" rows={3}/>
-        </div>
-
-        {/* Media */}
-        <div className="card p-5">
-          <MediaSection clientId={clientId} orgId={orgId}/>
-        </div>
-
-        {/* Checklists */}
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between px-5 pt-5 pb-4">
-            <div>
-              <h3 className="text-sm font-bold text-text-primary">Checklists</h3>
-              <p className="text-xs text-text-tertiary mt-0.5">
-                {checklists.length} checklist{checklists.length !== 1 ? 's' : ''} · {totalFields} field{totalFields !== 1 ? 's' : ''} total
-              </p>
-            </div>
-            <button onClick={() => { setBuilderSections([{ id: crypto.randomUUID(), title: '', fields: [] }]); setEditingChecklistId('new'); }}
-              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              New Checklist
-            </button>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Access Instructions</label>
+            <textarea value={form.access_instructions}
+              onChange={e => setForm(f => ({ ...f, access_instructions: e.target.value }))}
+              onBlur={() => saveField('access_instructions', form.access_instructions)}
+              placeholder="How to get in, alarm code, key location, gate code, pets, special notes for staff…"
+              className="input-field text-sm resize-none w-full" rows={3}/>
+            <p className="text-[10px] text-text-tertiary mt-1">Shown to staff in the schedule job panel</p>
           </div>
-
-          {/* New checklist builder */}
-          <AnimatePresence>
-            {editingChecklistId === 'new' && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden border-t border-border-light" style={{ maxHeight: 600 }}>
-                <ChecklistBuilder
-                  sections={builderSections}
-                  onChange={setBuilderSections}
-                  initialName=""
-                  initialIsDefault={checklists.length === 0}
-                  mode="client-profile"
-                  onSave={async (name, sections, isDefault) => {
-                    await addChecklist(name, sections, isDefault);
-                    setEditingChecklistId(null);
-                    setBuilderSections([]);
-                  }}
-                  onCancel={() => { setEditingChecklistId(null); setBuilderSections([]); }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {checklistsLoading ? (
-            <div className="px-5 pb-5 space-y-2">{[1, 2].map(i => <div key={i} className="shimmer h-16 rounded-xl"/>)}</div>
-          ) : checklists.length === 0 && editingChecklistId !== 'new' ? (
-            <div className="text-center py-8 border-t border-border-light">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-2">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
-              </svg>
-              <p className="text-sm text-text-tertiary">No checklists yet</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border-light">
-              {checklists.map(cl => (
-                <div key={cl.id}>
-                  <div className="flex items-center gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`}/>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-text-primary">{cl.name}</span>
-                        {cl.is_default && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-primary-light text-primary">Default</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-text-tertiary">{cl.sections.length} section{cl.sections.length !== 1 ? 's' : ''}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {!cl.is_default && (
-                        <button onClick={() => setDefault(cl.id)}
-                          className="text-[10px] font-medium px-2 py-1 rounded-lg hover:bg-primary-light hover:text-primary text-text-tertiary transition-colors">
-                          Set Default
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          const migrated = cl.sections.map(s => migrateOldSection(s as unknown as Record<string, unknown>));
-                          setBuilderSections(migrated);
-                          setEditingChecklistId(editingChecklistId === cl.id ? null : cl.id);
-                        }}
-                        className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                        </svg>
-                      </button>
-                      {checklists.length > 1 && (
-                        <button onClick={() => { if (confirm(`Delete "${cl.name}"?`)) deleteChecklist(cl.id); }}
-                          className="p-1.5 rounded-lg hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <AnimatePresence>
-                    {editingChecklistId === cl.id && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden border-t border-border-light" style={{ maxHeight: 650 }}>
-                        <ChecklistBuilder
-                          sections={builderSections}
-                          onChange={setBuilderSections}
-                          initialName={cl.name}
-                          initialIsDefault={cl.is_default}
-                          mode="client-profile"
-                          onSave={async (name, sections, isDefault) => {
-                            await updateChecklist(cl.id, { name, sections, is_default: isDefault });
-                            setEditingChecklistId(null);
-                            setBuilderSections([]);
-                          }}
-                          onCancel={() => { setEditingChecklistId(null); setBuilderSections([]); }}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ))}
-            </div>
-          )}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Internal Notes</label>
+            <textarea value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              onBlur={() => saveField('notes', form.notes)}
+              placeholder="Internal admin notes…"
+              className="input-field text-sm resize-none w-full" rows={2}/>
+          </div>
+          <div className="border-t border-border-light pt-3">
+            <MediaSection clientId={clientId} orgId={orgId}/>
+          </div>
         </div>
       </div>
     </div>

@@ -527,23 +527,6 @@ export default function ScheduleTemplateEditorPage({ params }: { params: Promise
                 <span className="text-[11px] text-text-tertiary">
                   {totalJobs} job{totalJobs !== 1 ? 's' : ''} · {state.teams.length} team{state.teams.length !== 1 ? 's' : ''}
                 </span>
-                {/* Rotation label chips */}
-                <div className="flex gap-1">
-                  {['A1','A2','A3','A4','B1','B2','B3','B4'].map(label => (
-                    <button
-                      key={label}
-                      onClick={() => setTemplateLabel(templateLabel === label ? null : label)}
-                      className="text-[9px] font-bold px-1.5 py-0.5 rounded transition-all"
-                      style={
-                        templateLabel === label
-                          ? { backgroundColor: 'var(--color-primary)', color: '#fff' }
-                          : { backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-tertiary)' }
-                      }
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
 

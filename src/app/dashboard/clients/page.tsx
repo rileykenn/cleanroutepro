@@ -53,7 +53,7 @@ export default function ClientsPage() {
   const filtered = searchQuery.trim() ? searchFn(searchQuery) : clients;
 
   const handleAdd = async () => {
-    await addClient({ ...form, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null, color: null });
+    await addClient({ ...form, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null, color: null, rate: null });
     setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' });
     setShowAdd(false);
   };

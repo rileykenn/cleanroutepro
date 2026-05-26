@@ -31,6 +31,8 @@ export interface Client {
   phone?: string;
   assignedStaffIds?: string[];
   clientColor?: string;
+  /** Per-client rate ($/visit or $/hr) set on the client card */
+  rate?: number | null;
   /** ID of the client_checklists row linked to this scheduled job */
   checklistId?: string | null;
   /** One-time override sections for "save for this job only" */
@@ -148,6 +150,8 @@ export interface DaySummary {
   fuelCost: number;
   perKmCost: number;
   clientCount: number;
+  /** Total revenue from client rates for this day */
+  totalRevenue: number;
 }
 
 export interface DaySchedule {

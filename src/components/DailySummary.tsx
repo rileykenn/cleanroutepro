@@ -236,6 +236,49 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
               className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.01} />
           </label>
         </div>
+
+        {/* Divider before financials */}
+        {summary.totalRevenue > 0 && (
+          <>
+            <div className="border-t border-border-light" />
+
+            {/* Revenue */}
+            <div className="flex items-center justify-between rounded-xl p-3 bg-emerald-50 border border-emerald-100">
+              <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                </svg>
+                Revenue
+                <span className="font-normal text-[10px] text-emerald-500">({team.clients.filter(c => c.rate).length} clients with rates)</span>
+              </div>
+              <span className="text-lg font-bold text-emerald-700">${summary.totalRevenue.toFixed(2)}</span>
+            </div>
+
+            {/* Total Costs */}
+            {(() => {
+              const totalCosts = totalWages + summary.fuelCost + summary.perKmCost;
+              const profit = summary.totalRevenue - totalCosts;
+              return (
+                <>
+                  <div className="flex items-center justify-between rounded-xl p-3 bg-surface-elevated">
+                    <div className="text-xs font-medium text-text-secondary">Total Costs</div>
+                    <span className="text-base font-bold text-text-primary">${totalCosts.toFixed(2)}</span>
+                  </div>
+
+                  {/* Profit */}
+                  <div className={`flex items-center justify-between rounded-xl p-3 border ${profit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                    <div className={`text-xs font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      Profit
+                    </div>
+                    <span className={`text-lg font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {profit >= 0 ? '' : '-'}${Math.abs(profit).toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+          </>
+        )}
       </div>
 
       {/* Day range */}

@@ -42,6 +42,7 @@ export default function SchedulePage() {
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
   const [showClearWeek, setShowClearWeek] = useState(false);
+  const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
 
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
@@ -149,12 +150,14 @@ export default function SchedulePage() {
 
       const allTeamMaps = new Map<string, Map<string, DaySchedule>>();
 
-      // Load all client colors for this org
-      const { data: clientColorRows } = await supabase.from('clients').select('id, color').eq('org_id', orgId);
+      // Load all client colors + rates for this org
+      const { data: clientMetaRows } = await supabase.from('clients').select('id, color, rate').eq('org_id', orgId);
       const clientColorMap = new Map<string, string>();
-      if (clientColorRows) {
-        for (const row of clientColorRows) {
+      const clientRateMap = new Map<string, number>();
+      if (clientMetaRows) {
+        for (const row of clientMetaRows) {
           if (row.color) clientColorMap.set(row.id, row.color);
+          if (row.rate != null) clientRateMap.set(row.id, Number(row.rate));
         }
       }
       const newPublished = new Set<string>();
@@ -241,6 +244,7 @@ export default function SchedulePage() {
                   savedClientId: (j.client_id as string) || undefined,
                   assignedStaffIds: assignedIds,
                   clientColor: j.client_id ? clientColorMap.get(j.client_id as string) || undefined : undefined,
+                  rate: j.client_id ? clientRateMap.get(j.client_id as string) ?? undefined : undefined,
                 });
               }
               // Second pass: reconstruct breaks using afterPosition → client ID
@@ -460,6 +464,13 @@ export default function SchedulePage() {
       }
     }
 
+    // ── 1 bulk query: client rates ──
+    const clientRateMap = new Map<string, number>();
+    const { data: rateRows } = await supabase.from('clients').select('id, rate').eq('org_id', orgId).not('rate', 'is', null);
+    if (rateRows) {
+      for (const r of rateRows) clientRateMap.set(r.id, Number(r.rate));
+    }
+
     // ── Build teams from bulk results ──
     const teamsList: TeamSchedule[] = [];
     const teamsWithSchedule = new Set<string>();
@@ -514,6 +525,7 @@ export default function SchedulePage() {
               notes: (j.notes as string) || undefined,
               savedClientId: (j.client_id as string) || undefined,
               assignedStaffIds: assignedIds,
+              rate: j.client_id ? clientRateMap.get(j.client_id as string) ?? undefined : undefined,
             };
           });
         // Reconstruct breaks from is_break=true rows.
@@ -942,7 +954,7 @@ export default function SchedulePage() {
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 
   // ─── Week template loading ───
-  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>) => {
+  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>, templateName?: string, templateLabel?: string) => {
     // First save any pending day edits
     if (daySaveRef.current) await daySaveRef.current();
 
@@ -1098,6 +1110,7 @@ export default function SchedulePage() {
 
     // Reload the week to pick up all changes
     await loadWeekSchedules(weekDates);
+    setLoadedTemplateName(templateName || null);
     setShowLoadTemplate(false);
   }, [orgId, supabase, state.teams, weekDates, loadWeekSchedules]);
 
@@ -1197,6 +1210,15 @@ export default function SchedulePage() {
               <span className="text-sm font-semibold text-text-primary min-w-[180px] text-center">
                 {state.viewMode === 'day' ? dayLabel : weekLabel}
               </span>
+              {loadedTemplateName && (
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-primary bg-primary/8 px-2.5 py-1 rounded-lg shrink-0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  {loadedTemplateName}
+                  <button onClick={() => setLoadedTemplateName(null)} className="p-0.5 rounded hover:bg-primary/15 transition-colors">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </span>
+              )}
               <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
               </button>

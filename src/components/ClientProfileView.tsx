@@ -95,6 +95,7 @@ export type ClientRow = {
   email: string | null;
   default_duration_minutes: number;
   default_staff_count: number;
+  rate: number | null;
   notes: string | null;
   color: string | null;
   access_instructions: string | null;
@@ -121,7 +122,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     if (!clientId) return;
     setLoading(true);
     supabase.from('clients')
-      .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, notes, color, access_instructions, created_at')
+      .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, rate, notes, color, access_instructions, created_at')
       .eq('id', clientId).single()
       .then(({ data }: { data: ClientRow | null }) => { setClient(data); setLoading(false); });
   }, [clientId, supabase]);
@@ -137,6 +138,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
   const [form, setForm] = useState({
     name: '', address: '', phone: '', email: '',
     default_duration_minutes: 90, default_staff_count: 1,
+    rate: '' as string | number,
     notes: '', access_instructions: '',
   });
   const [editingChecklistId, setEditingChecklistId] = useState<string | 'new' | null>(null);
@@ -153,6 +155,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
         email: client.email || '',
         default_duration_minutes: client.default_duration_minutes,
         default_staff_count: client.default_staff_count,
+        rate: client.rate != null ? client.rate : '',
         notes: client.notes || '',
         access_instructions: client.access_instructions || '',
       });
@@ -278,27 +281,33 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
         <div className="card p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Contact &amp; Details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(['phone', 'email', 'default_duration_minutes', 'default_staff_count'] as const).map(field => (
+            {(['phone', 'email', 'default_duration_minutes', 'default_staff_count', 'rate'] as const).map(field => (
               <div key={field}>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'default_staff_count' ? 'Default Staff Count' : field.charAt(0).toUpperCase() + field.slice(1)}
+                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'default_staff_count' ? 'Default Staff Count' : field === 'rate' ? 'Client Rate ($)' : field.charAt(0).toUpperCase() + field.slice(1)}
                 </label>
                 {editingField === field ? (
                   <div className="flex gap-1">
                     <input autoFocus
-                      type={field.includes('_') ? 'number' : field === 'email' ? 'email' : 'text'}
+                      type={field === 'rate' || field.includes('_') ? 'number' : field === 'email' ? 'email' : 'text'}
                       value={form[field]}
-                      onChange={e => setForm(f => ({ ...f, [field]: field.includes('_') ? Number(e.target.value) : e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') saveField(field, form[field]); if (e.key === 'Escape') setEditingField(null); }}
+                      onChange={e => setForm(f => ({ ...f, [field]: field === 'rate' || field.includes('_') ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') saveField(field, form[field] === '' ? null as unknown as number : form[field]); if (e.key === 'Escape') setEditingField(null); }}
+                      placeholder={field === 'rate' ? '0.00' : ''}
+                      step={field === 'rate' ? '0.01' : undefined}
+                      min={field === 'rate' ? '0' : undefined}
                       className="input-field text-sm flex-1 py-1.5"/>
-                    <button onClick={() => saveField(field, form[field])} className="btn-primary text-xs py-1 px-2">✓</button>
+                    <button onClick={() => saveField(field, form[field] === '' ? null as unknown as number : form[field])} className="btn-primary text-xs py-1 px-2">✓</button>
                     <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
                   </div>
                 ) : (
                   <button onClick={() => setEditingField(field)}
                     className="group flex items-center gap-1.5 w-full text-left px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover transition-colors">
                     <span className="text-sm text-text-primary flex-1">
-                      {form[field] || <span className="text-text-tertiary italic">Not set</span>}
+                      {field === 'rate'
+                        ? (form[field] !== '' && form[field] != null ? `$${Number(form[field]).toFixed(2)}` : <span className="text-text-tertiary italic">Not set</span>)
+                        : (form[field] || <span className="text-text-tertiary italic">Not set</span>)
+                      }
                     </span>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                       className="text-text-tertiary opacity-0 group-hover:opacity-100 shrink-0 transition-opacity">

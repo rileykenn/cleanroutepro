@@ -11,6 +11,7 @@ export interface SavedClient {
   notes: string; checklist_template_id: string | null;
   custom_checklist_items: { id: string; text: string }[] | null;
   color: string | null;
+  rate: number | null;
   created_at: string;
 }
 

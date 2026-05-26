@@ -2,6 +2,11 @@ import { Client, TeamSchedule, TravelSegment, DaySummary } from './types';
 import { parseTime, minutesToTime } from './timeUtils';
 import { routeCache } from './routeCache';
 
+/** Actual staff working a job: assigned count if any, else the default staffCount */
+function getStaffCount(c: Client): number {
+  return (c.assignedStaffIds && c.assignedStaffIds.length > 0) ? c.assignedStaffIds.length : (c.staffCount || 1);
+}
+
 export async function calculateTravel(
   directionsService: google.maps.DirectionsService,
   origin: { lat: number; lng: number },
@@ -74,7 +79,7 @@ export async function calculateAllTravel(
       const clientIndex = hasBase ? i : i; // index into stops vs clients
       const clientForThisLeg = team.clients.find(c => c.id === to.id);
       if (clientForThisLeg) {
-        currentMinutes += clientForThisLeg.jobDurationMinutes / (clientForThisLeg.staffCount || 1);
+        currentMinutes += clientForThisLeg.jobDurationMinutes / getStaffCount(clientForThisLeg);
       }
     }
     if (i < stops.length - 2) await new Promise((r) => setTimeout(r, 200));
@@ -105,7 +110,7 @@ export function calculateScheduleTimes(team: TeamSchedule): ScheduleTimesResult 
     const brk = team.breaks.find(b => b.afterClientId === clientId);
     return brk ? brk.durationMinutes : 0;
   };
-  const effectiveDur = (c: Client): number => c.jobDurationMinutes / (c.staffCount || 1);
+  const effectiveDur = (c: Client): number => c.jobDurationMinutes / getStaffCount(c);
 
   // Find the last client with a fixedStartTime (anchor for backward calculation)
   let lastAnchorIdx = -1;
@@ -191,7 +196,7 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
   team.travelSegments.forEach((s) => { if (!s.isCalculating) { totalTravelMinutes += s.durationMinutes; totalDistanceKm += s.distanceKm; } });
   const totalJobMinutes = team.clients.reduce((s, c) => s + c.jobDurationMinutes, 0);
   const totalBreakMinutes = team.breaks.reduce((s, b) => s + b.durationMinutes, 0);
-  const effectiveJobMinutes = team.clients.reduce((s, c) => s + c.jobDurationMinutes / (c.staffCount || 1), 0);
+  const effectiveJobMinutes = team.clients.reduce((s, c) => s + c.jobDurationMinutes / getStaffCount(c), 0);
   const totalWorkMinutes = effectiveJobMinutes + totalTravelMinutes + totalBreakMinutes;
   // Payable = jobs + travel (breaks excluded for payroll)
   const payableMinutes = effectiveJobMinutes + totalTravelMinutes;
@@ -244,8 +249,8 @@ export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary, staff
   team.clients.forEach((c, i) => {
     const prevId = i === 0 ? (hasBase ? 'base' : null) : team.clients[i-1].id;
     const seg = prevId ? team.travelSegments.get(`${prevId}->${c.id}`) : null;
-    const eff = c.jobDurationMinutes / (c.staffCount || 1);
-    rows.push([String(i+1),c.name,c.location.address,c.startTime||'',c.endTime||'',`${c.jobDurationMinutes} min`,String(c.staffCount||1),`${eff.toFixed(0)} min`,seg?String(seg.durationMinutes):'',seg?String(seg.distanceKm):'']);
+    const eff = c.jobDurationMinutes / getStaffCount(c);
+    rows.push([String(i+1),c.name,c.location.address,c.startTime||'',c.endTime||'',`${c.jobDurationMinutes} min`,String(getStaffCount(c)),`${eff.toFixed(0)} min`,seg?String(seg.durationMinutes):'',seg?String(seg.distanceKm):'']);
   });
   if (team.clients.length > 0 && hasBase) {
     const last = team.clients[team.clients.length-1];

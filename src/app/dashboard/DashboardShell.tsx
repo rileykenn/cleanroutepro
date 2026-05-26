@@ -28,7 +28,6 @@ const ADMIN_NAV = [
 
 const STAFF_NAV = [
   { label: 'My Schedule', href: '/dashboard/staff-view', d: 'M3 4h18v18H3zM16 2v4M8 2v4M3 10h18' },
-  { label: 'Clients', href: '/dashboard/checklists', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
 ];
 
 export default function DashboardShell({ children, serverProfile }: { children: React.ReactNode; serverProfile: UserProfile | null }) {
@@ -51,7 +50,7 @@ function Inner({ children }: { children: React.ReactNode }) {
   const [showCreateOrg, setShowCreateOrg] = useState(false);
 
   const hasOrg = !!profile?.org_id;
-  const userRole = profile?.role || 'admin';
+  const userRole = profile?.role || 'staff';
   const navItems = userRole === 'staff' ? STAFF_NAV : ADMIN_NAV;
 
   const loadOrgs = useCallback(async () => {

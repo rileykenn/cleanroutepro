@@ -328,6 +328,9 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
               className="input-field text-sm resize-none w-full" rows={3}/>
             <p className="text-[10px] text-text-tertiary mt-1">Shown to staff in the schedule job panel</p>
           </div>
+          <div className="border-t border-border-light pt-3">
+            <MediaSection clientId={clientId} orgId={orgId}/>
+          </div>
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1">Internal Notes</label>
             <textarea value={form.notes}
@@ -335,9 +338,6 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
               onBlur={() => saveField('notes', form.notes)}
               placeholder="Internal admin notes…"
               className="input-field text-sm resize-none w-full" rows={2}/>
-          </div>
-          <div className="border-t border-border-light pt-3">
-            <MediaSection clientId={clientId} orgId={orgId}/>
           </div>
         </div>
       </div>

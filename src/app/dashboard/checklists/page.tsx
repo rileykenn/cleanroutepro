@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useClients } from '@/lib/hooks/useClients';
@@ -22,8 +23,14 @@ type ClientChecklist = {
 
 export default function ChecklistsPage() {
   const { profile } = useAuth();
+  const router = useRouter();
   const orgId = profile?.org_id || null;
   const supabase = useMemo(() => createSupabaseClient(), []);
+
+  // Staff should not access this page
+  useEffect(() => {
+    if (profile?.role === 'staff') router.replace('/dashboard/staff-view');
+  }, [profile?.role, router]);
 
   const { clients } = useClients(orgId);
 

@@ -72,7 +72,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     // Staff — block admin-only pages
-    const adminOnlyPaths = ['/dashboard/schedule', '/dashboard/templates', '/dashboard/settings', '/dashboard/staff'];
+    const adminOnlyPaths = ['/dashboard/schedule', '/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/clients', '/dashboard/checklists', '/dashboard/onboarding'];
     const isAdminOnly = adminOnlyPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
     if (profile.role === 'staff' && isAdminOnly) {

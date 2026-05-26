@@ -10,6 +10,7 @@ import { getTodayISO } from '@/lib/timeUtils';
 import { formatDateInTimezone } from '@/lib/timezone';
 
 const ClientInfoPanel = lazy(() => import('@/components/ClientInfoPanel'));
+const StaffChecklistView = lazy(() => import('@/components/StaffChecklistView'));
 
 interface JobInfo {
   id: string;
@@ -73,6 +74,7 @@ export default function StaffViewPage() {
   const [infoClientName, setInfoClientName] = useState('');
   const [infoJobId, setInfoJobId] = useState<string | null>(null);
   const [allStaff, setAllStaff] = useState<{ id: string; name: string }[]>([]);
+  const [checklistJob, setChecklistJob] = useState<{ clientId: string; clientName: string; clientAddress: string; jobId: string } | null>(null);
 
   // Generate week dates (Mon–Sun) — timezone-aware
   const weekDates = useMemo(() => {
@@ -285,6 +287,15 @@ export default function StaffViewPage() {
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           {job.client_id && (
+                            <button onClick={() => setChecklistJob({ clientId: job.client_id!, clientName: job.name, clientAddress: job.address, jobId: job.id })}
+                              className="p-1.5 rounded-lg hover:bg-emerald-50 text-text-tertiary hover:text-emerald-600 transition-colors" title="Open checklist">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                                <rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>
+                              </svg>
+                            </button>
+                          )}
+                          {job.client_id && (
                             <button onClick={() => { setInfoClientId(job.client_id!); setInfoClientName(job.name); setInfoJobId(job.id); }}
                               className="p-1.5 rounded-lg hover:bg-primary-light text-text-tertiary hover:text-primary transition-colors" title="Client info & media">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
@@ -401,6 +412,19 @@ export default function StaffViewPage() {
             clientName={infoClientName}
             scheduleJobId={infoJobId || undefined}
             onClose={() => { setInfoClientId(null); setInfoJobId(null); }}
+          />
+        </Suspense>
+      )}
+
+      {/* Staff Checklist View */}
+      {checklistJob && (
+        <Suspense fallback={null}>
+          <StaffChecklistView
+            clientId={checklistJob.clientId}
+            clientName={checklistJob.clientName}
+            clientAddress={checklistJob.clientAddress}
+            scheduleJobId={checklistJob.jobId}
+            onClose={() => setChecklistJob(null)}
           />
         </Suspense>
       )}

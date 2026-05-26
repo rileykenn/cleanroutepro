@@ -132,7 +132,7 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
             const ids = c.assignedStaffIds || [];
             if (ids.includes(sid)) return c;
             const newIds = [...ids, sid];
-            return { ...c, assignedStaffIds: newIds, staffCount: Math.max(1, newIds.length) };
+            return { ...c, assignedStaffIds: newIds };
           });
         }
         return updated;

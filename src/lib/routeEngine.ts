@@ -2,9 +2,9 @@ import { Client, TeamSchedule, TravelSegment, DaySummary } from './types';
 import { parseTime, minutesToTime } from './timeUtils';
 import { routeCache } from './routeCache';
 
-/** Actual staff working a job: assigned count if any, else the default staffCount */
+/** Staff count used for effective hours: always uses the staffCount field */
 function getStaffCount(c: Client): number {
-  return (c.assignedStaffIds && c.assignedStaffIds.length > 0) ? c.assignedStaffIds.length : (c.staffCount || 1);
+  return c.staffCount || 1;
 }
 
 export async function calculateTravel(

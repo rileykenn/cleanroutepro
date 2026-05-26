@@ -84,7 +84,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const mapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(client.location.address)}&destination_place_id=${client.location.placeId || ''}`;
   const durationHours = client.jobDurationMinutes / 60;
   const assignedIds = client.assignedStaffIds || [];
-  const effectiveStaffCount = assignedIds.length > 0 ? assignedIds.length : (client.staffCount || 1);
+  const effectiveStaffCount = client.staffCount || 1;
 
   const handleFixedTimeChange = (time: string) => { dispatch({ type: 'SET_FIXED_START_TIME', teamId: team.id, clientId: client.id, time: time || undefined }); };
   const clearFixedTime = () => { dispatch({ type: 'SET_FIXED_START_TIME', teamId: team.id, clientId: client.id, time: undefined }); setEditingStartTime(false); };

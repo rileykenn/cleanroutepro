@@ -275,7 +275,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
             {(['phone', 'email', 'default_duration_minutes', 'default_staff_count', 'rate'] as const).map(field => (
               <div key={field}>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'default_staff_count' ? 'Default Staff Count' : field === 'rate' ? 'Client Rate ($)' : field.charAt(0).toUpperCase() + field.slice(1)}
+                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'default_staff_count' ? 'Default Staff Count' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
                 </label>
                 {editingField === field ? (
                   <div className="flex gap-1">
@@ -296,7 +296,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
                     className="group flex items-center gap-1.5 w-full text-left px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover transition-colors">
                     <span className="text-sm text-text-primary flex-1">
                       {field === 'rate'
-                        ? (form[field] !== '' && form[field] != null ? `$${Number(form[field]).toFixed(2)}` : <span className="text-text-tertiary italic">Not set</span>)
+                        ? (form[field] !== '' && form[field] != null ? `$${Number(form[field]).toFixed(2)}/hr` : <span className="text-text-tertiary italic">Not set</span>)
                         : (form[field] || <span className="text-text-tertiary italic">Not set</span>)
                       }
                     </span>

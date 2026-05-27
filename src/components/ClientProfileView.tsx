@@ -272,10 +272,10 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
         <div className="card p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Contact &amp; Details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(['phone', 'email', 'default_duration_minutes', 'default_staff_count', 'rate'] as const).map(field => (
+            {(['phone', 'email', 'default_duration_minutes', 'rate'] as const).map(field => (
               <div key={field}>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'default_staff_count' ? 'Default Staff Count' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
+                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
                 </label>
                 {editingField === field ? (
                   <div className="flex gap-1">

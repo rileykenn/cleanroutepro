@@ -129,10 +129,20 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'SET_DRIVER':
       return { ...state, teams: state.teams.map((t) => {
         if (t.id !== action.teamId) return t;
+        const oldDriverId = t.driverStaffId;
         const updated = { ...t, driverStaffId: action.staffId };
+        // Remove old driver from all jobs
+        if (oldDriverId) {
+          updated.clients = (updated.clients || t.clients).map(c => {
+            const ids = c.assignedStaffIds || [];
+            if (!ids.includes(oldDriverId)) return c;
+            return { ...c, assignedStaffIds: ids.filter(id => id !== oldDriverId) };
+          });
+        }
+        // Add new driver to all jobs
         if (action.staffId) {
           const sid = action.staffId;
-          updated.clients = t.clients.map(c => {
+          updated.clients = (updated.clients || t.clients).map(c => {
             const ids = c.assignedStaffIds || [];
             if (ids.includes(sid)) return c;
             return { ...c, assignedStaffIds: [...ids, sid] };

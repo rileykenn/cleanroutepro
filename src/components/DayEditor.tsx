@@ -309,6 +309,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const prevClientCountRef = useRef<number>(-1);
   const prevBreakCountRef = useRef<number>(-1);
   const prevBaseRef = useRef<string>('');
+  const prevStaffRef = useRef<string>('');
   const stateRef = useRef(state);
   stateRef.current = state;
   // After a day load (date changes), the first effect run should just initialize
@@ -519,6 +520,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       prevClientCountRef.current = totalClients;
       prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
       prevBaseRef.current = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
+      prevStaffRef.current = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
       return;
     }
 
@@ -526,17 +528,21 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     prevStateRef.current = fingerprint;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    // Structural = client/break count changed OR base/return address changed → save immediately.
-    // Detail change (duration, notes, staff etc.) → 800ms debounce.
+    // Structural = client/break count changed OR base/return address changed
+    //            OR staff assignments/driver changed → save immediately.
+    // Detail change (duration, notes etc.) → 800ms debounce.
     const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
     const curBase = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
+    const curStaff = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
     const isStructural =
       totalClients !== prevClientCountRef.current ||
       totalBreaks !== prevBreakCountRef.current ||
-      curBase !== prevBaseRef.current;
+      curBase !== prevBaseRef.current ||
+      curStaff !== prevStaffRef.current;
     prevClientCountRef.current = totalClients;
     prevBreakCountRef.current = totalBreaks;
     prevBaseRef.current = curBase;
+    prevStaffRef.current = curStaff;
 
     if (isStructural) {
       saveNow();

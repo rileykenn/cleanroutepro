@@ -71,7 +71,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
       name: saved.name,
       location: loc,
       jobDurationMinutes: saved.default_duration_minutes || 90,
-      staffCount: saved.default_staff_count || 1,
+      staffCount: 1,
       isLocked: false,
       savedClientId: saved.id,
       notes: saved.notes || undefined,

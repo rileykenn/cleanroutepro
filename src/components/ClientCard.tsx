@@ -164,7 +164,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           placeId: saved.place_id || undefined,
         },
         jobDurationMinutes: saved.default_duration_minutes || client.jobDurationMinutes,
-        staffCount: saved.default_staff_count || client.staffCount,
+        staffCount: 1,
         savedClientId: saved.id,
         notes: saved.notes || undefined,
         clientColor: saved.color || undefined,

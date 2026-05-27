@@ -105,13 +105,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, viewMode: action.viewMode };
     case 'SET_FOCUSED_DATE':
       return { ...state, focusedDate: action.date, selectedDate: action.date };
-    case 'ASSIGN_STAFF_TO_JOB': {
-      return { ...state, teams: state.teams.map((t) => {
-        if (t.id !== action.teamId) return t;
-        const workerCount = action.staffIds.filter(id => id !== t.driverStaffId).length;
-        return { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, workerCount) } : c) };
-      }) };
-    }
+    case 'ASSIGN_STAFF_TO_JOB':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, action.staffIds.length) } : c) } : t) };
     case 'SET_RETURN_ADDRESS': {
       return { ...state, teams: state.teams.map((t) => {
         if (t.id !== action.teamId) return t;

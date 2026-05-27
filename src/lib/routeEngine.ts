@@ -202,11 +202,9 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
   const payableMinutes = effectiveJobMinutes + totalTravelMinutes;
   // Revenue = rate ($/hr) × booked job hours (not affected by staff count)
   const totalRevenue = team.clients.reduce((s, c) => s + (c.rate || 0) * (c.jobDurationMinutes / 60), 0);
-  // Count unique assigned staff (excluding driver)
+  // Count unique assigned staff (all count — drivers work on jobs too)
   const allStaffIds = new Set<string>();
-  team.clients.forEach(c => (c.assignedStaffIds || []).forEach(id => {
-    if (id !== team.driverStaffId) allStaffIds.add(id);
-  }));
+  team.clients.forEach(c => (c.assignedStaffIds || []).forEach(id => allStaffIds.add(id)));
   const staffCount = allStaffIds.size;
   return {
     totalJobMinutes, totalTravelMinutes, totalDistanceKm, totalWorkMinutes,

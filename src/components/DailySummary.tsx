@@ -194,48 +194,6 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
           <span className="text-lg font-bold" style={{ color: team.color.text }}>${totalWages.toFixed(2)}</span>
         </div>
 
-        {/* Fuel Cost */}
-        <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={team.color.primary} strokeWidth="2">
-                <path d="M3 22V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" />
-                <path d="M15 10h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 4" />
-                <path d="M3 22h12" /><path d="M7 10h4" />
-              </svg>
-              <span className="text-xs font-semibold text-text-primary">Fuel Cost</span>
-            </div>
-            <div className="text-lg font-bold" style={{ color: team.color.primary }}>${summary.fuelCost.toFixed(2)}</div>
-          </div>
-          <div className="flex items-center gap-3 text-xs">
-            <label className="flex items-center gap-1.5">
-              <span className="text-text-tertiary">L/100km</span>
-              <input type="number" value={team.fuelEfficiency}
-                onChange={(e) => dispatch({ type: 'SET_FUEL_SETTINGS', teamId: team.id, fuelEfficiency: parseFloat(e.target.value) || 0, fuelPrice: team.fuelPrice })}
-                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.5} />
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span className="text-text-tertiary">$/L</span>
-              <input type="number" value={team.fuelPrice}
-                onChange={(e) => dispatch({ type: 'SET_FUEL_SETTINGS', teamId: team.id, fuelEfficiency: team.fuelEfficiency, fuelPrice: parseFloat(e.target.value) || 0 })}
-                className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.01} />
-            </label>
-          </div>
-        </div>
-
-        {/* Per-KM Allowance */}
-        <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-text-primary">Per-KM Allowance</span>
-            <div className="text-lg font-bold" style={{ color: team.color.primary }}>${summary.perKmCost.toFixed(2)}</div>
-          </div>
-          <label className="flex items-center gap-1.5 text-xs">
-            <span className="text-text-tertiary">$/km</span>
-            <input type="number" value={team.perKmRate}
-              onChange={(e) => dispatch({ type: 'SET_PER_KM_RATE', teamId: team.id, rate: parseFloat(e.target.value) || 0 })}
-              className="w-16 text-center font-medium bg-white border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary" min={0} step={0.01} />
-          </label>
-        </div>
 
         {/* Divider before financials */}
         {summary.totalRevenue > 0 && (
@@ -256,7 +214,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
 
             {/* Total Costs */}
             {(() => {
-              const totalCosts = totalWages + summary.fuelCost + summary.perKmCost;
+              const totalCosts = totalWages;
               const profit = summary.totalRevenue - totalCosts;
               return (
                 <>

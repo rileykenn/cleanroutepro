@@ -118,17 +118,26 @@ export default function StaffViewPage() {
     if (!profile?.org_id || !profile?.id) return;
     (async () => {
       const { data } = await supabase
-        .from('staff_members').select('id, name')
+        .from('staff_members').select('id, name, email')
         .eq('org_id', profile.org_id);
-      if (data) setAllStaff(data);
+      if (data) setAllStaff(data.map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
 
       // Find which staff_member record belongs to this user
       const { data: me } = await supabase
         .from('staff_members').select('id')
         .eq('user_id', profile.id).maybeSingle();
-      if (me) setStaffMemberId(me.id);
+      if (me) { setStaffMemberId(me.id); return; }
+
+      // Fallback: match by email and auto-link
+      if (profile.email && data) {
+        const match = data.find((s: { id: string; email: string | null }) => s.email && s.email.toLowerCase() === profile.email!.toLowerCase());
+        if (match) {
+          setStaffMemberId(match.id);
+          await supabase.from('staff_members').update({ user_id: profile.id }).eq('id', match.id);
+        }
+      }
     })();
-  }, [profile?.org_id, profile?.id, supabase]);
+  }, [profile?.org_id, profile?.id, profile?.email, supabase]);
 
   // Load entire week's data
   const loadWeek = useCallback(async () => {

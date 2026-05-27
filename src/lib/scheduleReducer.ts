@@ -108,7 +108,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'ASSIGN_STAFF_TO_JOB': {
       return { ...state, teams: state.teams.map((t) => {
         if (t.id !== action.teamId) return t;
-        return { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, action.staffIds.length) } : c) };
+        const workerCount = action.staffIds.filter(id => id !== t.driverStaffId).length;
+        return { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, workerCount) } : c) };
       }) };
     }
     case 'SET_RETURN_ADDRESS': {
@@ -126,7 +127,19 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'CLEAR_BASE_ADDRESS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, baseAddress: null, returnAddress: 'none', travelSegments: new Map() } : t) };
     case 'SET_DRIVER':
-      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, driverStaffId: action.staffId } : t) };
+      return { ...state, teams: state.teams.map((t) => {
+        if (t.id !== action.teamId) return t;
+        const updated = { ...t, driverStaffId: action.staffId };
+        if (action.staffId) {
+          const sid = action.staffId;
+          updated.clients = t.clients.map(c => {
+            const ids = c.assignedStaffIds || [];
+            if (ids.includes(sid)) return c;
+            return { ...c, assignedStaffIds: [...ids, sid] };
+          });
+        }
+        return updated;
+      }) };
     default:
       return state;
   }

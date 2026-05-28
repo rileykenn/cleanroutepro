@@ -10,6 +10,7 @@ interface StaffChecklistViewProps {
   clientName: string;
   clientAddress?: string;
   scheduleJobId?: string;
+  jobChecklistId?: string | null;
   onClose: () => void;
 }
 
@@ -240,7 +241,7 @@ function FieldInput({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function StaffChecklistView({
-  clientId, clientName, clientAddress, scheduleJobId, onClose,
+  clientId, clientName, clientAddress, scheduleJobId, jobChecklistId, onClose,
 }: StaffChecklistViewProps) {
   const supabase = useMemo(() => createClient(), []);
   const [fields, setFields] = useState<FormField[]>([]);
@@ -260,13 +261,48 @@ export default function StaffChecklistView({
 
   // ── Load template & pre-fill ──────────────────────────────────────────────
   const loadChecklist = useCallback(async () => {
+    // ── Priority 1: job-specific checklist chosen by admin in the scheduler ──
+    if (jobChecklistId) {
+      const { data: cl } = await supabase
+        .from('client_checklists')
+        .select('id, name, sections')
+        .eq('id', jobChecklistId)
+        .single();
+      if (cl) {
+        setTemplateId(cl.id);
+        setTemplateName(cl.name || 'Checklist');
+        const { migrateOldSection } = await import('@/components/checklist/types');
+        const rawItems = ((cl.sections as Record<string, unknown>[]) || []).flatMap(
+          (s: Record<string, unknown>) => {
+            const migrated = migrateOldSection(s);
+            return (migrated.fields || []) as AnyFormField[];
+          }
+        );
+        const normalised = rawItems.map(normaliseField);
+        setFields(normalised);
+        const now = new Date();
+        const todayDate = now.toISOString().split('T')[0];
+        const nowTime = now.toTimeString().slice(0, 5);
+        const initialAnswers = new Map<string, FieldAnswer>();
+        normalised.forEach(f => {
+          const base: FieldAnswer = { fieldId: f.id, value: null };
+          if (f.type === 'date') base.value = todayDate;
+          if (f.type === 'time') base.value = nowTime;
+          initialAnswers.set(f.id, base);
+        });
+        setAnswers(initialAnswers);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // ── Priority 2: client's default template (legacy fallback) ──
     const { data: client } = await supabase.from('clients')
       .select('checklist_template_id, email, custom_checklist_items').eq('id', clientId).single();
     if (client?.email) setClientEmail(client.email);
     if (!client?.checklist_template_id) { setLoading(false); return; }
     setTemplateId(client.checklist_template_id);
 
-    // Prefer custom items
     let rawItems: AnyFormField[] = [];
     if (client.custom_checklist_items && Array.isArray(client.custom_checklist_items) && client.custom_checklist_items.length > 0) {
       rawItems = client.custom_checklist_items as AnyFormField[];
@@ -281,7 +317,6 @@ export default function StaffChecklistView({
     const normalised = (rawItems || []).map(normaliseField);
     setFields(normalised);
 
-    // Pre-fill date/time fields
     const now = new Date();
     const todayDate = now.toISOString().split('T')[0];
     const nowTime = now.toTimeString().slice(0, 5);
@@ -294,7 +329,7 @@ export default function StaffChecklistView({
     });
     setAnswers(initialAnswers);
     setLoading(false);
-  }, [supabase, clientId]);
+  }, [supabase, clientId, jobChecklistId]);
 
   useEffect(() => { loadChecklist(); }, [loadChecklist]);
 

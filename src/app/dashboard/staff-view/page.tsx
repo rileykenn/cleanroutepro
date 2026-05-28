@@ -26,6 +26,7 @@ interface JobInfo {
   client_id: string | null;
   assigned_staff_ids: string[];
   place_id: string | null;
+  checklist_id: string | null;
   checklist_completed?: boolean;
 }
 
@@ -302,7 +303,7 @@ export default function StaffPortalPage() {
   const [infoClientName, setInfoClientName] = useState('');
   const [infoJobId, setInfoJobId] = useState<string | null>(null);
   const [checklistJob, setChecklistJob] = useState<{
-    clientId: string; clientName: string; clientAddress: string; jobId: string;
+    clientId: string; clientName: string; clientAddress: string; jobId: string; checklistId?: string | null;
   } | null>(null);
 
   const [completedChecklists, setCompletedChecklists] = useState<CompletedChecklist[]>([]);
@@ -631,6 +632,7 @@ export default function StaffPortalPage() {
                             clientName: job.name,
                             clientAddress: job.address,
                             jobId: job.id,
+                            checklistId: job.checklist_id || null,
                           })}
                           onInfo={() => {
                             setInfoClientId(job.client_id!);
@@ -759,6 +761,7 @@ export default function StaffPortalPage() {
                                 clientName: job.name,
                                 clientAddress: job.address,
                                 jobId: job.id,
+                                checklistId: job.checklist_id || null,
                               })}
                               onInfo={() => {
                                 setInfoClientId(job.client_id!);
@@ -1028,6 +1031,7 @@ export default function StaffPortalPage() {
             clientName={checklistJob.clientName}
             clientAddress={checklistJob.clientAddress}
             scheduleJobId={checklistJob.jobId}
+            jobChecklistId={checklistJob.checklistId}
             onClose={handleChecklistClose}
           />
         </Suspense>

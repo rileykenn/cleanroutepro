@@ -60,14 +60,14 @@ export default function ClientChecklistPanel({
     setSaveStatus('idle');
   }, [activeChecklist]);
 
-  // Access instructions
+  // Access instructions (now stored in the notes column)
   const [accessInstructions, setAccessInstructions] = useState<string | null>(null);
   const [showAccess, setShowAccess] = useState(false);
   useEffect(() => {
     if (!savedClientId) return;
-    supabase.from('clients').select('access_instructions').eq('id', savedClientId).single()
-      .then(({ data }: { data: { access_instructions: string | null } | null }) => {
-        setAccessInstructions(data?.access_instructions || null);
+    supabase.from('clients').select('notes').eq('id', savedClientId).single()
+      .then(({ data }: { data: { notes: string | null } | null }) => {
+        setAccessInstructions(data?.notes || null);
       });
   }, [savedClientId, supabase]);
 

@@ -162,39 +162,58 @@ export default function SchedulePage() {
       }
       const newPublished = new Set<string>();
 
+      // ── Bulk fetch: all schedules for all teams this week in ONE query ──
+      const teamIds = teamsList.map((t: TeamSchedule) => t.id);
+      const { data: allScheduleRows } = await supabase
+        .from('schedules')
+        .select('id, team_id, schedule_date, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
+        .in('team_id', teamIds)
+        .in('schedule_date', dates);
+
+      // Index schedules by team_id → date for O(1) lookup
+      const scheduleIndex = new Map<string, typeof allScheduleRows[0]>();
+      for (const row of allScheduleRows || []) {
+        scheduleIndex.set(`${row.team_id}::${row.schedule_date}`, row);
+      }
+
+      // ── Bulk fetch: all jobs for all those schedules in ONE query ──
+      const allScheduleIds = (allScheduleRows || []).map((s: { id: string }) => s.id);
+      let jobIndex = new Map<string, typeof allScheduleRows>();
+      if (allScheduleIds.length > 0) {
+        const { data: allJobRows } = await supabase
+          .from('schedule_jobs')
+          .select('*')
+          .in('schedule_id', allScheduleIds)
+          .order('position');
+        // Index jobs by schedule_id
+        for (const job of allJobRows || []) {
+          const list = jobIndex.get(job.schedule_id) || [];
+          list.push(job);
+          jobIndex.set(job.schedule_id, list);
+        }
+      }
+
+      // ── Assemble results in JS — no more DB round trips ──
       for (const team of teamsList) {
         const teamMap = new Map<string, DaySchedule>();
 
         for (const date of dates) {
           const dayClients: Client[] = [];
           const dayBreaks: import('@/lib/types').ScheduleBreak[] = [];
-          let schedId: string | null = null;
-          let templateCode: string | undefined;
-          let isPublished = false;
 
-          const { data: schedule } = await supabase
-            .from('schedules')
-            .select('id, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
-            .eq('team_id', team.id)
-            .eq('schedule_date', date)
-            .maybeSingle();
+          const schedule = scheduleIndex.get(`${team.id}::${date}`);
+          let schedId: string | null = schedule?.id ?? null;
+          let templateCode: string | undefined = schedule?.template_code ?? undefined;
+          let isPublished = schedule?.is_published ?? false;
+          let hasStartBase = schedule?.has_start_base !== false;
+          let hasReturnBase = schedule?.has_return_base !== false;
+          let dayDriverStaffId: string | null = (schedule?.driver_staff_id as string) || null;
 
           // Per-day base address (from schedule row, or fallback to team default)
           let dayBaseAddress: AppLocation | null = team.baseAddress;
           let dayReturnAddress: AppLocation | null | 'none' = team.returnAddress;
-          let hasStartBase = true;
-          let hasReturnBase = true;
-          let dayDriverStaffId: string | null = null;
 
           if (schedule) {
-            schedId = schedule.id;
-            isPublished = schedule.is_published || false;
-            templateCode = schedule.template_code || undefined;
-            hasStartBase = schedule.has_start_base !== false;
-            hasReturnBase = schedule.has_return_base !== false;
-            dayDriverStaffId = (schedule.driver_staff_id as string) || null;
-
-            // Override base from schedule if set
             if (schedule.base_address) {
               dayBaseAddress = {
                 address: String(schedule.base_address), lat: Number(schedule.base_lat) || 0,
@@ -203,7 +222,6 @@ export default function SchedulePage() {
             }
             if (!hasStartBase) dayBaseAddress = null;
 
-            // Override return from schedule if set
             if (!hasReturnBase) {
               dayReturnAddress = 'none';
             } else if (schedule.return_address) {
@@ -213,55 +231,46 @@ export default function SchedulePage() {
               } as AppLocation;
             }
 
-            const { data: jobs } = await supabase
-              .from('schedule_jobs')
-              .select('*')
-              .eq('schedule_id', schedule.id)
-              .order('position');
-
-            if (jobs) {
-              // First pass: build client list (needed so breaks can reference client IDs)
-              const breakRows: typeof jobs = [];
-              for (const j of jobs) {
-                if (j.is_break) { breakRows.push(j); continue; }
-                const assignedIds = (j.assigned_staff_ids as string[]) || [];
-                dayClients.push({
-                  id: j.id as string,
-                  name: (j.name as string) || '',
-                  location: {
-                    address: (j.address as string) || '',
-                    lat: (j.lat as number) || 0,
-                    lng: (j.lng as number) || 0,
-                    placeId: (j.place_id as string) || undefined,
-                  },
-                  jobDurationMinutes: Number(j.duration_minutes) || 90,
-                  staffCount: (j.staff_count as number) || 1,
-                  isLocked: (j.is_locked as boolean) || false,
-                  fixedStartTime: (j.fixed_start_time as string) || undefined,
-                  startTime: (j.start_time as string) || undefined,
-                  endTime: (j.end_time as string) || undefined,
-                  notes: (j.notes as string) || undefined,
-                  savedClientId: (j.client_id as string) || undefined,
-                  assignedStaffIds: assignedIds,
-                  clientColor: j.client_id ? clientColorMap.get(j.client_id as string) || undefined : undefined,
-                  rate: j.client_id ? clientRateMap.get(j.client_id as string) ?? undefined : undefined,
+            const jobs = jobIndex.get(schedule.id) || [];
+            const breakRows: typeof jobs = [];
+            for (const j of jobs) {
+              if (j.is_break) { breakRows.push(j); continue; }
+              const assignedIds = (j.assigned_staff_ids as string[]) || [];
+              dayClients.push({
+                id: j.id as string,
+                name: (j.name as string) || '',
+                location: {
+                  address: (j.address as string) || '',
+                  lat: (j.lat as number) || 0,
+                  lng: (j.lng as number) || 0,
+                  placeId: (j.place_id as string) || undefined,
+                },
+                jobDurationMinutes: Number(j.duration_minutes) || 90,
+                staffCount: (j.staff_count as number) || 1,
+                isLocked: (j.is_locked as boolean) || false,
+                fixedStartTime: (j.fixed_start_time as string) || undefined,
+                startTime: (j.start_time as string) || undefined,
+                endTime: (j.end_time as string) || undefined,
+                notes: (j.notes as string) || undefined,
+                savedClientId: (j.client_id as string) || undefined,
+                assignedStaffIds: assignedIds,
+                clientColor: j.client_id ? clientColorMap.get(j.client_id as string) || undefined : undefined,
+                rate: j.client_id ? clientRateMap.get(j.client_id as string) ?? undefined : undefined,
+                checklistId: (j.checklist_id as string) || undefined,
+              });
+            }
+            for (const j of breakRows) {
+              try {
+                const meta = JSON.parse((j.notes as string) || '{}');
+                const clientIds = new Set(dayClients.map(c => c.id));
+                if (!meta.afterClientId || !clientIds.has(meta.afterClientId)) continue;
+                dayBreaks.push({
+                  id: meta.breakId || (j.id as string),
+                  afterClientId: meta.afterClientId,
+                  durationMinutes: Number(j.duration_minutes) || 30,
+                  label: meta.label || (j.name as string) || 'Break',
                 });
-              }
-              // Second pass: reconstruct breaks using afterPosition → client ID
-              for (const j of breakRows) {
-                try {
-                  const meta = JSON.parse((j.notes as string) || '{}');
-                  const clientIds = new Set(dayClients.map(c => c.id));
-                  if (!meta.afterClientId || !clientIds.has(meta.afterClientId)) continue;
-
-                  dayBreaks.push({
-                    id: meta.breakId || (j.id as string),
-                    afterClientId: meta.afterClientId,
-                    durationMinutes: Number(j.duration_minutes) || 30,
-                    label: meta.label || (j.name as string) || 'Break',
-                  });
-                } catch { /* skip malformed break row */ }
-              }
+              } catch { /* skip malformed break row */ }
             }
           }
 
@@ -285,6 +294,7 @@ export default function SchedulePage() {
 
         allTeamMaps.set(team.id, teamMap);
       }
+
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
@@ -526,6 +536,7 @@ export default function SchedulePage() {
               savedClientId: (j.client_id as string) || undefined,
               assignedStaffIds: assignedIds,
               rate: j.client_id ? clientRateMap.get(j.client_id as string) ?? undefined : undefined,
+              checklistId: (j.checklist_id as string) || undefined,
             };
           });
         // Reconstruct breaks from is_break=true rows.
@@ -1304,6 +1315,28 @@ export default function SchedulePage() {
               )}
             </div>
           </div>
+
+          {/* ── Unpublished warning banner ────────────────────────────────── */}
+          {state.viewMode === 'week' && !isStaff && weekHasJobs && !weekIsPublished && (
+            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 mx-0">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                </span>
+                <p className="text-sm font-semibold text-amber-800">
+                  Staff can&apos;t see this schedule yet
+                </p>
+                <span className="hidden sm:inline text-xs text-amber-600">— publish when you&apos;re ready</span>
+              </div>
+              <button
+                onClick={handlePublishWeek}
+                className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+              >
+                Publish now
+              </button>
+            </div>
+          )}
 
           {/* Team tabs — only render when there are teams */}
           {state.teams.length > 0 && (

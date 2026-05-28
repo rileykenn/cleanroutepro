@@ -95,7 +95,6 @@ export type ClientRow = {
   rate: number | null;
   notes: string | null;
   color: string | null;
-  access_instructions: string | null;
   created_at: string;
 };
 
@@ -117,11 +116,26 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
 
   useEffect(() => {
     if (!clientId) return;
+    let cancelled = false;
     setLoading(true);
-    supabase.from('clients')
-      .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, rate, notes, color, access_instructions, created_at')
-      .eq('id', clientId).single()
-      .then(({ data }: { data: ClientRow | null }) => { setClient(data); setLoading(false); });
+    setClient(null);
+
+    const fetchClient = async (attempt = 0) => {
+      const { data, error } = await supabase.from('clients')
+        .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, rate, notes, color, created_at')
+        .eq('id', clientId).single();
+      if (cancelled) return;
+      if ((data === null || error) && attempt < 2) {
+        // Auth session may not be ready yet — retry once after a short delay
+        setTimeout(() => fetchClient(attempt + 1), 400);
+        return;
+      }
+      setClient(data ?? null);
+      setLoading(false);
+    };
+
+    fetchClient();
+    return () => { cancelled = true; };
   }, [clientId, supabase]);
 
   const updateClient = useCallback(async (field: string, value: string | number | null) => {
@@ -135,7 +149,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     name: '', address: '', phone: '', email: '',
     default_duration_minutes: 90, default_staff_count: 1,
     rate: '' as string | number,
-    notes: '', access_instructions: '',
+    notes: '' as string,
   });
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -151,7 +165,6 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
         default_staff_count: client.default_staff_count,
         rate: client.rate != null ? client.rate : '',
         notes: client.notes || '',
-        access_instructions: client.access_instructions || '',
       });
     }
   }, [client]);
@@ -320,24 +333,16 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
             Notes / Access
           </h3>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Access Instructions</label>
-            <textarea value={form.access_instructions}
-              onChange={e => setForm(f => ({ ...f, access_instructions: e.target.value }))}
-              onBlur={() => saveField('access_instructions', form.access_instructions)}
+            <label className="block text-xs font-medium text-text-secondary mb-1">Access Instructions &amp; Notes</label>
+            <textarea value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              onBlur={() => saveField('notes', form.notes)}
               placeholder="How to get in, alarm code, key location, gate code, pets, special notes for staff…"
-              className="input-field text-sm resize-none w-full" rows={3}/>
+              className="input-field text-sm resize-none w-full" rows={4}/>
             <p className="text-[10px] text-text-tertiary mt-1">Shown to staff in the schedule job panel</p>
           </div>
           <div className="border-t border-border-light pt-3">
             <MediaSection clientId={clientId} orgId={orgId}/>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Internal Notes</label>
-            <textarea value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              onBlur={() => saveField('notes', form.notes)}
-              placeholder="Internal admin notes…"
-              className="input-field text-sm resize-none w-full" rows={2}/>
           </div>
         </div>
       </div>

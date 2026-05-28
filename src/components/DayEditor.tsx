@@ -295,13 +295,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   // Used by both the driver picker and per-job staff pickers
   const crossTeamDrivers = useMemo(() => {
     const map = new Map<string, string>();
+    if (!activeTeam) return map;
     for (const team of state.teams) {
       if (team.driverStaffId && team.id !== activeTeam.id) {
         map.set(team.driverStaffId, team.name);
       }
     }
     return map;
-  }, [state.teams, activeTeam.id]);
+  }, [state.teams, activeTeam]);
 
   // ─── Auto-save ───
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -310,6 +311,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const prevBreakCountRef = useRef<number>(-1);
   const prevBaseRef = useRef<string>('');
   const prevStaffRef = useRef<string>('');
+  // Track team-level settings (name, rates, times) separately so we only
+  // UPDATE the teams table when those actually change, not on every save.
+  const prevTeamSettingsRef = useRef<string>('');
   const stateRef = useRef(state);
   stateRef.current = state;
   // After a day load (date changes), the first effect run should just initialize
@@ -346,12 +350,19 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         const currentState = stateRef.current;
         const today = currentState.selectedDate;
         for (const team of currentState.teams) {
-          const teamUpdate: Record<string, unknown> = {
-            name: team.name, day_start_time: team.dayStartTime,
-            hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
-            fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
-          };
-          await supabase.from('teams').update(teamUpdate).eq('id', team.id);
+          const teamSettingsKey = JSON.stringify({
+            id: team.id, name: team.name, start: team.dayStartTime,
+            rate: team.hourlyRate, fuel: team.fuelEfficiency,
+            price: team.fuelPrice, km: team.perKmRate,
+          });
+          if (teamSettingsKey !== (prevTeamSettingsRef.current || '')) {
+            const teamUpdate: Record<string, unknown> = {
+              name: team.name, day_start_time: team.dayStartTime,
+              hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
+              fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
+            };
+            await supabase.from('teams').update(teamUpdate).eq('id', team.id);
+          }
 
           const hasClients = team.clients.length > 0;
           const hasBaseAddress = team.baseAddress !== null;
@@ -414,6 +425,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               start_time: c.startTime || null, end_time: c.endTime || null,
               fixed_start_time: c.fixedStartTime || null,
               assigned_staff_ids: c.assignedStaffIds || [],
+              checklist_id: c.checklistId || null,
             })),
             // Breaks stored with is_break=true; afterClientId encoded in notes.
             // Only persist breaks whose afterClientId still exists in the current client list —
@@ -508,6 +520,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           dur: c.jobDurationMinutes, notes: c.notes || '',
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
           assignedStaff: c.assignedStaffIds, color: c.clientColor,
+          checklist: c.checklistId || null,
         })),
         breaks: t.breaks,
       }))
@@ -521,6 +534,10 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
       prevBaseRef.current = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
       prevStaffRef.current = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
+      prevTeamSettingsRef.current = JSON.stringify(state.teams.map(t => ({
+        id: t.id, name: t.name, start: t.dayStartTime,
+        rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
+      })));
       return;
     }
 
@@ -534,6 +551,10 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
     const curBase = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
     const curStaff = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
+    const curTeamSettings = JSON.stringify(state.teams.map(t => ({
+      id: t.id, name: t.name, start: t.dayStartTime,
+      rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
+    })));
     const isStructural =
       totalClients !== prevClientCountRef.current ||
       totalBreaks !== prevBreakCountRef.current ||
@@ -543,11 +564,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     prevBreakCountRef.current = totalBreaks;
     prevBaseRef.current = curBase;
     prevStaffRef.current = curStaff;
+    prevTeamSettingsRef.current = curTeamSettings;
 
     if (isStructural) {
       saveNow();
     } else {
-      saveTimerRef.current = setTimeout(() => { saveNow(); }, 800);
+      // Detail changes (duration, notes, checklist, rates) — longer debounce
+      // to avoid hammering the DB while the user is still interacting.
+      saveTimerRef.current = setTimeout(() => { saveNow(); }, 2500);
     }
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state, dbLoaded, orgId, saveNow]);
@@ -627,7 +651,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   activeTeamRef.current = activeTeam;
 
   useEffect(() => {
-    if (!directionsService || activeTeamRef.current.clients.length === 0) return;
+    if (!directionsService || !activeTeamRef.current || activeTeamRef.current.clients.length === 0) return;
     const teamId = activeTeamRef.current.id;
     dispatch({ type: 'CLEAR_TRAVEL', teamId });
     const timer = setTimeout(async () => {

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
-const ClientInfoPanel = lazy(() => import('./ClientInfoPanel'));
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import PlacesAutocomplete from './PlacesAutocomplete';
 import { formatTimeDisplay, parseTime } from '@/lib/timeUtils';
 import { Client, Location, ScheduleAction, TeamSchedule, StaffMember } from '@/lib/types';
 import { SavedClient } from '@/lib/hooks/useClients';
+import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 
 export type StaffBusyPeriod = { start: number; end: number; teamName: string; clientName: string; clientId: string };
 
@@ -28,12 +28,12 @@ interface ClientCardProps {
 }
 
 export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist }: ClientCardProps) {
+  const supabase = useMemo(() => createSupabaseClient(), []);
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [addressVersion, setAddressVersion] = useState(0);
   const [editingStartTime, setEditingStartTime] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
   const [showSwap, setShowSwap] = useState(false);
   const [swapQuery, setSwapQuery] = useState('');
@@ -41,6 +41,72 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const placesLib = useMapsLibrary('places');
   const pickerRef = useRef<HTMLDivElement>(null);
   const pickerBtnRef = useRef<HTMLButtonElement>(null);
+
+  // ── Checklist picker state ──────────────────────────────────────────────────
+  const [showChecklistPicker, setShowChecklistPicker] = useState(false);
+  const [availableChecklists, setAvailableChecklists] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
+  const [checklistsLoading, setChecklistsLoading] = useState(false);
+  const checklistPickerRef = useRef<HTMLDivElement>(null);
+
+  // Close checklist picker on outside click
+  useEffect(() => {
+    if (!showChecklistPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (checklistPickerRef.current && !checklistPickerRef.current.contains(e.target as Node)) {
+        setShowChecklistPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showChecklistPicker]);
+
+  const handleChecklistButtonClick = useCallback(async () => {
+    if (!client.savedClientId || !onOpenChecklist) return;
+
+    // If only one checklist or already know them, open directly
+    if (availableChecklists.length === 1) {
+      const cl = availableChecklists[0];
+      if (client.checklistId !== cl.id) {
+        dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: cl.id } });
+      }
+      onOpenChecklist({ ...client, checklistId: cl.id });
+      return;
+    }
+    if (availableChecklists.length > 1) {
+      setShowChecklistPicker(prev => !prev);
+      return;
+    }
+
+    // First click — fetch checklists
+    setChecklistsLoading(true);
+    const { data } = await supabase
+      .from('client_checklists')
+      .select('id, name, is_default')
+      .eq('client_id', client.savedClientId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true });
+    setChecklistsLoading(false);
+    const list = data || [];
+    setAvailableChecklists(list);
+
+    if (list.length <= 1) {
+      // Zero or one checklist — open the panel immediately
+      const selectedId = list[0]?.id || client.checklistId || null;
+      if (selectedId && client.checklistId !== selectedId) {
+        dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: selectedId } });
+      }
+      onOpenChecklist({ ...client, checklistId: selectedId ?? undefined });
+    } else {
+      // Multiple — show picker
+      setShowChecklistPicker(true);
+    }
+  }, [client, team.id, dispatch, onOpenChecklist, availableChecklists, supabase]);
+
+  const handleSelectChecklist = useCallback((checklistId: string) => {
+    dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId } });
+    setShowChecklistPicker(false);
+    if (onOpenChecklist) onOpenChecklist({ ...client, checklistId });
+  }, [client, team.id, dispatch, onOpenChecklist]);
 
   // Close staff picker on outside click
   useEffect(() => {
@@ -248,30 +314,78 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           <button onClick={() => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { isLocked: !client.isLocked } })} className={`p-1.5 rounded-lg transition-colors ${client.isLocked ? 'bg-amber-50 text-amber-600' : 'hover:bg-surface-elevated text-text-tertiary hover:text-text-primary'}`} title="Lock position">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{client.isLocked ? <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></> : <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>}</svg>
           </button>
-          {/* Checklist icon — only shown for saved clients */}
+          {/* Checklist picker — only shown for saved clients */}
           {client.savedClientId && onOpenChecklist && (
-            <button
-              onClick={() => onOpenChecklist(client)}
-              className={`relative p-1.5 rounded-lg transition-colors ${
-                client.checklistId
-                  ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                  : 'hover:bg-surface-elevated text-text-tertiary hover:text-primary'
-              }`}
-              title="View checklist & access instructions"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <rect x="9" y="3" width="6" height="4" rx="1"/>
-                <path d="M9 12h6M9 16h4"/>
-              </svg>
-              {client.checklistId && (
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
-              )}
-            </button>
+            <div className="relative" ref={checklistPickerRef}>
+              <button
+                onClick={handleChecklistButtonClick}
+                disabled={checklistsLoading}
+                className={`relative p-1.5 rounded-lg transition-colors ${
+                  client.checklistId
+                    ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                    : 'hover:bg-surface-elevated text-text-tertiary hover:text-primary'
+                }`}
+                title={client.checklistId ? 'Change checklist for this job' : 'Select checklist for this job'}
+              >
+                {checklistsLoading ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                    <rect x="9" y="3" width="6" height="4" rx="1"/>
+                    <path d="M9 12h6M9 16h4"/>
+                  </svg>
+                )}
+                {client.checklistId && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
+                )}
+              </button>
+
+              {/* Multi-checklist picker dropdown */}
+              <AnimatePresence>
+                {showChecklistPicker && availableChecklists.length > 1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 bottom-full mb-1.5 z-40 w-56 bg-white rounded-xl shadow-lg border border-border-light p-2"
+                  >
+                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1 mb-1">
+                      Select checklist for this job
+                    </div>
+                    {availableChecklists.map(cl => (
+                      <button
+                        key={cl.id}
+                        onClick={() => handleSelectChecklist(cl.id)}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors text-left ${
+                          client.checklistId === cl.id
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'hover:bg-surface-hover text-text-primary'
+                        }`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                          <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                          <rect x="9" y="3" width="6" height="4" rx="1"/>
+                        </svg>
+                        <span className="flex-1 font-medium truncate">{cl.name}</span>
+                        {cl.is_default && (
+                          <span className="text-[9px] font-bold text-text-tertiary uppercase shrink-0">default</span>
+                        )}
+                        {client.checklistId === cl.id && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-emerald-500 shrink-0">
+                            <polyline points="20 6 9 17 4 12"/>
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
-          <button onClick={() => setShowInfo(true)} className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Client info & media">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-          </button>
           <a href={mapsNavUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg hover:bg-surface-elevated text-text-tertiary hover:text-primary transition-colors" title="Navigate">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
           </a>
@@ -557,9 +671,6 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         </div>
       )}
 
-      <AnimatePresence>
-        {showInfo && <Suspense fallback={null}><ClientInfoPanel clientId={client.savedClientId || client.id} clientName={client.name} scheduleJobId={client.id} onClose={() => setShowInfo(false)} /></Suspense>}
-      </AnimatePresence>
     </motion.div>
   );
 }

@@ -513,113 +513,176 @@ export default function StaffChecklistView({
     window.open(`mailto:${clientEmail}?subject=${subject}&body=${encodeURIComponent(body)}`, '_self');
   };
 
+  // ── Computed progress ────────────────────────────────────────────────────
+  const { answeredCount, totalCount } = useMemo(() => {
+    const actionable = fields.filter(f =>
+      visibleFieldIds.has(f.id) && f.type !== 'section_heading'
+    );
+    const answered = actionable.filter(f => {
+      const a = answers.get(f.id);
+      if (!a) return false;
+      if (a.na) return true;
+      const v = a.value;
+      if (v === null || v === '') return false;
+      if (Array.isArray(v)) return v.length > 0;
+      return true;
+    });
+    return { answeredCount: answered.length, totalCount: actionable.length };
+  }, [fields, answers, visibleFieldIds]);
+
+  const progressPct = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
+  const allAnswered = totalCount > 0 && answeredCount === totalCount;
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
-      <motion.div initial={{ y: '100%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: '100%', opacity: 0 }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+      className="fixed inset-0 z-50 flex flex-col bg-[#f5f6fa]" onClick={onClose}>
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 32, stiffness: 320 }}
         onClick={e => e.stopPropagation()}
-        className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+        className="flex flex-col h-full w-full">
 
-        {/* Header */}
-        <div className="shrink-0 p-4 border-b border-border-light">
-          <div className="flex items-center justify-between mb-1">
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-text-primary truncate">{clientName}</h3>
-              <p className="text-xs text-text-tertiary">{templateName}</p>
-            </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary ml-2 shrink-0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        {/* ── Sticky header ── */}
+        <div className="shrink-0 bg-white border-b border-border-light safe-top">
+          {/* Top bar */}
+          <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+            <button
+              onClick={onClose}
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-surface-elevated border border-border-light text-text-secondary active:scale-95 transition-transform"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6"/>
               </svg>
             </button>
-          </div>
-          {/* Auto-save indicator */}
-          {saving && (
-            <p className="text-[10px] text-text-tertiary flex items-center gap-1 mt-1">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Saving draft...
-            </p>
-          )}
-        </div>
-
-        {/* Form body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          {loading ? (
-            <div className="space-y-3">{[1, 2, 3, 4].map(i => <div key={i} className="shimmer h-20 rounded-xl" />)}</div>
-          ) : fields.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-text-tertiary text-sm">No checklist template assigned to this client.</p>
-              <p className="text-text-tertiary text-xs mt-1">Assign one from the Clients page.</p>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold text-text-primary leading-tight truncate">{clientName}</h2>
+              <p className="text-xs text-text-tertiary truncate">{templateName}</p>
             </div>
-          ) : (
-            fields.map(field => {
-              if (!visibleFieldIds.has(field.id)) return null;
-              const answer = answers.get(field.id) || { fieldId: field.id, value: null };
-              return (
-                <div key={field.id} id={`field-${field.id}`}>
-                  <FieldInput
-                    field={field}
-                    answer={answer}
-                    onChange={val => setAnswer(field.id, val)}
-                    onNa={() => toggleNa(field.id)}
-                    onFileChange={files => handleFileChange(field.id, files)}
-                    disabled={saved}
-                    hasError={errors.has(field.id)}
-                  />
-                </div>
-              );
-            })
+            {saving && (
+              <span className="shrink-0 flex items-center gap-1 text-[10px] text-amber-500 font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Saving…
+              </span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {!loading && totalCount > 0 && (
+            <div className="px-4 pb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-semibold text-text-secondary">
+                  {answeredCount} of {totalCount} completed
+                </span>
+                <span className={`text-xs font-bold ${allAnswered ? 'text-emerald-600' : 'text-text-tertiary'}`}>
+                  {progressPct}%
+                </span>
+              </div>
+              <div className="h-2 bg-surface-elevated rounded-full overflow-hidden">
+                <motion.div
+                  className={`h-full rounded-full transition-colors ${allAnswered ? 'bg-emerald-500' : 'bg-primary'}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPct}%` }}
+                  transition={{ type: 'spring', damping: 30, stiffness: 200 }}
+                />
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Footer */}
-        {fields.length > 0 && (
-          <div className="shrink-0 p-4 border-t border-border-light space-y-3">
-            {saved ? (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-                <div className="text-center py-2">
-                  <div className="text-3xl mb-1">✅</div>
-                  <p className="text-sm font-semibold text-text-primary">Checklist submitted!</p>
-                </div>
-                {clientEmail && (
-                  <button onClick={handleEmailToClient} className="btn-secondary w-full py-3 text-sm">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                      <polyline points="22,6 12,13 2,6"/>
-                    </svg>
-                    Email report to client
-                  </button>
-                )}
-                <button onClick={() => setSaved(false)} className="btn-ghost w-full py-2 text-sm">Edit Response</button>
-                <button onClick={onClose} className="btn-ghost w-full py-2 text-sm text-text-tertiary">Close</button>
-              </motion.div>
-            ) : (
-              <>
+        {/* ── Scrollable form body ── */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="p-4 space-y-3">
+              {[1, 2, 3, 4, 5].map(i => <div key={i} className="shimmer h-24 rounded-2xl" />)}
+            </div>
+          ) : fields.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center text-3xl">📋</div>
+              <p className="text-text-secondary font-medium">No checklist assigned</p>
+              <p className="text-text-tertiary text-sm">Ask your admin to assign a checklist to this job in the scheduler.</p>
+            </div>
+          ) : saved ? (
+            /* ── Submitted state ── */
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col items-center justify-center min-h-full gap-4 p-8 text-center">
+              <div className="w-20 h-20 rounded-2xl bg-emerald-100 flex items-center justify-center text-4xl">✅</div>
+              <div>
+                <p className="text-lg font-bold text-text-primary">All done!</p>
+                <p className="text-text-secondary text-sm mt-1">Checklist submitted for {clientName}</p>
+              </div>
+              {clientEmail && (
+                <button onClick={handleEmailToClient}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white border border-border-light text-text-secondary text-sm font-semibold shadow-sm active:scale-95 transition-transform">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                  </svg>
+                  Email report to client
+                </button>
+              )}
+              <button onClick={onClose}
+                className="px-6 py-3 rounded-xl bg-primary text-white text-sm font-bold shadow active:scale-95 transition-transform">
+                Back to jobs
+              </button>
+            </motion.div>
+          ) : (
+            <div className="p-4 space-y-3 pb-8">
+              {fields.map(field => {
+                if (!visibleFieldIds.has(field.id)) return null;
+                const answer = answers.get(field.id) || { fieldId: field.id, value: null };
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <FieldInput
+                      field={field}
+                      answer={answer}
+                      onChange={val => setAnswer(field.id, val)}
+                      onNa={() => toggleNa(field.id)}
+                      onFileChange={files => handleFileChange(field.id, files)}
+                      disabled={false}
+                      hasError={errors.has(field.id)}
+                    />
+                  </div>
+                );
+              })}
+
+              {/* Inline notes field */}
+              <div className="rounded-2xl border-2 border-border-light bg-white p-4">
+                <p className="text-sm font-semibold text-text-primary mb-2">Additional notes</p>
                 <textarea
                   value={notes}
                   onChange={e => { setNotes(e.target.value); setSaved(false); scheduleAutoSave(); }}
-                  placeholder="Additional notes (optional)..."
+                  rows={3}
+                  placeholder="Any extra notes for this job..."
                   className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary"
-                  rows={2}
                 />
-                {errors.size > 0 && (
-                  <p className="text-xs text-red-500 font-medium text-center">
-                    Please complete all required fields ({errors.size} remaining)
-                  </p>
-                )}
-                <button
-                  onClick={handleSubmit}
-                  disabled={saving || uploading}
-                  className="btn-primary w-full py-3.5 text-sm disabled:opacity-50 disabled:cursor-wait">
-                  {uploading ? '⬆ Uploading media...' : saving ? 'Saving...' : '✓ Submit Checklist'}
-                </button>
-              </>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sticky footer (submit button) ── */}
+        {!loading && fields.length > 0 && !saved && (
+          <div className="shrink-0 bg-white border-t border-border-light px-4 py-4 safe-bottom">
+            {errors.size > 0 && (
+              <p className="text-xs text-red-500 font-medium text-center mb-2">
+                Please complete all required fields before submitting.
+              </p>
             )}
+            <button
+              onClick={handleSubmit}
+              disabled={saving || uploading}
+              className={`w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] shadow-sm ${
+                allAnswered
+                  ? 'bg-emerald-500 text-white shadow-emerald-200'
+                  : 'bg-primary text-white'
+              } disabled:opacity-60 disabled:pointer-events-none`}
+            >
+              {uploading ? '⬆ Uploading media…' : saving ? 'Saving…' : allAnswered ? '✓ Submit Checklist' : `Submit (${answeredCount}/${totalCount})`}
+            </button>
           </div>
         )}
       </motion.div>
     </motion.div>
   );
 }
+

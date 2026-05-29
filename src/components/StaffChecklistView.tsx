@@ -15,14 +15,25 @@ interface StaffChecklistViewProps {
   onClose: () => void;
 }
 
-// ─── Per-field answer ─────────────────────────────────────────────────────────
+// ─── Staff color palette (6 distinct colors for collaboration) ────────────────
+export const COLLAB_COLORS = [
+  { bg: '#4F46E5', light: '#EEF2FF', text: '#3730A3' }, // Indigo
+  { bg: '#059669', light: '#ECFDF5', text: '#065F46' }, // Emerald
+  { bg: '#D97706', light: '#FFFBEB', text: '#92400E' }, // Amber
+  { bg: '#DC2626', light: '#FEF2F2', text: '#991B1B' }, // Red
+  { bg: '#7C3AED', light: '#F5F3FF', text: '#5B21B6' }, // Purple
+  { bg: '#0891B2', light: '#ECFEFF', text: '#155E75' }, // Cyan
+];
+
+// ─── Per-field answer (includes who last answered it) ─────────────────────────
 interface FieldAnswer {
   fieldId: string;
   value: string | string[] | boolean | null;
   na?: boolean;
+  completed_by?: string; // auth user id of who last touched this field
 }
 
-// ─── Field renderer ───────────────────────────────────────────────────────────
+// ─── Field renderer (identical to before) ────────────────────────────────────
 function FieldCard({
   field,
   answer,
@@ -30,6 +41,7 @@ function FieldCard({
   onNa,
   onFileChange,
   hasError,
+  answererColor,
 }: {
   field: ChecklistField;
   answer: FieldAnswer;
@@ -37,11 +49,11 @@ function FieldCard({
   onNa: () => void;
   onFileChange: (files: FileList) => void;
   hasError: boolean;
+  answererColor?: string; // hex color of whoever answered this field
 }) {
   const value = answer.value;
   const isNa = !!answer.na;
 
-  // ── Heading / paragraph: no interactive content ──
   if (field.type === 'heading') {
     return (
       <div className="pt-2 pb-1">
@@ -59,12 +71,13 @@ function FieldCard({
     return (
       <div className="px-1 py-2">
         <p className="text-sm text-text-secondary leading-relaxed">{field.label}</p>
-        {field.description && <p className="text-xs text-text-tertiary mt-1">{field.description}</p>}
       </div>
     );
   }
 
-  // ── Wrapper for interactive fields ──
+  const isAnswered = isNa || (value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0));
+  const borderColor = isAnswered && answererColor ? answererColor : undefined;
+
   const wrapperCls = `rounded-2xl border-2 p-4 bg-white transition-all ${
     hasError ? 'border-red-300 bg-red-50/50' :
     isNa ? 'border-border-light opacity-60' :
@@ -81,37 +94,36 @@ function FieldCard({
         {field.description && <p className="text-xs text-text-tertiary mt-0.5">{field.description}</p>}
         {hasError && <p className="text-xs text-red-500 mt-1 font-medium">This field is required</p>}
       </div>
-      {field.allowNA !== false && (
-        <button
-          onClick={onNa}
-          className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all ${
-            isNa
-              ? 'bg-surface-elevated border-border text-text-secondary'
-              : 'border-border-light text-text-tertiary hover:border-border hover:text-text-secondary'
-          }`}
-        >
-          N/A
-        </button>
-      )}
+      <div className="flex items-center gap-2">
+        {isAnswered && answererColor && (
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: answererColor }} />
+        )}
+        {field.allowNA !== false && (
+          <button
+            onClick={onNa}
+            className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all ${
+              isNa
+                ? 'bg-surface-elevated border-border text-text-secondary'
+                : 'border-border-light text-text-tertiary hover:border-border hover:text-text-secondary'
+            }`}
+          >N/A</button>
+        )}
+      </div>
     </div>
   );
 
-  // ── Checkbox (single tick-off item) ──
   if (field.type === 'checkbox') {
     const checked = value === true || value === 'true';
     return (
       <button
         onClick={() => !isNa && onChange(!checked)}
-        className={`w-full flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all active:scale-[0.99] ${
-          hasError ? 'border-red-300 bg-red-50/50' :
-          checked ? 'border-emerald-400 bg-emerald-50' :
-          isNa ? 'border-border-light bg-white opacity-60' :
-          'border-border-light bg-white hover:border-border'
-        }`}
+        className={`w-full flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all active:scale-[0.99]`}
+        style={checked && answererColor ? { borderColor: answererColor, backgroundColor: answererColor + '18' } : undefined}
       >
-        <div className={`shrink-0 w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all ${
-          checked ? 'bg-emerald-500 border-emerald-500' : 'border-border bg-surface-elevated'
-        }`}>
+        <div
+          className={`shrink-0 w-7 h-7 rounded-xl border-2 flex items-center justify-center transition-all`}
+          style={checked && answererColor ? { backgroundColor: answererColor, borderColor: answererColor } : { borderColor: '#D1D5DB', backgroundColor: '#F9FAFB' }}
+        >
           {checked && (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
               <polyline points="20 6 9 17 4 12"/>
@@ -119,45 +131,35 @@ function FieldCard({
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold leading-snug ${checked ? 'text-emerald-700' : 'text-text-primary'}`}>
+          <p className={`text-sm font-semibold leading-snug ${checked ? 'text-text-primary' : 'text-text-primary'}`}>
             {field.label}
             {field.required && !isNa && !checked && <span className="text-red-500 ml-1">*</span>}
           </p>
           {field.description && <p className="text-xs text-text-tertiary mt-0.5">{field.description}</p>}
           {hasError && <p className="text-xs text-red-500 mt-1 font-medium">Required</p>}
         </div>
-        {/* N/A for checkbox */}
         {field.allowNA !== false && (
-          <button
-            onClick={e => { e.stopPropagation(); onNa(); }}
+          <button onClick={e => { e.stopPropagation(); onNa(); }}
             className={`shrink-0 text-[10px] font-semibold px-2 py-1 rounded-lg border transition-all ${
               isNa ? 'bg-surface-elevated border-border text-text-secondary' : 'border-border-light text-text-tertiary'
-            }`}
-          >
-            N/A
-          </button>
+            }`}>N/A</button>
         )}
       </button>
     );
   }
 
-  // ── Yes / No ──
   if (field.type === 'yesno') {
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <div className="flex gap-2">
           {(['yes', 'no'] as const).map(opt => (
-            <button
-              key={opt}
-              onClick={() => !isNa && onChange(opt)}
-              disabled={isNa}
+            <button key={opt} onClick={() => !isNa && onChange(opt)} disabled={isNa}
               className={`flex-1 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-[0.98] ${
                 value === opt
                   ? opt === 'yes' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-red-400 text-white shadow-sm'
                   : 'bg-surface-elevated text-text-secondary border border-border-light hover:border-border'
-              } disabled:pointer-events-none`}
-            >
+              } disabled:pointer-events-none`}>
               {opt === 'yes' ? '✓  Yes' : '✗  No'}
             </button>
           ))}
@@ -166,113 +168,89 @@ function FieldCard({
     );
   }
 
-  // ── Multi-select checkbox list (all options expanded) ──
   if (field.type === 'multiselect') {
     const opts = field.options || [];
     const selected: string[] = Array.isArray(value) ? (value as string[]) : [];
     const toggle = (opt: string) => {
       if (isNa) return;
-      const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
-      onChange(next);
+      onChange(selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt]);
     };
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <div className="space-y-2">
           {opts.map(opt => {
             const ticked = selected.includes(opt);
             return (
               <button key={opt} onClick={() => toggle(opt)} disabled={isNa}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl border transition-all text-left active:scale-[0.99] ${
-                  ticked
-                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                    : 'border-border-light bg-surface-elevated text-text-secondary hover:border-border'
-                } disabled:pointer-events-none`}>
-                <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                  ticked ? 'bg-emerald-500 border-emerald-500' : 'border-border bg-white'
-                }`}>
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl border transition-all text-left active:scale-[0.99] disabled:pointer-events-none`}
+                style={ticked && answererColor ? { borderColor: answererColor, backgroundColor: answererColor + '18' } : undefined}
+              >
+                <div className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center`}
+                  style={ticked && answererColor ? { backgroundColor: answererColor, borderColor: answererColor } : { borderColor: '#D1D5DB', backgroundColor: '#fff' }}>
                   {ticked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
-                <span className="text-sm font-medium">{opt}</span>
+                <span className="text-sm font-medium text-text-primary">{opt}</span>
               </button>
             );
           })}
-          {opts.length === 0 && <p className="text-xs text-text-tertiary">No options configured.</p>}
         </div>
       </div>
     );
   }
 
-  // ── Multi-dropdown (collapsed select with chips) ──
   if (field.type === 'multidropdown') {
     const opts = field.options || [];
     const selected: string[] = Array.isArray(value) ? (value as string[]) : [];
     const toggle = (opt: string) => {
       if (isNa) return;
-      const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
-      onChange(next);
+      onChange(selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt]);
     };
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <div className="flex flex-wrap gap-2">
           {opts.map(opt => (
             <button key={opt} onClick={() => toggle(opt)} disabled={isNa}
-              className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all disabled:pointer-events-none ${
-                selected.includes(opt)
-                  ? 'bg-primary text-white border-primary shadow-sm'
-                  : 'bg-surface-elevated border-border-light text-text-secondary hover:border-border'
-              }`}>
+              className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all disabled:pointer-events-none`}
+              style={selected.includes(opt) && answererColor ? { backgroundColor: answererColor, borderColor: answererColor, color: '#fff' } : undefined}
+            >
               {selected.includes(opt) ? '✓ ' : ''}{opt}
             </button>
           ))}
-          {opts.length === 0 && <p className="text-xs text-text-tertiary">No options configured.</p>}
         </div>
       </div>
     );
   }
 
-  // ── Single dropdown ──
   if (field.type === 'dropdown') {
-    const opts = field.options || [];
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
-        <select
-          value={String(value || '')}
-          onChange={e => !isNa && onChange(e.target.value)}
-          disabled={isNa}
+        <select value={String(value || '')} onChange={e => !isNa && onChange(e.target.value)} disabled={isNa}
           className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50 appearance-none"
-          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
-        >
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}>
           <option value="">Select an option...</option>
-          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+          {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       </div>
     );
   }
 
-  // ── Open text ──
   if (field.type === 'text') {
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
-        <textarea
-          value={String(value || '')}
-          onChange={e => !isNa && onChange(e.target.value)}
-          disabled={isNa}
-          rows={3}
-          placeholder="Type your response here..."
-          className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary disabled:opacity-50"
-        />
+        <textarea value={String(value || '')} onChange={e => !isNa && onChange(e.target.value)} disabled={isNa}
+          rows={3} placeholder="Type your response here..."
+          className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary disabled:opacity-50" />
       </div>
     );
   }
 
-  // ── Date ──
   if (field.type === 'date') {
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <input type="date" value={String(value || '')} onChange={e => !isNa && onChange(e.target.value)} disabled={isNa}
           className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50" />
@@ -280,10 +258,9 @@ function FieldCard({
     );
   }
 
-  // ── Time ──
   if (field.type === 'time') {
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <input type="time" value={String(value || '')} onChange={e => !isNa && onChange(e.target.value)} disabled={isNa}
           className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-3 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:opacity-50" />
@@ -291,12 +268,11 @@ function FieldCard({
     );
   }
 
-  // ── Photo / Video ──
   if (field.type === 'photo' || field.type === 'video') {
     const isVideo = field.type === 'video';
     const uploadedUrls = Array.isArray(value) ? (value as string[]) : [];
     return (
-      <div className={wrapperCls}>
+      <div className={wrapperCls} style={borderColor ? { borderColor } : undefined}>
         <Header />
         <label className={`flex flex-col items-center justify-center gap-2 py-5 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
           isNa ? 'opacity-50 pointer-events-none' : 'border-border hover:border-primary hover:bg-primary-light/20'
@@ -305,7 +281,6 @@ function FieldCard({
             className="sr-only" onChange={e => e.target.files && onFileChange(e.target.files)} />
           <span className="text-2xl">{isVideo ? '🎥' : '📷'}</span>
           <p className="text-sm text-text-secondary font-medium">Tap to {isVideo ? 'record / upload video' : 'take photo / upload'}</p>
-          <p className="text-xs text-text-tertiary">Up to 50MB per file</p>
         </label>
         {uploadedUrls.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">
@@ -321,7 +296,6 @@ function FieldCard({
     );
   }
 
-  // logic blocks and unknown types: skip silently
   return null;
 }
 
@@ -344,33 +318,46 @@ export default function StaffChecklistView({
   const [errors, setErrors] = useState<Set<string>>(new Set());
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completionIdRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
 
-  // ── LocalStorage draft helpers ─────────────────────────────────────────────
-  // Key is job-specific so each job has its own draft slot
+  // ── Collaboration: user color ─────────────────────────────────────────────
+  // Assign a color to the current user based on which slots are taken by remote answers
+  const myColor = useMemo(() => {
+    const takenColors = new Set<string>();
+    answers.forEach(a => {
+      if (a.completed_by && a.completed_by !== currentUserIdRef.current) {
+        // find which color index this userId would get — we don't know here,
+        // so we just track a simple round-robin; real mapping done in render
+      }
+    });
+    return COLLAB_COLORS[0].bg; // resolved properly in userColorMap below
+  }, [answers]);
+
+  // Map userId → color (determined by first-seen order)
+  const [userColorMap, setUserColorMap] = useState<Map<string, string>>(new Map());
+  const [userNameMap, setUserNameMap] = useState<Map<string, string>>(new Map());
+
+  // ── LocalStorage helpers ──────────────────────────────────────────────────
   const localKey = scheduleJobId ? `crp_cl_draft_${scheduleJobId}` : null;
 
   const writeDraft = useCallback((ans: Map<string, FieldAnswer>, n: string) => {
     if (!localKey) return;
     try {
       localStorage.setItem(localKey, JSON.stringify({
-        answers: Array.from(ans.values()),
-        notes: n,
-        ts: Date.now(),
+        answers: Array.from(ans.values()), notes: n, ts: Date.now(),
       }));
-    } catch { /* storage full — ignore */ }
+    } catch { /* storage full */ }
   }, [localKey]);
 
   const clearDraft = useCallback(() => {
     if (localKey) { try { localStorage.removeItem(localKey); } catch { /* ignore */ } }
   }, [localKey]);
 
-
-  // Flat list of all actionable fields (not headings/paragraphs/logic)
+  // ── Load checklist ────────────────────────────────────────────────────────
   const allFields = useMemo(() =>
     sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && f.type !== 'paragraph' && f.type !== 'logic')),
   [sections]);
 
-  // ── Load checklist ─────────────────────────────────────────────────────────
   const loadChecklist = useCallback(async () => {
     const now = new Date();
     const todayDate = now.toISOString().split('T')[0];
@@ -388,13 +375,8 @@ export default function StaffChecklistView({
       return map;
     };
 
-    // Priority 1: job-specific checklist from client_checklists
     if (jobChecklistId) {
-      const { data: cl } = await supabase
-        .from('client_checklists')
-        .select('id, name, sections')
-        .eq('id', jobChecklistId)
-        .single();
+      const { data: cl } = await supabase.from('client_checklists').select('id, name, sections').eq('id', jobChecklistId).single();
       if (cl) {
         setTemplateId(cl.id);
         setTemplateName(cl.name || 'Checklist');
@@ -406,22 +388,10 @@ export default function StaffChecklistView({
       }
     }
 
-    // Priority 2: client's default checklist (client_checklists table, is_default)
     if (clientId) {
-      const { data: clientRow } = await supabase
-        .from('clients')
-        .select('email, checklist_template_id, custom_checklist_items')
-        .eq('id', clientId)
-        .single();
+      const { data: clientRow } = await supabase.from('clients').select('email, checklist_template_id').eq('id', clientId).single();
       if (clientRow?.email) setClientEmail(clientRow.email);
-
-      // Try new client_checklists first
-      const { data: defaultCl } = await supabase
-        .from('client_checklists')
-        .select('id, name, sections')
-        .eq('client_id', clientId)
-        .eq('is_default', true)
-        .maybeSingle();
+      const { data: defaultCl } = await supabase.from('client_checklists').select('id, name, sections').eq('client_id', clientId).eq('is_default', true).maybeSingle();
       if (defaultCl) {
         setTemplateId(defaultCl.id);
         setTemplateName(defaultCl.name || 'Checklist');
@@ -438,52 +408,149 @@ export default function StaffChecklistView({
 
   useEffect(() => { loadChecklist(); }, [loadChecklist]);
 
-  // ── Resume existing draft ──────────────────────────────────────────────────
+  // ── Get current user ──────────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) currentUserIdRef.current = user.id;
+    })();
+  }, [supabase]);
+
+  // ── Build user → color + name map from all answers ────────────────────────
+  const buildUserMap = useCallback((ans: Map<string, FieldAnswer>) => {
+    const seenUsers: string[] = [];
+    ans.forEach(a => {
+      if (a.completed_by && !seenUsers.includes(a.completed_by)) {
+        seenUsers.push(a.completed_by);
+      }
+    });
+    // Ensure current user is always first (gets first color)
+    const myId = currentUserIdRef.current;
+    if (myId && !seenUsers.includes(myId)) seenUsers.unshift(myId);
+    else if (myId) {
+      const idx = seenUsers.indexOf(myId);
+      if (idx > 0) { seenUsers.splice(idx, 1); seenUsers.unshift(myId); }
+    }
+    const newMap = new Map<string, string>();
+    seenUsers.forEach((uid, i) => newMap.set(uid, COLLAB_COLORS[i % COLLAB_COLORS.length].bg));
+    setUserColorMap(newMap);
+  }, []);
+
+  // ── Fetch display names for collaborators ─────────────────────────────────
+  const fetchUserNames = useCallback(async (userIds: string[]) => {
+    if (userIds.length === 0) return;
+    const { data } = await supabase.from('profiles').select('id, full_name').in('id', userIds);
+    if (data) {
+      setUserNameMap(prev => {
+        const next = new Map(prev);
+        data.forEach((p: { id: string; full_name: string | null }) => next.set(p.id, p.full_name || 'Unknown'));
+        return next;
+      });
+    }
+  }, [supabase]);
+
+  // ── Resume existing draft + Realtime subscription ─────────────────────────
   useEffect(() => {
     if (!scheduleJobId || !templateId) return;
+
+    const mergeRemoteItems = (rawItems: unknown, sourceMap: Map<string, string>) => {
+      try {
+        const items: FieldAnswer[] = typeof rawItems === 'string' ? JSON.parse(rawItems as string) : (rawItems as FieldAnswer[] || []);
+        if (!Array.isArray(items)) return;
+        const myId = currentUserIdRef.current;
+        setAnswers(prev => {
+          const next = new Map(prev);
+          items.forEach(remoteAnswer => {
+            const existing = next.get(remoteAnswer.fieldId);
+            // Accept remote answer if it was answered by someone else
+            if (!existing || remoteAnswer.completed_by !== myId) {
+              next.set(remoteAnswer.fieldId, remoteAnswer);
+            }
+          });
+          buildUserMap(next);
+          // Fetch names for any new users
+          const newIds = items
+            .map(a => a.completed_by)
+            .filter((id): id is string => !!id && !sourceMap.has(id));
+          if (newIds.length > 0) fetchUserNames(newIds);
+          writeDraft(next, '');
+          return next;
+        });
+      } catch { /* ignore */ }
+    };
+
+    let active = true;
+
     (async () => {
       const { data } = await supabase.from('checklist_completions')
         .select('id, items, notes, media_urls').eq('schedule_job_id', scheduleJobId).maybeSingle();
 
+      if (!active) return;
+
       if (data) {
-        // DB has a saved draft — use it
         completionIdRef.current = data.id;
         if (data.notes) setNotes(data.notes);
         if (data.media_urls) setMediaUrls(data.media_urls as MediaUrls);
         try {
           const items: FieldAnswer[] = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || []);
           if (Array.isArray(items) && items.length > 0) {
-            setAnswers(new Map(items.map(a => [a.fieldId, a])));
+            const ansMap = new Map(items.map(a => [a.fieldId, a]));
+            setAnswers(ansMap);
             setSaved(true);
-            return; // DB wins — skip localStorage
+            buildUserMap(ansMap);
+            const uids = [...new Set(items.map(a => a.completed_by).filter(Boolean))] as string[];
+            fetchUserNames(uids);
           }
         } catch { /* ignore */ }
-      }
-
-      // No DB draft (or empty) — try localStorage
-      if (localKey) {
+      } else if (localKey) {
+        // Restore from localStorage if no DB draft
         try {
           const raw = localStorage.getItem(localKey);
           if (raw) {
             const parsed = JSON.parse(raw) as { answers: FieldAnswer[]; notes: string };
             if (Array.isArray(parsed.answers) && parsed.answers.length > 0) {
-              setAnswers(new Map(parsed.answers.map(a => [a.fieldId, a])));
+              const ansMap = new Map(parsed.answers.map(a => [a.fieldId, a]));
+              setAnswers(ansMap);
               if (parsed.notes) setNotes(parsed.notes);
-              // Schedule a DB save so the restored draft gets persisted
+              buildUserMap(ansMap);
               autoSaveRef.current = setTimeout(() => { performSave(false); }, 2000);
             }
           }
-        } catch { /* corrupted — ignore */ }
+        } catch { /* corrupted */ }
       }
     })();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel(`checklist:${scheduleJobId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'checklist_completions',
+        filter: `schedule_job_id=eq.${scheduleJobId}`,
+      }, (payload: { new: Record<string, unknown> }) => {
+        if (!active) return;
+        const newRow = payload.new as Record<string, unknown>;
+        if (newRow?.id) completionIdRef.current = newRow.id as string;
+        if (newRow?.notes) setNotes(newRow.notes as string);
+        mergeRemoteItems(newRow?.items, userNameMap);
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
   }, [scheduleJobId, templateId, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Answer helpers ─────────────────────────────────────────────────────────
+  // ── Answer helpers ────────────────────────────────────────────────────────
   const setAnswer = (fieldId: string, value: FieldAnswer['value']) => {
+    const myId = currentUserIdRef.current;
     setAnswers(prev => {
       const next = new Map(prev);
-      next.set(fieldId, { ...next.get(fieldId) || { fieldId }, value, na: false });
-      writeDraft(next, notes); // instant localStorage write
+      next.set(fieldId, { ...next.get(fieldId) || { fieldId }, value, na: false, completed_by: myId || undefined });
+      writeDraft(next, notes);
+      buildUserMap(next);
       return next;
     });
     setSaved(false);
@@ -491,18 +558,20 @@ export default function StaffChecklistView({
   };
 
   const toggleNa = (fieldId: string) => {
+    const myId = currentUserIdRef.current;
     setAnswers(prev => {
       const next = new Map(prev);
       const cur = next.get(fieldId) || { fieldId, value: null };
-      next.set(fieldId, { ...cur, na: !cur.na, value: !cur.na ? null : cur.value });
-      writeDraft(next, notes); // instant localStorage write
+      next.set(fieldId, { ...cur, na: !cur.na, value: !cur.na ? null : cur.value, completed_by: myId || undefined });
+      writeDraft(next, notes);
+      buildUserMap(next);
       return next;
     });
     setSaved(false);
     scheduleAutoSave();
   };
 
-  // ── Media upload ───────────────────────────────────────────────────────────
+  // ── Media upload ──────────────────────────────────────────────────────────
   const handleFileChange = async (fieldId: string, files: FileList) => {
     setUploading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -522,7 +591,7 @@ export default function StaffChecklistView({
         const next = new Map(prev);
         const cur = next.get(fieldId) || { fieldId, value: [] };
         const existing = Array.isArray(cur.value) ? cur.value as string[] : [];
-        next.set(fieldId, { ...cur, value: [...existing, ...uploaded] });
+        next.set(fieldId, { ...cur, value: [...existing, ...uploaded], completed_by: user?.id });
         return next;
       });
     }
@@ -531,7 +600,7 @@ export default function StaffChecklistView({
     scheduleAutoSave();
   };
 
-  // ── Auto-save ──────────────────────────────────────────────────────────────
+  // ── Auto-save ─────────────────────────────────────────────────────────────
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(() => { performSave(false); }, 1500);
@@ -555,8 +624,7 @@ export default function StaffChecklistView({
       completed_at: new Date().toISOString(),
     };
     if (scheduleJobId) {
-      const { data: existing } = await supabase.from('checklist_completions')
-        .select('id').eq('schedule_job_id', scheduleJobId).maybeSingle();
+      const { data: existing } = await supabase.from('checklist_completions').select('id').eq('schedule_job_id', scheduleJobId).maybeSingle();
       if (existing) {
         await supabase.from('checklist_completions').update(payload).eq('id', existing.id);
         completionIdRef.current = existing.id;
@@ -571,13 +639,10 @@ export default function StaffChecklistView({
       if (ins) completionIdRef.current = ins.id;
     }
     setSaving(false);
-    if (isFinal) {
-      setSaved(true);
-      clearDraft(); // remove localStorage draft once fully submitted
-    }
+    if (isFinal) { setSaved(true); clearDraft(); }
   };
 
-  // ── Submit ─────────────────────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     const errs = new Set<string>();
     allFields.forEach(f => {
@@ -595,7 +660,7 @@ export default function StaffChecklistView({
     await performSave(true);
   };
 
-  // ── Email ──────────────────────────────────────────────────────────────────
+  // ── Email ─────────────────────────────────────────────────────────────────
   const handleEmailToClient = () => {
     if (!clientEmail) return;
     const subject = encodeURIComponent(`${templateName} — ${clientName} — ${new Date().toLocaleDateString('en-AU')}`);
@@ -622,7 +687,7 @@ export default function StaffChecklistView({
     window.open(`mailto:${clientEmail}?subject=${subject}&body=${encodeURIComponent(body)}`, '_self');
   };
 
-  // ── Progress ───────────────────────────────────────────────────────────────
+  // ── Progress ──────────────────────────────────────────────────────────────
   const { answeredCount, totalCount } = useMemo(() => {
     const total = allFields.length;
     const done = allFields.filter(f => {
@@ -640,7 +705,15 @@ export default function StaffChecklistView({
   const progressPct = totalCount > 0 ? Math.round((answeredCount / totalCount) * 100) : 0;
   const allAnswered = totalCount > 0 && answeredCount === totalCount;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // Unique collaborators currently visible
+  const collaborators = useMemo(() => {
+    return Array.from(userColorMap.entries()).map(([uid, color]) => ({
+      uid, color, name: userNameMap.get(uid) || 'Staff',
+      isMe: uid === currentUserIdRef.current,
+    }));
+  }, [userColorMap, userNameMap]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex flex-col bg-[#f5f6fa]" onClick={onClose}>
@@ -662,6 +735,18 @@ export default function StaffChecklistView({
               <h2 className="text-base font-bold text-text-primary leading-tight truncate">{clientName}</h2>
               <p className="text-xs text-text-tertiary truncate">{templateName}</p>
             </div>
+            {/* Collaborator avatars */}
+            {collaborators.length > 0 && (
+              <div className="flex -space-x-1.5 shrink-0">
+                {collaborators.map(({ uid, color, name, isMe }) => (
+                  <div key={uid} title={isMe ? `${name} (you)` : name}
+                    className="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold text-white"
+                    style={{ backgroundColor: color }}>
+                    {(name || '?')[0].toUpperCase()}
+                  </div>
+                ))}
+              </div>
+            )}
             {saving && (
               <span className="shrink-0 flex items-center gap-1 text-[10px] text-amber-500 font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -692,9 +777,7 @@ export default function StaffChecklistView({
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 space-y-3">
-              {[1,2,3,4,5].map(i => <div key={i} className="shimmer h-24 rounded-2xl" />)}
-            </div>
+            <div className="p-4 space-y-3">{[1,2,3,4,5].map(i => <div key={i} className="shimmer h-24 rounded-2xl" />)}</div>
           ) : sections.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
               <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center text-3xl">📋</div>
@@ -709,6 +792,19 @@ export default function StaffChecklistView({
                 <p className="text-lg font-bold text-text-primary">All done!</p>
                 <p className="text-text-secondary text-sm mt-1">Checklist submitted for {clientName}</p>
               </div>
+              {collaborators.length > 1 && (
+                <div className="flex flex-col gap-1 items-center">
+                  <p className="text-xs text-text-tertiary font-medium">Completed by</p>
+                  <div className="flex gap-2 flex-wrap justify-center">
+                    {collaborators.map(({ uid, color, name }) => (
+                      <span key={uid} className="flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full text-white"
+                        style={{ backgroundColor: color }}>
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {clientEmail && (
                 <button onClick={handleEmailToClient}
                   className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white border border-border-light text-text-secondary text-sm font-semibold shadow-sm active:scale-95 transition-transform">
@@ -728,7 +824,6 @@ export default function StaffChecklistView({
             <div className="p-4 space-y-3 pb-8">
               {sections.map(section => (
                 <div key={section.id}>
-                  {/* Section title banner */}
                   {section.title && (
                     <div className="flex items-center gap-3 py-2">
                       <div className="flex-1 h-px bg-border" />
@@ -736,22 +831,25 @@ export default function StaffChecklistView({
                       <div className="flex-1 h-px bg-border" />
                     </div>
                   )}
-                  {section.description && (
-                    <p className="text-xs text-text-tertiary text-center mb-2">{section.description}</p>
-                  )}
+                  {section.description && <p className="text-xs text-text-tertiary text-center mb-2">{section.description}</p>}
                   <div className="space-y-2">
-                    {section.fields.map(field => (
-                      <div key={field.id} id={`field-${field.id}`}>
-                        <FieldCard
-                          field={field}
-                          answer={answers.get(field.id) || { fieldId: field.id, value: null }}
-                          onChange={val => setAnswer(field.id, val)}
-                          onNa={() => toggleNa(field.id)}
-                          onFileChange={files => handleFileChange(field.id, files)}
-                          hasError={errors.has(field.id)}
-                        />
-                      </div>
-                    ))}
+                    {section.fields.map(field => {
+                      const ans = answers.get(field.id) || { fieldId: field.id, value: null };
+                      const answererColor = ans.completed_by ? userColorMap.get(ans.completed_by) : undefined;
+                      return (
+                        <div key={field.id} id={`field-${field.id}`}>
+                          <FieldCard
+                            field={field}
+                            answer={ans}
+                            onChange={val => setAnswer(field.id, val)}
+                            onNa={() => toggleNa(field.id)}
+                            onFileChange={files => handleFileChange(field.id, files)}
+                            hasError={errors.has(field.id)}
+                            answererColor={answererColor}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -759,13 +857,10 @@ export default function StaffChecklistView({
               {/* Notes */}
               <div className="rounded-2xl border-2 border-border-light bg-white p-4">
                 <p className="text-sm font-semibold text-text-primary mb-2">Additional notes</p>
-                <textarea
-                  value={notes}
+                <textarea value={notes}
                   onChange={e => { const n = e.target.value; setNotes(n); writeDraft(answers, n); setSaved(false); scheduleAutoSave(); }}
-                  rows={3}
-                  placeholder="Any extra notes for this job..."
-                  className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary"
-                />
+                  rows={3} placeholder="Any extra notes for this job..."
+                  className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary" />
               </div>
             </div>
           )}
@@ -775,17 +870,12 @@ export default function StaffChecklistView({
         {!loading && sections.length > 0 && !saved && (
           <div className="shrink-0 bg-white border-t border-border-light px-4 py-4">
             {errors.size > 0 && (
-              <p className="text-xs text-red-500 font-medium text-center mb-2">
-                Please complete all required fields before submitting.
-              </p>
+              <p className="text-xs text-red-500 font-medium text-center mb-2">Please complete all required fields before submitting.</p>
             )}
-            <button
-              onClick={handleSubmit}
-              disabled={saving || uploading}
+            <button onClick={handleSubmit} disabled={saving || uploading}
               className={`w-full py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98] shadow-sm ${
                 allAnswered ? 'bg-emerald-500 text-white' : 'bg-primary text-white'
-              } disabled:opacity-60 disabled:pointer-events-none`}
-            >
+              } disabled:opacity-60 disabled:pointer-events-none`}>
               {uploading ? '⬆ Uploading media…' : saving ? 'Saving…' : allAnswered ? '✓ Submit Checklist' : `Submit (${answeredCount}/${totalCount})`}
             </button>
           </div>

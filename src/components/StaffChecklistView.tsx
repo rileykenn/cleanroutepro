@@ -345,6 +345,26 @@ export default function StaffChecklistView({
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completionIdRef = useRef<string | null>(null);
 
+  // ── LocalStorage draft helpers ─────────────────────────────────────────────
+  // Key is job-specific so each job has its own draft slot
+  const localKey = scheduleJobId ? `crp_cl_draft_${scheduleJobId}` : null;
+
+  const writeDraft = useCallback((ans: Map<string, FieldAnswer>, n: string) => {
+    if (!localKey) return;
+    try {
+      localStorage.setItem(localKey, JSON.stringify({
+        answers: Array.from(ans.values()),
+        notes: n,
+        ts: Date.now(),
+      }));
+    } catch { /* storage full — ignore */ }
+  }, [localKey]);
+
+  const clearDraft = useCallback(() => {
+    if (localKey) { try { localStorage.removeItem(localKey); } catch { /* ignore */ } }
+  }, [localKey]);
+
+
   // Flat list of all actionable fields (not headings/paragraphs/logic)
   const allFields = useMemo(() =>
     sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && f.type !== 'paragraph' && f.type !== 'logic')),
@@ -424,25 +444,46 @@ export default function StaffChecklistView({
     (async () => {
       const { data } = await supabase.from('checklist_completions')
         .select('id, items, notes, media_urls').eq('schedule_job_id', scheduleJobId).maybeSingle();
-      if (!data) return;
-      completionIdRef.current = data.id;
-      if (data.notes) setNotes(data.notes);
-      if (data.media_urls) setMediaUrls(data.media_urls as MediaUrls);
-      try {
-        const items: FieldAnswer[] = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || []);
-        if (Array.isArray(items) && items.length > 0) {
-          setAnswers(new Map(items.map(a => [a.fieldId, a])));
-          setSaved(true);
-        }
-      } catch { /* ignore */ }
+
+      if (data) {
+        // DB has a saved draft — use it
+        completionIdRef.current = data.id;
+        if (data.notes) setNotes(data.notes);
+        if (data.media_urls) setMediaUrls(data.media_urls as MediaUrls);
+        try {
+          const items: FieldAnswer[] = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || []);
+          if (Array.isArray(items) && items.length > 0) {
+            setAnswers(new Map(items.map(a => [a.fieldId, a])));
+            setSaved(true);
+            return; // DB wins — skip localStorage
+          }
+        } catch { /* ignore */ }
+      }
+
+      // No DB draft (or empty) — try localStorage
+      if (localKey) {
+        try {
+          const raw = localStorage.getItem(localKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { answers: FieldAnswer[]; notes: string };
+            if (Array.isArray(parsed.answers) && parsed.answers.length > 0) {
+              setAnswers(new Map(parsed.answers.map(a => [a.fieldId, a])));
+              if (parsed.notes) setNotes(parsed.notes);
+              // Schedule a DB save so the restored draft gets persisted
+              autoSaveRef.current = setTimeout(() => { performSave(false); }, 2000);
+            }
+          }
+        } catch { /* corrupted — ignore */ }
+      }
     })();
-  }, [scheduleJobId, templateId, supabase]);
+  }, [scheduleJobId, templateId, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Answer helpers ─────────────────────────────────────────────────────────
   const setAnswer = (fieldId: string, value: FieldAnswer['value']) => {
     setAnswers(prev => {
       const next = new Map(prev);
       next.set(fieldId, { ...next.get(fieldId) || { fieldId }, value, na: false });
+      writeDraft(next, notes); // instant localStorage write
       return next;
     });
     setSaved(false);
@@ -454,6 +495,7 @@ export default function StaffChecklistView({
       const next = new Map(prev);
       const cur = next.get(fieldId) || { fieldId, value: null };
       next.set(fieldId, { ...cur, na: !cur.na, value: !cur.na ? null : cur.value });
+      writeDraft(next, notes); // instant localStorage write
       return next;
     });
     setSaved(false);
@@ -492,7 +534,7 @@ export default function StaffChecklistView({
   // ── Auto-save ──────────────────────────────────────────────────────────────
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(() => { performSave(false); }, 10000);
+    autoSaveRef.current = setTimeout(() => { performSave(false); }, 1500);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const performSave = async (isFinal: boolean) => {
@@ -529,7 +571,10 @@ export default function StaffChecklistView({
       if (ins) completionIdRef.current = ins.id;
     }
     setSaving(false);
-    if (isFinal) setSaved(true);
+    if (isFinal) {
+      setSaved(true);
+      clearDraft(); // remove localStorage draft once fully submitted
+    }
   };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -716,7 +761,7 @@ export default function StaffChecklistView({
                 <p className="text-sm font-semibold text-text-primary mb-2">Additional notes</p>
                 <textarea
                   value={notes}
-                  onChange={e => { setNotes(e.target.value); setSaved(false); scheduleAutoSave(); }}
+                  onChange={e => { const n = e.target.value; setNotes(n); writeDraft(answers, n); setSaved(false); scheduleAutoSave(); }}
                   rows={3}
                   placeholder="Any extra notes for this job..."
                   className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary"

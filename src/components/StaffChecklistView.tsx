@@ -483,7 +483,7 @@ export default function StaffChecklistView({
 
     (async () => {
       const { data } = await supabase.from('checklist_completions')
-        .select('id, items, notes, media_urls').eq('schedule_job_id', scheduleJobId).maybeSingle();
+        .select('id, items, notes, media_urls, status, submitted_at').eq('schedule_job_id', scheduleJobId).maybeSingle();
 
       if (!active) return;
 
@@ -496,10 +496,13 @@ export default function StaffChecklistView({
           if (Array.isArray(items) && items.length > 0) {
             const ansMap = new Map(items.map(a => [a.fieldId, a]));
             setAnswers(ansMap);
-            setSaved(true);
             buildUserMap(ansMap);
             const uids = [...new Set(items.map(a => a.completed_by).filter(Boolean))] as string[];
             fetchUserNames(uids);
+          }
+          // Lock the form if already submitted — prevents re-submission on reopen
+          if ((data as { status?: string }).status === 'submitted' || (data as { submitted_at?: string | null }).submitted_at) {
+            setSaved(true);
           }
         } catch { /* ignore */ }
       } else if (localKey) {
@@ -612,7 +615,10 @@ export default function StaffChecklistView({
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profileData } = await supabase.from('profiles').select('org_id').eq('id', user!.id).single();
     const answersArr = Array.from(answers.values());
-    const payload = {
+    const now = new Date().toISOString();
+
+    // Base payload for both insert and autosave updates
+    const basePayload = {
       org_id: profileData!.org_id,
       client_id: clientId,
       schedule_job_id: scheduleJobId || null,
@@ -621,21 +627,38 @@ export default function StaffChecklistView({
       media_urls: mediaUrls,
       notes,
       completed_by: user!.id,
-      completed_at: new Date().toISOString(),
+      completed_at: now,
     };
+
+    // On final submit add status=submitted + submitted_at
+    // On autosave keep status=in_progress (never downgrade a submitted record)
+    const insertPayload = { ...basePayload, status: isFinal ? 'submitted' : 'in_progress', submitted_at: isFinal ? now : null };
+
     if (scheduleJobId) {
-      const { data: existing } = await supabase.from('checklist_completions').select('id').eq('schedule_job_id', scheduleJobId).maybeSingle();
+      const { data: existing } = await supabase
+        .from('checklist_completions')
+        .select('id, status')
+        .eq('schedule_job_id', scheduleJobId)
+        .maybeSingle();
       if (existing) {
-        await supabase.from('checklist_completions').update(payload).eq('id', existing.id);
+        // Don't downgrade a submitted record back to in_progress on autosave
+        const updatePayload = isFinal
+          ? { ...basePayload, status: 'submitted', submitted_at: now }
+          : (existing as { status?: string }).status === 'submitted'
+            ? { items: basePayload.items, notes: basePayload.notes, media_urls: basePayload.media_urls } // only update content, not status
+            : { ...basePayload, status: 'in_progress' };
+        await supabase.from('checklist_completions').update(updatePayload).eq('id', existing.id);
         completionIdRef.current = existing.id;
       } else {
-        const { data: ins } = await supabase.from('checklist_completions').insert(payload).select('id').single();
+        const { data: ins } = await supabase.from('checklist_completions').insert(insertPayload).select('id').single();
         if (ins) completionIdRef.current = ins.id;
       }
     } else if (completionIdRef.current) {
-      await supabase.from('checklist_completions').update(payload).eq('id', completionIdRef.current);
+      await supabase.from('checklist_completions')
+        .update({ ...basePayload, ...(isFinal ? { status: 'submitted', submitted_at: now } : { status: 'in_progress' }) })
+        .eq('id', completionIdRef.current);
     } else {
-      const { data: ins } = await supabase.from('checklist_completions').insert(payload).select('id').single();
+      const { data: ins } = await supabase.from('checklist_completions').insert(insertPayload).select('id').single();
       if (ins) completionIdRef.current = ins.id;
     }
     setSaving(false);

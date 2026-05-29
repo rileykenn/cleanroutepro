@@ -64,6 +64,7 @@ function parseItems(raw: unknown): FieldAnswer[] {
 type CompletionRow = {
   id: string; schedule_job_id: string; items: unknown;
   notes: string | null; completed_by: string; completed_at: string;
+  status?: string; submitted_at?: string | null;
 };
 
 function parseCompletion(c: CompletionRow): Completion {
@@ -74,7 +75,7 @@ function parseCompletion(c: CompletionRow): Completion {
     notes: c.notes,
     completed_by: c.completed_by,
     completed_at: c.completed_at,
-    is_submitted: !!c.completed_at,
+    is_submitted: c.status === 'submitted' || !!c.submitted_at,
   };
 }
 
@@ -430,7 +431,7 @@ export default function CompletedPage() {
     // 5. Completions
     const { data: completionsRaw } = await supabase
       .from('checklist_completions')
-      .select('id, schedule_job_id, items, notes, completed_by, completed_at')
+      .select('id, schedule_job_id, items, notes, completed_by, completed_at, status, submitted_at')
       .in('schedule_job_id', jobIds);
     const completionMap = new Map<string, Completion>();
     const allUserIds = new Set<string>();
@@ -551,7 +552,7 @@ export default function CompletedPage() {
     // Always fetch fresh completion from DB (don't rely on stale cached data)
     const { data: freshComp } = await supabase
       .from('checklist_completions')
-      .select('id, schedule_job_id, items, notes, completed_by, completed_at')
+      .select('id, schedule_job_id, items, notes, completed_by, completed_at, status, submitted_at')
       .eq('schedule_job_id', job.id)
       .maybeSingle();
 

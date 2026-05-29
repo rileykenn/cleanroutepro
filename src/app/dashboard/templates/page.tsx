@@ -294,10 +294,15 @@ export default function TemplatesPage() {
                         const isActive = selectedMasterId === master.id;
                         const fieldCount = master.sections.reduce((sum, s) => sum + (s.fields?.length || 0), 0);
                         return (
-                          <button
+                          // Using div instead of button to avoid nested <button> HTML violations.
+                          // Inner action buttons (assign, duplicate, delete) need to remain real buttons.
+                          <div
                             key={master.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => selectMaster(master.id)}
-                            className={`w-full text-left px-4 py-3 transition-colors group ${
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectMaster(master.id); }}
+                            className={`w-full text-left px-4 py-3 transition-colors group cursor-pointer ${
                               isActive ? 'bg-primary/5 border-r-2 border-primary' : 'hover:bg-surface-elevated'
                             }`}
                           >
@@ -340,7 +345,7 @@ export default function TemplatesPage() {
                             <p className="text-[11px] text-text-tertiary mt-0.5">
                               {fieldCount} field{fieldCount !== 1 ? 's' : ''} · Updated {new Date(master.updated_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
                             </p>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>

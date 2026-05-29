@@ -84,6 +84,7 @@ export default function ChecklistsPage() {
     }
   };
 
+
   const selectChecklist = (clientId: string, checklistId: string) => {
     setSelectedClientId(clientId);
     setSelectedChecklistId(checklistId);
@@ -176,8 +177,11 @@ export default function ChecklistsPage() {
   return (
     <div className="h-full flex overflow-hidden">
 
-      {/* ══ LEFT: clients + nested checklists ════════════════════════════════ */}
-      <div className="w-72 shrink-0 flex flex-col border-r border-border-light bg-surface-elevated/40">
+      {/* ══ LEFT: clients + nested checklists ══ */}
+      {/* On mobile: show only when no checklist is selected */}
+      <div className={`${
+        selectedChecklistId !== null ? 'hidden lg:flex' : 'flex'
+      } w-full lg:w-72 shrink-0 flex-col border-r border-border-light bg-surface-elevated/40`}>
         {/* Search */}
         <div className="shrink-0 p-3 border-b border-border-light">
           <div className="relative">
@@ -276,15 +280,18 @@ export default function ChecklistsPage() {
         </div>
       </div>
 
-      {/* ══ RIGHT: checklist editor OR client profile ════════════════════════ */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      {/* ══ RIGHT: checklist editor OR client profile ══ */}
+      {/* On mobile: full-screen when a selection exists */}
+      <div className={`${
+        selectedChecklistId !== null || (selectedClientId !== null) ? 'flex' : 'hidden lg:flex'
+      } flex-1 min-w-0 overflow-hidden flex-col`}>
         <AnimatePresence mode="wait">
           {/* ── Checklist editor ── */}
           {selectedChecklistId ? (
             <motion.div key={selectedChecklistId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Editor header */}
-              <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b border-border-light bg-white">
+              <div className="shrink-0 flex items-center gap-3 px-4 lg:px-5 py-3 border-b border-border-light bg-white">
                 <button onClick={() => setSelectedChecklistId(null)}
                   className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -337,17 +344,28 @@ export default function ChecklistsPage() {
           ) : selectedClientId && orgId ? (
             /* ── Client profile ── */
             <motion.div key={selectedClientId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="flex-1 min-h-0 overflow-hidden">
-              <ClientProfileView
-                key={selectedClientId}
-                clientId={selectedClientId}
-                orgId={orgId}
-              />
+              className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              {/* Mobile back button */}
+              <div className="lg:hidden shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border-light bg-white">
+                <button onClick={() => setSelectedClientId(null)}
+                  className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span className="text-sm font-semibold text-text-primary">{clients.find(c => c.id === selectedClientId)?.name}</span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ClientProfileView
+                  key={selectedClientId}
+                  clientId={selectedClientId}
+                  orgId={orgId}
+                />
+              </div>
             </motion.div>
+
           ) : (
-            /* ── Empty ── */
+            /* ── Empty (desktop only) ── */
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="flex-1 flex items-center justify-center text-center px-8">
+              className="flex-1 hidden lg:flex items-center justify-center text-center px-8">
               <div>
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
                   <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
@@ -356,6 +374,7 @@ export default function ChecklistsPage() {
                 <p className="text-sm font-semibold text-text-secondary">Select a client</p>
               </div>
             </motion.div>
+
           )}
         </AnimatePresence>
       </div>

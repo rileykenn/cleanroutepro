@@ -24,7 +24,7 @@ const ADMIN_NAV = [
   { label: 'Clients', href: '/dashboard/checklists', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { label: 'Templates', href: '/dashboard/templates', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
   { label: 'Staff', href: '/dashboard/staff', d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M19 8v6M22 11h-6' },
-  { label: 'Settings', href: '/dashboard/settings', d: 'M12 12a3 3 0 1 0 0 .01' },
+  { label: 'Settings', href: '/dashboard/settings', d: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
 ];
 
 const STAFF_NAV = [
@@ -263,18 +263,19 @@ function Inner({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
-        {/* Mobile header */}
-        <div className="lg:hidden shrink-0 h-14 border-b border-border-light flex items-center justify-between px-4 bg-white">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 rounded-lg hover:bg-surface-hover text-text-secondary">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+        {/* Mobile top header — org name (admin only; staff-view manages its own header) */}
+        {userRole !== 'staff' && (
+        <div className="lg:hidden shrink-0 h-12 border-b border-border-light flex items-center justify-between px-4 bg-white">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/>
               </svg>
-            </button>
-            <span className="text-sm font-bold text-text-primary">{profile?.org_name}</span>
+            </div>
+            <span className="text-sm font-bold text-text-primary truncate">{profile?.org_name}</span>
           </div>
           {pendingCount > 0 && (
-            <button onClick={() => setShowInvites(true)} className="relative p-2 rounded-lg hover:bg-surface-hover">
+            <button onClick={() => setShowInvites(true)} className="relative p-2 rounded-lg">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
               </svg>
@@ -282,8 +283,45 @@ function Inner({ children }: { children: React.ReactNode }) {
             </button>
           )}
         </div>
-        <div className="flex-1 min-h-0">{children}</div>
+        )}
+
+
+        {/* Page content */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {children}
+        </div>
+
+        {/* ── Mobile bottom tab bar (admin nav only) ── */}
+        {userRole !== 'staff' && (
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-border-light pb-safe" style={{ boxShadow: '0 -1px 0 0 #F3F4F6, 0 -4px 16px rgba(0,0,0,0.06)' }}>
+          <div className="flex items-stretch h-14">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+              return (
+                <button
+                  key={item.href}
+                  onClick={() => router.push(item.href)}
+                  className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                    isActive ? 'text-primary' : 'text-text-tertiary'
+                  }`}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive ? 2.5 : 1.8} className="shrink-0">
+                    <path d={item.d}/>
+                  </svg>
+                  <span className={`text-[10px] font-semibold leading-none ${isActive ? 'text-primary' : 'text-text-tertiary'}`}>
+                    {item.label === 'My Schedule' ? 'Schedule' : item.label}
+                  </span>
+                  {isActive && (
+                    <span className="absolute bottom-0 w-6 h-0.5 bg-primary rounded-full" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+        )}
       </div>
+
 
       {/* Invite modal */}
       <AnimatePresence>

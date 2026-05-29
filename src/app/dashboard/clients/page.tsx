@@ -102,7 +102,7 @@ export default function ClientsPage() {
   if (loading) return <div className="p-6 space-y-3">{[1,2,3].map(i => <div key={i} className="shimmer h-20 rounded-xl" />)}</div>;
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar">
+    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-24 lg:pb-6">
       <div className="max-w-[800px] mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div><h2 className="text-lg font-bold text-text-primary">Clients</h2><p className="text-sm text-text-secondary">{clients.length} saved clients</p></div>

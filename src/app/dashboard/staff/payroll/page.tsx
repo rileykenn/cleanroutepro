@@ -257,7 +257,7 @@ export default function PayrollPage() {
   const weekStartDisplay = weekStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar">
+    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-24 lg:pb-6">
       <div className="max-w-[900px] mx-auto space-y-6">
 
         {/* Header */}

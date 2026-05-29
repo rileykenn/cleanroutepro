@@ -162,7 +162,7 @@ function ChecklistPanel({
     <motion.div
       initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col border-l border-border-light"
+      className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col border-l border-border-light lg:inset-y-0 lg:right-0 lg:top-auto lg:bottom-auto"
     >
       {/* Header */}
       <div className="shrink-0 px-5 py-4 border-b border-border-light">
@@ -715,7 +715,7 @@ export default function CompletedPage() {
     <div className="h-full flex flex-col bg-[#f5f6fa] overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="shrink-0 bg-white border-b border-border-light px-6 py-4">
+      <div className="shrink-0 bg-white border-b border-border-light px-4 lg:px-6 py-3 lg:py-4">
         <div className="flex items-center gap-4 flex-wrap justify-between">
           <div>
             <h1 className="text-lg font-bold text-text-primary">Completed Jobs</h1>
@@ -775,14 +775,21 @@ export default function CompletedPage() {
       {/* ── Week grid ── */}
       <div className="flex-1 overflow-auto">
         {weeksLoading ? (
-          <div className="p-6 grid grid-cols-7 gap-3">
-            {DAY_NAMES.map(d => (
-              <div key={d}>
-                <div className="shimmer h-8 rounded-xl mb-2" />
-                {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
-              </div>
-            ))}
-          </div>
+          <>
+            {/* Desktop skeleton */}
+            <div className="hidden lg:grid p-6 grid-cols-7 gap-3">
+              {DAY_NAMES.map(d => (
+                <div key={d}>
+                  <div className="shimmer h-8 rounded-xl mb-2" />
+                  {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
+                </div>
+              ))}
+            </div>
+            {/* Mobile skeleton */}
+            <div className="lg:hidden p-4 space-y-3">
+              {[1,2,3].map(i => <div key={i} className="shimmer h-20 rounded-2xl" />)}
+            </div>
+          </>
         ) : publishedWeekStarts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
             <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center text-3xl">📅</div>
@@ -792,113 +799,211 @@ export default function CompletedPage() {
             </div>
           </div>
         ) : loading ? (
-          <div className="p-6 grid grid-cols-7 gap-3">
-            {DAY_NAMES.map(d => (
-              <div key={d}>
-                <div className="shimmer h-8 rounded-xl mb-2" />
-                {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
-              </div>
-            ))}
-          </div>
+          <>
+            {/* Desktop skeleton */}
+            <div className="hidden lg:grid p-6 grid-cols-7 gap-3">
+              {DAY_NAMES.map(d => (
+                <div key={d}>
+                  <div className="shimmer h-8 rounded-xl mb-2" />
+                  {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
+                </div>
+              ))}
+            </div>
+            {/* Mobile skeleton */}
+            <div className="lg:hidden p-4 space-y-3">
+              {[1,2,3].map(i => <div key={i} className="shimmer h-20 rounded-2xl" />)}
+            </div>
+          </>
         ) : (
-          <div className="p-6 grid grid-cols-7 gap-3 min-w-[900px]">
-            {weekDates.map(date => {
-              const dayJobs = jobsByDate.get(date) || [];
-              const isToday = date === today;
-              const dayLabel = getShortDayLabel(date);
-              const daySubmitted = dayJobs.filter(j => j.completion?.is_submitted).length;
+          <>
+            {/* ══ DESKTOP: 7-column week grid ══ */}
+            <div className="hidden lg:grid p-6 grid-cols-7 gap-3 min-w-[900px]">
+              {weekDates.map(date => {
+                const dayJobs = jobsByDate.get(date) || [];
+                const isToday = date === today;
+                const dayLabel = getShortDayLabel(date);
+                const daySubmitted = dayJobs.filter(j => j.completion?.is_submitted).length;
 
-              return (
-                <div key={date} className="flex flex-col gap-2">
-                  {/* Day header */}
-                  <div className={`flex items-center justify-between px-2 py-1.5 rounded-xl ${
-                    isToday ? 'bg-primary' : 'bg-white border border-border-light'
-                  }`}>
-                    <span className={`text-xs font-bold ${isToday ? 'text-white' : 'text-text-primary'}`}>
-                      {dayLabel}
-                    </span>
-                    {dayJobs.length > 0 && (
-                      <span className={`text-[10px] font-semibold ${isToday ? 'text-white/80' : 'text-text-tertiary'}`}>
-                        {daySubmitted}/{dayJobs.length}
+                return (
+                  <div key={date} className="flex flex-col gap-2">
+                    <div className={`flex items-center justify-between px-2 py-1.5 rounded-xl ${
+                      isToday ? 'bg-primary' : 'bg-white border border-border-light'
+                    }`}>
+                      <span className={`text-xs font-bold ${isToday ? 'text-white' : 'text-text-primary'}`}>
+                        {dayLabel}
                       </span>
+                      {dayJobs.length > 0 && (
+                        <span className={`text-[10px] font-semibold ${isToday ? 'text-white/80' : 'text-text-tertiary'}`}>
+                          {daySubmitted}/{dayJobs.length}
+                        </span>
+                      )}
+                    </div>
+                    {dayJobs.length === 0 ? (
+                      <div className="min-h-[60px] rounded-xl border border-dashed border-border-light flex items-center justify-center">
+                        <span className="text-[10px] text-text-tertiary">No jobs</span>
+                      </div>
+                    ) : (
+                      dayJobs.map(job => {
+                        const isSubmitted = job.completion?.is_submitted;
+                        const inProgress = job.completion && !isSubmitted;
+                        const pct = job.totalFields > 0
+                          ? Math.round((job.answeredFields / job.totalFields) * 100) : 0;
+                        return (
+                          <motion.button
+                            key={job.id}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => handleSelectJob(job)}
+                            className={`w-full text-left rounded-xl border-2 p-3 bg-white shadow-sm transition-all ${
+                              selectedJob?.id === job.id ? 'border-primary shadow-md' :
+                              isSubmitted ? 'border-emerald-300' :
+                              inProgress ? 'border-primary/30' :
+                              'border-border-light'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="w-1 min-h-[28px] rounded-full shrink-0" style={{ backgroundColor: job.teamColor }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-text-primary leading-snug truncate">{job.name}</p>
+                                {job.teamName && <p className="text-[10px] text-text-tertiary mt-0.5 truncate">{job.teamName}</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <div className="flex -space-x-1">
+                                {job.assignedStaff.length > 0
+                                  ? job.assignedStaff.slice(0, 4).map(staff => (
+                                    <div key={staff.id} title={staff.name}
+                                      className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white"
+                                      style={{ backgroundColor: staff.color }}>
+                                      {(staff.name || '?')[0].toUpperCase()}
+                                    </div>
+                                  ))
+                                  : <div className="w-5 h-5 rounded-full border border-dashed border-border-light bg-surface-elevated" />}
+                              </div>
+                              <div>
+                                {isSubmitted ? (
+                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-lg">✓ Done</span>
+                                ) : inProgress ? (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-lg">{pct}% done</span>
+                                ) : (
+                                  <span className="text-[10px] text-text-tertiary">Not started</span>
+                                )}
+                              </div>
+                            </div>
+                          </motion.button>
+                        );
+                      })
                     )}
                   </div>
+                );
+              })}
+            </div>
 
-                  {/* Cards */}
-                  {dayJobs.length === 0 ? (
-                    <div className="min-h-[60px] rounded-xl border border-dashed border-border-light flex items-center justify-center">
-                      <span className="text-[10px] text-text-tertiary">No jobs</span>
+            {/* ══ MOBILE: vertical day list ══ */}
+            <div className="lg:hidden p-3 space-y-2 pb-24">
+              {weekDates.map(date => {
+                const dayJobs = jobsByDate.get(date) || [];
+                const isToday = date === today;
+                const dayLabel = getShortDayLabel(date);
+                const dayNum = new Date(date + 'T12:00:00').getDate();
+                const daySubmitted = dayJobs.filter(j => j.completion?.is_submitted).length;
+                if (dayJobs.length === 0) return null;
+
+                return (
+                  <div key={date}>
+                    {/* Day heading */}
+                    <div className={`flex items-center gap-2 px-2 py-2 mb-1.5`}>
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${
+                        isToday ? 'bg-primary text-white' : 'bg-white border border-border-light text-text-primary'
+                      }`}>
+                        {dayNum}
+                      </div>
+                      <div className="flex-1">
+                        <span className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-text-primary'}`}>
+                          {dayLabel}{isToday ? ' — Today' : ''}
+                        </span>
+                      </div>
+                      <span className="text-xs text-text-tertiary font-medium">
+                        {daySubmitted}/{dayJobs.length} done
+                      </span>
                     </div>
-                  ) : (
-                    dayJobs.map(job => {
-                      const isSubmitted = job.completion?.is_submitted;
-                      const inProgress = job.completion && !isSubmitted;
-                      const pct = job.totalFields > 0
-                        ? Math.round((job.answeredFields / job.totalFields) * 100) : 0;
 
-                      return (
-                        <motion.button
-                          key={job.id}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => handleSelectJob(job)}
-                          className={`w-full text-left rounded-xl border-2 p-3 bg-white shadow-sm transition-all ${
-                            selectedJob?.id === job.id ? 'border-primary shadow-md' :
-                            isSubmitted ? 'border-emerald-300' :
-                            inProgress ? 'border-primary/30' :
-                            'border-border-light'
-                          }`}
-                        >
-                          {/* Name + team stripe */}
-                          <div className="flex items-start gap-2">
-                            <div className="w-1 min-h-[28px] rounded-full shrink-0"
-                              style={{ backgroundColor: job.teamColor }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-text-primary leading-snug truncate">
-                                {job.name}
-                              </p>
-                              {job.teamName && (
-                                <p className="text-[10px] text-text-tertiary mt-0.5 truncate">{job.teamName}</p>
-                              )}
+                    {/* Job cards */}
+                    <div className="space-y-2">
+                      {dayJobs.map(job => {
+                        const isSubmitted = job.completion?.is_submitted;
+                        const inProgress = job.completion && !isSubmitted;
+                        const pct = job.totalFields > 0
+                          ? Math.round((job.answeredFields / job.totalFields) * 100) : 0;
+                        return (
+                          <motion.button
+                            key={job.id}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => handleSelectJob(job)}
+                            className={`w-full text-left rounded-2xl border-2 px-4 py-3 bg-white shadow-sm transition-all active:scale-[0.98] ${
+                              selectedJob?.id === job.id ? 'border-primary shadow-md' :
+                              isSubmitted ? 'border-emerald-300' :
+                              inProgress ? 'border-primary/30' :
+                              'border-border-light'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Team color stripe */}
+                              <div className="w-1 h-10 rounded-full shrink-0" style={{ backgroundColor: job.teamColor }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-text-primary leading-snug truncate">{job.name}</p>
+                                <p className="text-xs text-text-tertiary mt-0.5 truncate">{job.address || job.teamName}</p>
+                              </div>
+                              {/* Status badge */}
+                              <div className="shrink-0">
+                                {isSubmitted ? (
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-xl">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                    Done
+                                  </span>
+                                ) : inProgress ? (
+                                  <span className="inline-flex items-center text-xs font-bold text-primary bg-primary/10 px-2.5 py-1.5 rounded-xl">{pct}%</span>
+                                ) : (
+                                  <span className="inline-flex items-center text-xs text-text-tertiary bg-surface-elevated px-2.5 py-1.5 rounded-xl">—</span>
+                                )}
+                              </div>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
+                                <polyline points="9 18 15 12 9 6"/>
+                              </svg>
                             </div>
-                          </div>
-
-                          {/* Staff + status */}
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex -space-x-1">
-                              {job.assignedStaff.length > 0
-                                ? job.assignedStaff.slice(0, 4).map(staff => (
-                                  <div key={staff.id} title={staff.name}
-                                    className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white"
-                                    style={{ backgroundColor: staff.color }}>
-                                    {(staff.name || '?')[0].toUpperCase()}
-                                  </div>
-                                ))
-                                : <div className="w-5 h-5 rounded-full border border-dashed border-border-light bg-surface-elevated" />
-                              }
-                            </div>
-                            <div>
-                              {isSubmitted ? (
-                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-lg">
-                                  ✓ Done
+                            {/* Staff avatars */}
+                            {job.assignedStaff.length > 0 && (
+                              <div className="flex items-center gap-1.5 mt-2 pl-4">
+                                <div className="flex -space-x-1">
+                                  {job.assignedStaff.slice(0, 5).map(staff => (
+                                    <div key={staff.id} title={staff.name}
+                                      className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white"
+                                      style={{ backgroundColor: staff.color }}>
+                                      {(staff.name || '?')[0].toUpperCase()}
+                                    </div>
+                                  ))}
+                                </div>
+                                <span className="text-[10px] text-text-tertiary">
+                                  {job.assignedStaff.map(s => s.name).join(', ')}
                                 </span>
-                              ) : inProgress ? (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-lg">
-                                  {pct}% done
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-text-tertiary">Not started</span>
-                              )}
-                            </div>
-                          </div>
-                        </motion.button>
-                      );
-                    })
-                  )}
+                              </div>
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Empty state for mobile */}
+              {weekDates.every(d => (jobsByDate.get(d) || []).length === 0) && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                  <div className="text-4xl">📋</div>
+                  <p className="text-sm font-semibold text-text-secondary">No jobs this week</p>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

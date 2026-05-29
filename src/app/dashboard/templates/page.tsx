@@ -240,7 +240,7 @@ export default function TemplatesPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               transition={{ duration: 0.15 }}
-              className="h-full overflow-y-auto custom-scrollbar p-5"
+              className="h-full overflow-y-auto custom-scrollbar p-5 pb-24 lg:pb-5"
             >
               <ScheduleTemplatesTab
                 templates={scheduleTemplates}
@@ -259,8 +259,8 @@ export default function TemplatesPage() {
               transition={{ duration: 0.15 }}
               className="h-full flex overflow-hidden"
             >
-              {/* Left: template list */}
-              <div className="w-72 shrink-0 flex flex-col border-r border-border-light bg-surface-elevated/40">
+              {/* Left: template list — hidden on mobile when a template is selected */}
+              <div className={`${selectedMasterId !== null ? 'hidden lg:flex' : 'flex'} w-full lg:w-72 shrink-0 flex-col border-r border-border-light bg-surface-elevated/40`}>
                 <div className="shrink-0 p-3 border-b border-border-light">
                   <div className="relative">
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -353,8 +353,8 @@ export default function TemplatesPage() {
                 </div>
               </div>
 
-              {/* Right: checklist builder */}
-              <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+              {/* Right: checklist builder — visible on mobile when selected */}
+              <div className={`${selectedMasterId !== null ? 'flex' : 'hidden lg:flex'} flex-1 min-w-0 overflow-hidden flex-col`}>
                 <AnimatePresence mode="wait">
                   {selectedMasterId ? (
                     <motion.div key={selectedMasterId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -411,7 +411,8 @@ export default function TemplatesPage() {
                     </motion.div>
                   ) : (
                     <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="flex-1 flex items-center justify-center text-center px-8">
+                      className="flex-1 hidden lg:flex items-center justify-center text-center px-8">
+
                       <div>
                         <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center mx-auto mb-4">
                           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary">

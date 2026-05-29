@@ -90,3 +90,14 @@ body { font-family: var(--font-inter), system-ui, -apple-system, sans-serif; bac
 .pac-item-query { font-size: 14px !important; color: var(--color-text-primary) !important; }
 
 @media (max-width: 768px) { .glass-panel { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); } }
+
+/* ── Safe area insets (iOS notch / home indicator) ────────────────────────── */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ── Mobile bottom tab bar height (56px + safe area) ─────────────────────── */
+.mobile-content-pad { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+
+/* ── Prevent text size adjustment on iOS rotation ─────────────────────────── */
+html { -webkit-text-size-adjust: 100%; }
+

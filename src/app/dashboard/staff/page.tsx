@@ -467,7 +467,7 @@ export default function StaffPage() {
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-[860px] mx-auto px-4 lg:px-6 py-6 space-y-6">
+      <div className="max-w-[860px] mx-auto px-4 lg:px-6 py-6 pb-24 lg:pb-6 space-y-6">
 
         {/* ── Page header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3">

@@ -8,24 +8,22 @@ import { getTodayISO, getWeekDates, addDays, getWeekLabel, getShortDayLabel } fr
 import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import { COLLAB_COLORS } from '@/components/StaffChecklistView';
 
+const STAFF_COLORS = COLLAB_COLORS.map((c: { bg: string; text: string }) => c.bg);
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface JobInfo {
-  id: string;
+interface AssignedStaff {
+  id: string;        // staff_members.id
   name: string;
-  address: string;
-  client_id: string | null;
-  checklist_id: string | null;
-  schedule_id: string;
-  date: string;
-  teamColor: string;
-  teamName: string;
+  userId: string | null; // staff_members.user_id → auth user
+  color: string;
 }
 
 interface FieldAnswer {
   fieldId: string;
   value: string | string[] | boolean | null;
   na?: boolean;
-  completed_by?: string;
+  completed_by?: string; // auth user id
 }
 
 interface Completion {
@@ -38,73 +36,126 @@ interface Completion {
   is_submitted: boolean;
 }
 
-interface JobWithCompletion extends JobInfo {
+interface JobWithCompletion {
+  id: string;
+  name: string;
+  address: string;
+  client_id: string | null;
+  checklist_id: string | null;
+  schedule_id: string;
+  date: string;
+  teamColor: string;
+  teamName: string;
+  assignedStaff: AssignedStaff[];
   completion: Completion | null;
   totalFields: number;
   answeredFields: number;
-  contributors: Array<{ uid: string; color: string; name: string }>;
 }
 
-const STAFF_COLORS = COLLAB_COLORS.map((c: { bg: string; text: string }) => c.bg);
-
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-// ─── Completion ring SVG ──────────────────────────────────────────────────────
-function ProgressRing({ pct, size = 36, submitted }: { pct: number; size?: number; submitted: boolean }) {
-  const r = (size - 4) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (pct / 100) * circ;
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#E5E7EB" strokeWidth="3" />
-      <circle cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={submitted ? '#10B981' : pct > 0 ? '#4F46E5' : '#E5E7EB'}
-        strokeWidth="3" strokeDasharray={`${dash} ${circ}`}
-        strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.4s ease' }} />
-    </svg>
-  );
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function parseItems(raw: unknown): FieldAnswer[] {
+  try {
+    if (typeof raw === 'string') return JSON.parse(raw) as FieldAnswer[];
+    if (Array.isArray(raw)) return raw as FieldAnswer[];
+  } catch { /* */ }
+  return [];
 }
 
-// ─── Live checklist panel (admin read-only + realtime) ────────────────────────
-function ChecklistPanel({
-  job,
-  sections,
-  completion,
-  contributors,
-  userNameMap,
-  userColorMap,
-  onClose,
-}: {
-  job: JobWithCompletion;
-  sections: ChecklistSection[];
-  completion: Completion | null;
-  contributors: JobWithCompletion['contributors'];
-  userNameMap: Map<string, string>;
-  userColorMap: Map<string, string>;
-  onClose: () => void;
-}) {
-  const answers = useMemo(() => {
-    const map = new Map<string, FieldAnswer>();
-    (completion?.items || []).forEach(a => map.set(a.fieldId, a));
-    return map;
-  }, [completion]);
+type CompletionRow = {
+  id: string; schedule_job_id: string; items: unknown;
+  notes: string | null; completed_by: string; completed_at: string;
+};
 
-  const allFields = useMemo(() =>
-    sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && f.type !== 'paragraph' && f.type !== 'logic')),
-  [sections]);
+function parseCompletion(c: CompletionRow): Completion {
+  return {
+    id: c.id,
+    schedule_job_id: c.schedule_job_id,
+    items: parseItems(c.items),
+    notes: c.notes,
+    completed_by: c.completed_by,
+    completed_at: c.completed_at,
+    is_submitted: !!c.completed_at,
+  };
+}
 
-  const answeredCount = allFields.filter(f => {
-    const a = answers.get(f.id);
-    if (!a) return false;
+function countAnswered(items: FieldAnswer[]): number {
+  return items.filter(a => {
     if (a.na) return true;
     const v = a.value;
     if (v === null || v === '' || v === false) return false;
     if (Array.isArray(v)) return v.length > 0;
     return true;
   }).length;
+}
 
+// ─── Progress ring ────────────────────────────────────────────────────────────
+function ProgressRing({ pct, submitted, size = 36 }: { pct: number; submitted: boolean; size?: number }) {
+  const r = (size - 4) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E5E7EB" strokeWidth="3" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={submitted ? '#10B981' : pct > 0 ? '#4F46E5' : '#E5E7EB'}
+        strokeWidth="3"
+        strokeDasharray={`${(pct / 100) * circ} ${circ}`}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dasharray 0.4s ease' }} />
+    </svg>
+  );
+}
+
+// ─── Checklist panel (admin read-only, live) ──────────────────────────────────
+function ChecklistPanel({
+  job, sections, completion, userNameMap, onClose, loading,
+}: {
+  job: JobWithCompletion;
+  sections: ChecklistSection[];
+  completion: Completion | null;
+  userNameMap: Map<string, string>;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  // Build userId → {color, name} from assignedStaff first (consistent colors)
+  const staffByUserId = useMemo(() => {
+    const m = new Map<string, AssignedStaff>();
+    job.assignedStaff.forEach(s => { if (s.userId) m.set(s.userId, s); });
+    return m;
+  }, [job.assignedStaff]);
+
+  const getColor = (uid?: string) => {
+    if (!uid) return undefined;
+    return staffByUserId.get(uid)?.color;
+  };
+
+  const getName = (uid?: string) => {
+    if (!uid) return 'Staff';
+    const staff = staffByUserId.get(uid);
+    if (staff) return staff.name;
+    return userNameMap.get(uid) || 'Staff';
+  };
+
+  const answers = useMemo(() => {
+    const m = new Map<string, FieldAnswer>();
+    (completion?.items || []).forEach(a => m.set(a.fieldId, a));
+    return m;
+  }, [completion]);
+
+  const allFields = useMemo(() =>
+    sections.flatMap(s => s.fields.filter(f => f.type !== 'heading' && f.type !== 'paragraph' && f.type !== 'logic')),
+  [sections]);
+
+  const answeredCount = useMemo(() => countAnswered(completion?.items || []), [completion]);
   const pct = allFields.length > 0 ? Math.round((answeredCount / allFields.length) * 100) : 0;
   const isSubmitted = completion?.is_submitted ?? false;
+
+  // Unique contributors (users who answered at least one field)
+  const contributors = useMemo(() => {
+    const seen = new Set<string>();
+    (completion?.items || []).forEach(a => { if (a.completed_by) seen.add(a.completed_by); });
+    return [...seen].map(uid => ({ uid, color: getColor(uid) || STAFF_COLORS[0], name: getName(uid) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completion, staffByUserId, userNameMap]);
 
   return (
     <motion.div
@@ -114,14 +165,16 @@ function ChecklistPanel({
     >
       {/* Header */}
       <div className="shrink-0 px-5 py-4 border-b border-border-light">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors shrink-0 mt-0.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
           </button>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-text-primary truncate">{job.name}</h3>
-            <p className="text-xs text-text-tertiary truncate">{job.address}</p>
+            <p className="text-xs text-text-tertiary truncate mt-0.5">{job.address}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <ProgressRing pct={pct} submitted={isSubmitted} />
@@ -129,24 +182,46 @@ function ChecklistPanel({
               <p className={`text-xs font-bold ${isSubmitted ? 'text-emerald-600' : pct > 0 ? 'text-primary' : 'text-text-tertiary'}`}>
                 {isSubmitted ? 'Submitted' : pct > 0 ? 'In Progress' : 'Not Started'}
               </p>
-              {allFields.length > 0 && <p className="text-[10px] text-text-tertiary">{answeredCount}/{allFields.length}</p>}
+              {allFields.length > 0 && (
+                <p className="text-[10px] text-text-tertiary">{answeredCount}/{allFields.length} fields</p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Contributors */}
-        {contributors.length > 0 && (
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
-            {contributors.map(({ uid, color, name }) => (
-              <span key={uid} className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full text-white"
-                style={{ backgroundColor: color }}>
-                {name}
-              </span>
-            ))}
+        {/* Assigned team */}
+        {job.assignedStaff.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1.5">Assigned Team</p>
+            <div className="flex flex-wrap gap-1.5">
+              {job.assignedStaff.map(staff => (
+                <span key={staff.id}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full text-white"
+                  style={{ backgroundColor: staff.color }}>
+                  {staff.name}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Live pulse */}
+        {/* Who filled it in */}
+        {contributors.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1.5">Filled in by</p>
+            <div className="flex flex-wrap gap-1.5">
+              {contributors.map(({ uid, color, name }) => (
+                <span key={uid}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+                  style={{ borderColor: color, color }}>
+                  ● {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Live indicator */}
         {!isSubmitted && completion && (
           <div className="flex items-center gap-1.5 mt-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -155,12 +230,17 @@ function ChecklistPanel({
         )}
       </div>
 
-      {/* Checklist body */}
+      {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {sections.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+        {loading ? (
+          <div className="space-y-2">
+            {[1,2,3,4,5].map(i => <div key={i} className="shimmer h-12 rounded-xl" />)}
+          </div>
+        ) : sections.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
             <div className="w-12 h-12 rounded-xl bg-surface-elevated flex items-center justify-center text-2xl">📋</div>
-            <p className="text-sm text-text-secondary">No checklist assigned to this job</p>
+            <p className="text-sm font-semibold text-text-secondary">No checklist assigned</p>
+            <p className="text-xs text-text-tertiary">Assign a checklist to this job in the scheduler</p>
           </div>
         ) : (
           sections.map(section => (
@@ -168,49 +248,63 @@ function ChecklistPanel({
               {section.title && (
                 <div className="flex items-center gap-3 py-2">
                   <div className="flex-1 h-px bg-border" />
-                  <h4 className="text-[11px] font-bold uppercase tracking-widest text-text-secondary shrink-0 px-1">{section.title}</h4>
+                  <h4 className="text-[11px] font-bold uppercase tracking-widest text-text-secondary shrink-0 px-1">
+                    {section.title}
+                  </h4>
                   <div className="flex-1 h-px bg-border" />
                 </div>
               )}
               <div className="space-y-1.5">
                 {section.fields.map(field => {
                   if (field.type === 'heading') return (
-                    <p key={field.id} className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary pt-2">{field.label}</p>
+                    <p key={field.id} className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary pt-2">
+                      {field.label}
+                    </p>
                   );
                   if (field.type === 'paragraph' || field.type === 'logic') return null;
 
                   const ans = answers.get(field.id);
-                  const answererColor = ans?.completed_by ? userColorMap.get(ans.completed_by) : undefined;
-                  const isAnswered = ans && (ans.na || (ans.value !== null && ans.value !== '' && ans.value !== false && !(Array.isArray(ans.value) && ans.value.length === 0)));
+                  const answererColor = getColor(ans?.completed_by);
+                  const isAnswered = !!ans && (
+                    ans.na === true ||
+                    (ans.value !== null && ans.value !== undefined && ans.value !== '' &&
+                     ans.value !== false && !(Array.isArray(ans.value) && ans.value.length === 0))
+                  );
 
-                  let displayVal = '—';
+                  let displayVal = '';
                   if (ans?.na) displayVal = 'N/A';
-                  else if (ans?.value === true || ans?.value === 'yes') displayVal = '✓ Yes';
-                  else if (ans?.value === false || ans?.value === 'no') displayVal = '✗ No';
-                  else if (Array.isArray(ans?.value)) displayVal = (ans.value as string[]).join(', ') || '—';
+                  else if (ans?.value === true || ans?.value === 'yes') displayVal = '✓  Yes';
+                  else if (ans?.value === false || ans?.value === 'no') displayVal = '✗  No';
+                  else if (Array.isArray(ans?.value)) displayVal = (ans.value as string[]).join(', ');
                   else if (ans?.value) displayVal = String(ans.value);
 
                   return (
                     <div key={field.id}
-                      className={`flex items-start justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all ${
-                        isAnswered ? 'bg-white border-border-light' : 'bg-surface-elevated border-transparent'
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                        isAnswered
+                          ? 'bg-white border-border-light'
+                          : 'bg-surface-elevated/50 border-transparent'
                       }`}
-                      style={isAnswered && answererColor ? { borderLeftColor: answererColor, borderLeftWidth: 3 } : undefined}
+                      style={isAnswered && answererColor
+                        ? { borderLeftColor: answererColor, borderLeftWidth: 3 }
+                        : undefined}
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-text-primary leading-snug">{field.label}</p>
-                        {isAnswered && (
+                        {displayVal ? (
                           <p className="text-xs text-text-secondary mt-0.5 font-medium">{displayVal}</p>
+                        ) : (
+                          <p className="text-[10px] text-text-tertiary mt-0.5">Not answered</p>
                         )}
                       </div>
                       {isAnswered && answererColor && (
-                        <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold text-white"
-                          style={{ backgroundColor: answererColor }}>
-                          {(userNameMap.get(ans!.completed_by!) || '?')[0].toUpperCase()}
+                        <div
+                          className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold text-white mt-0.5"
+                          style={{ backgroundColor: answererColor }}
+                          title={getName(ans?.completed_by)}
+                        >
+                          {(getName(ans?.completed_by) || '?')[0].toUpperCase()}
                         </div>
-                      )}
-                      {!isAnswered && (
-                        <span className="shrink-0 text-[10px] text-text-tertiary">—</span>
                       )}
                     </div>
                   );
@@ -234,9 +328,23 @@ function ChecklistPanel({
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-xl">
               <span className="text-emerald-500">✓</span>
               <span className="text-xs font-semibold text-emerald-700">
-                Submitted {new Date(completion.completed_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                Submitted {new Date(completion.completed_at).toLocaleString('en-AU', {
+                  weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* No completion yet */}
+        {!loading && !completion && sections.length > 0 && (
+          <div className="text-center py-8">
+            <p className="text-sm text-text-tertiary">No checklist submitted yet.</p>
+            {job.assignedStaff.length > 0 && (
+              <p className="text-xs text-text-tertiary mt-1">
+                Waiting on: {job.assignedStaff.map(s => s.name).join(', ')}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -255,120 +363,108 @@ export default function CompletedPage() {
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<JobWithCompletion | null>(null);
   const [jobSections, setJobSections] = useState<ChecklistSection[]>([]);
+  const [panelLoading, setPanelLoading] = useState(false);
   const [liveCompletion, setLiveCompletion] = useState<Completion | null>(null);
   const [userNameMap, setUserNameMap] = useState<Map<string, string>>(new Map());
-  const [userColorMap, setUserColorMap] = useState<Map<string, string>>(new Map());
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pageChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const today = useMemo(() => getTodayISO(), []);
   const focusedDate = useMemo(() => addDays(today, weekOffset * 7), [today, weekOffset]);
   const weekDates = useMemo(() => getWeekDates(focusedDate), [focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
 
-  // ── Load week data ─────────────────────────────────────────────────────────
+  // ── Load week ───────────────────────────────────────────────────────────────
   const loadWeek = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
 
-    // 1. Get teams
-    const { data: teams } = await supabase.from('teams').select('id, name, color_index').eq('org_id', orgId);
-    if (!teams) { setLoading(false); return; }
-    const teamIds = teams.map((t: { id: string; name: string; color_index: number | null }) => t.id);
-    const teamColorMap = new Map<string, string>(teams.map((t: { id: string; name: string; color_index: number | null }) => [t.id, STAFF_COLORS[((t.color_index as number) || 0) % STAFF_COLORS.length]]));
-    const teamNameMap = new Map<string, string>(teams.map((t: { id: string; name: string; color_index: number | null }) => [t.id, t.name as string]));
+    // 1. Teams
+    const { data: teamsRaw } = await supabase
+      .from('teams').select('id, name, color_index').eq('org_id', orgId);
+    if (!teamsRaw) { setLoading(false); return; }
+    type TeamRow = { id: string; name: string; color_index: number | null };
+    const teams = teamsRaw as TeamRow[];
+    const teamIds = teams.map(t => t.id);
+    const teamColorMap = new Map<string, string>(teams.map(t => [t.id, STAFF_COLORS[(t.color_index || 0) % STAFF_COLORS.length]]));
+    const teamNameMap = new Map<string, string>(teams.map(t => [t.id, t.name]));
 
-    // 2. Get schedules for the week
-    const { data: schedules } = await supabase
-      .from('schedules')
-      .select('id, team_id, schedule_date, is_published')
-      .in('team_id', teamIds)
-      .in('schedule_date', weekDates);
-    if (!schedules || schedules.length === 0) { setJobs([]); setLoading(false); return; }
+    // 2. Schedules for the week
+    const { data: schedulesRaw } = await supabase
+      .from('schedules').select('id, team_id, schedule_date')
+      .in('team_id', teamIds).in('schedule_date', weekDates);
+    if (!schedulesRaw || schedulesRaw.length === 0) { setJobs([]); setLoading(false); return; }
+    type ScheduleRow = { id: string; team_id: string; schedule_date: string };
+    const schedules = schedulesRaw as ScheduleRow[];
+    const scheduleIds = schedules.map(s => s.id);
+    const scheduleTeamMap = new Map<string, string>(schedules.map(s => [s.id, s.team_id]));
+    const scheduleDateMap = new Map<string, string>(schedules.map(s => [s.id, s.schedule_date]));
 
-    type ScheduleRow = { id: string; team_id: string; schedule_date: string; is_published: boolean };
-    const scheduleIds = schedules.map((s: ScheduleRow) => s.id);
-    const scheduleTeamMap = new Map<string, string>(schedules.map((s: ScheduleRow) => [s.id, s.team_id]));
-    const scheduleDateMap = new Map<string, string>(schedules.map((s: ScheduleRow) => [s.id, s.schedule_date]));
-
-    // 3. Get jobs (non-break, with client)
-    const { data: rawJobs } = await supabase
+    // 3. Jobs (non-break, with client, including assigned staff)
+    const { data: jobsRaw } = await supabase
       .from('schedule_jobs')
-      .select('id, name, address, client_id, checklist_id, schedule_id, is_break')
+      .select('id, name, address, client_id, checklist_id, schedule_id, assigned_staff_ids')
       .in('schedule_id', scheduleIds)
       .eq('is_break', false)
       .not('client_id', 'is', null)
       .order('position');
-    if (!rawJobs || rawJobs.length === 0) { setJobs([]); setLoading(false); return; }
+    if (!jobsRaw || jobsRaw.length === 0) { setJobs([]); setLoading(false); return; }
+    type RawJob = {
+      id: string; name: string; address: string; client_id: string | null;
+      checklist_id: string | null; schedule_id: string; assigned_staff_ids: string[] | null;
+    };
+    const rawJobs = jobsRaw as RawJob[];
+    const jobIds = rawJobs.map(j => j.id);
 
-    type RawJob = { id: string; name: string; address: string; client_id: string | null; checklist_id: string | null; schedule_id: string; is_break: boolean };
-    const jobIds = rawJobs.map((j: RawJob) => j.id);
+    // 4. Fetch all assigned staff members
+    const allStaffIds = new Set<string>();
+    rawJobs.forEach(j => (j.assigned_staff_ids || []).forEach(id => allStaffIds.add(id)));
+    type StaffRow = { id: string; name: string; user_id: string | null };
+    let staffMap = new Map<string, StaffRow>();
+    if (allStaffIds.size > 0) {
+      const { data: staffData } = await supabase
+        .from('staff_members').select('id, name, user_id').in('id', [...allStaffIds]);
+      if (staffData) staffMap = new Map<string, StaffRow>((staffData as StaffRow[]).map(s => [s.id, s]));
+    }
 
-    // 4. Get completions
-    const { data: completions } = await supabase
+    // 5. Completions
+    const { data: completionsRaw } = await supabase
       .from('checklist_completions')
       .select('id, schedule_job_id, items, notes, completed_by, completed_at')
       .in('schedule_job_id', jobIds);
-
     const completionMap = new Map<string, Completion>();
     const allUserIds = new Set<string>();
-
-    type CompletionRow = { id: string; schedule_job_id: string; items: unknown; notes: string | null; completed_by: string; completed_at: string };
-    (completions as CompletionRow[] || []).forEach(c => {
-      let items: FieldAnswer[] = [];
-      try { items = typeof c.items === 'string' ? JSON.parse(c.items) : ((c.items as FieldAnswer[]) || []); } catch { /* */ }
-      completionMap.set(c.schedule_job_id, {
-        id: c.id,
-        schedule_job_id: c.schedule_job_id,
-        items,
-        notes: c.notes,
-        completed_by: c.completed_by,
-        completed_at: c.completed_at,
-        is_submitted: !!c.completed_at,
-      });
-      items.forEach(a => { if (a.completed_by) allUserIds.add(a.completed_by); });
+    (completionsRaw as CompletionRow[] || []).forEach(c => {
+      const comp = parseCompletion(c);
+      completionMap.set(c.schedule_job_id, comp);
+      comp.items.forEach(a => { if (a.completed_by) allUserIds.add(a.completed_by); });
       if (c.completed_by) allUserIds.add(c.completed_by);
     });
 
-    // 5. Fetch user names
-    const uidArr = [...allUserIds];
-    if (uidArr.length > 0) {
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', uidArr);
+    // 6. User display names
+    if (allUserIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles').select('id, full_name').in('id', [...allUserIds]);
       const nameMap = new Map<string, string>();
-      (profiles || []).forEach((p: { id: string; full_name: string | null }) => nameMap.set(p.id, p.full_name || 'Staff'));
+      (profiles as { id: string; full_name: string | null }[] || []).forEach(p =>
+        nameMap.set(p.id, p.full_name || 'Staff'));
       setUserNameMap(nameMap);
     }
 
-    // 6. Build color map (consistent uid → color)
-    const colorMap = new Map<string, string>();
-    let colorIdx = 0;
-    allUserIds.forEach(uid => {
-      colorMap.set(uid, STAFF_COLORS[colorIdx % STAFF_COLORS.length]);
-      colorIdx++;
-    });
-    setUserColorMap(colorMap);
-
-    // 7. Assemble jobs with completion info
-    const jobsWithCompletion: JobWithCompletion[] = (rawJobs as RawJob[]).map(j => {
+    // 7. Assemble
+    const assembled: JobWithCompletion[] = rawJobs.map(j => {
       const completion = completionMap.get(j.id) || null;
-      const items = completion?.items || [];
       const teamId = scheduleTeamMap.get(j.schedule_id) || '';
 
-      // Count answerable fields (we don't have sections loaded here — use items count as proxy)
-      const answeredFields = items.filter(a => {
-        if (a.na) return true;
-        const v = a.value;
-        if (v === null || v === '' || v === false) return false;
-        if (Array.isArray(v)) return v.length > 0;
-        return true;
-      }).length;
-
-      // Contributors: unique users who answered anything
-      const contribUids = [...new Set(items.map(a => a.completed_by).filter(Boolean))] as string[];
-      const contributors = contribUids.map((uid, i) => ({
-        uid,
-        color: colorMap.get(uid) || STAFF_COLORS[i % STAFF_COLORS.length],
-        name: 'Staff', // filled in after userNameMap is set
-      }));
+      const assignedStaff: AssignedStaff[] = (j.assigned_staff_ids || []).map((sid, si) => {
+        const s = staffMap.get(sid);
+        return {
+          id: sid,
+          name: s?.name || 'Staff',
+          userId: s?.user_id || null,
+          color: STAFF_COLORS[si % STAFF_COLORS.length],
+        };
+      });
 
       return {
         id: j.id,
@@ -380,84 +476,132 @@ export default function CompletedPage() {
         date: scheduleDateMap.get(j.schedule_id) || '',
         teamColor: teamColorMap.get(teamId) || '#4F46E5',
         teamName: teamNameMap.get(teamId) || '',
+        assignedStaff,
         completion,
-        totalFields: items.length, // approximation; refined when panel opens
-        answeredFields,
-        contributors,
+        totalFields: completion?.items.length || 0,
+        answeredFields: countAnswered(completion?.items || []),
       };
     });
 
-    setJobs(jobsWithCompletion);
+    setJobs(assembled);
     setLoading(false);
   }, [orgId, weekDates, supabase]);
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
 
-  // Update contributor names once userNameMap is loaded
-  const jobsWithNames = useMemo(() => jobs.map(j => ({
-    ...j,
-    contributors: j.contributors.map(c => ({ ...c, name: userNameMap.get(c.uid) || 'Staff' })),
-  })), [jobs, userNameMap]);
+  // ── Page-level realtime: watch ALL completions for this org ─────────────────
+  // So when staff submit a checklist the job card updates immediately
+  useEffect(() => {
+    if (!orgId) return;
 
-  // ── Select job + load sections + subscribe realtime ────────────────────────
+    const ch = supabase
+      .channel(`completed-org:${orgId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public',
+        table: 'checklist_completions',
+        filter: `org_id=eq.${orgId}`,
+      }, (payload: { new: Record<string, unknown> }) => {
+        const row = payload.new;
+        if (!row?.id) return;
+        const jobId = row.schedule_job_id as string;
+        if (!jobId) return;
+
+        const comp = parseCompletion({
+          id: row.id as string,
+          schedule_job_id: jobId,
+          items: row.items as unknown,
+          notes: row.notes as string | null,
+          completed_by: row.completed_by as string,
+          completed_at: row.completed_at as string,
+        });
+
+        setJobs(prev => prev.map(j => {
+          if (j.id !== jobId) return j;
+          return {
+            ...j,
+            completion: comp,
+            totalFields: Math.max(j.totalFields, comp.items.length),
+            answeredFields: countAnswered(comp.items),
+          };
+        }));
+
+        // Update live panel if it's open for this job
+        setSelectedJob(prev => {
+          if (!prev || prev.id !== jobId) return prev;
+          return { ...prev, completion: comp };
+        });
+        setLiveCompletion(prev => {
+          if (prev === null || prev.schedule_job_id === jobId) return comp;
+          return prev;
+        });
+      })
+      .subscribe();
+
+    pageChannelRef.current = ch;
+    return () => { supabase.removeChannel(ch); };
+  }, [orgId, supabase]);
+
+  // ── Open job panel: fetch fresh data + subscribe realtime ───────────────────
   const handleSelectJob = useCallback(async (job: JobWithCompletion) => {
     setSelectedJob(job);
-    setLiveCompletion(job.completion);
+    setPanelLoading(true);
     setJobSections([]);
+    setLiveCompletion(null);
 
-    // Load checklist sections
-    const clId = job.checklist_id;
-    if (clId) {
-      const { data: cl } = await supabase.from('client_checklists').select('sections').eq('id', clId).single();
-      if (cl) {
-        const secs = ((cl.sections as Record<string, unknown>[]) || []).map(migrateOldSection);
-        setJobSections(secs);
-      }
-    } else if (job.client_id) {
-      const { data: defaultCl } = await supabase.from('client_checklists').select('sections').eq('client_id', job.client_id).eq('is_default', true).maybeSingle();
-      if (defaultCl) {
-        const secs = ((defaultCl.sections as Record<string, unknown>[]) || []).map(migrateOldSection);
-        setJobSections(secs);
-      }
+    // Always fetch fresh completion from DB (don't rely on stale cached data)
+    const { data: freshComp } = await supabase
+      .from('checklist_completions')
+      .select('id, schedule_job_id, items, notes, completed_by, completed_at')
+      .eq('schedule_job_id', job.id)
+      .maybeSingle();
+
+    if (freshComp) {
+      const parsed = parseCompletion(freshComp as CompletionRow);
+      setLiveCompletion(parsed);
+      setJobs(prev => prev.map(j => j.id === job.id
+        ? { ...j, completion: parsed, answeredFields: countAnswered(parsed.items), totalFields: Math.max(j.totalFields, parsed.items.length) }
+        : j));
     }
 
-    // Subscribe to realtime for this job
+    // Load checklist template sections
+    if (job.checklist_id) {
+      const { data: cl } = await supabase
+        .from('client_checklists').select('sections').eq('id', job.checklist_id).single();
+      if (cl) setJobSections(((cl.sections as Record<string, unknown>[]) || []).map(migrateOldSection));
+    } else if (job.client_id) {
+      const { data: cl } = await supabase
+        .from('client_checklists').select('sections')
+        .eq('client_id', job.client_id).eq('is_default', true).maybeSingle();
+      if (cl) setJobSections(((cl.sections as Record<string, unknown>[]) || []).map(migrateOldSection));
+    }
+
+    setPanelLoading(false);
+
+    // Subscribe to realtime for this specific job (in addition to page-level)
     if (realtimeChannelRef.current) supabase.removeChannel(realtimeChannelRef.current);
-    const channel = supabase
-      .channel(`admin-checklist:${job.id}`)
+    const ch = supabase
+      .channel(`admin-cl:${job.id}`)
       .on('postgres_changes', {
         event: '*', schema: 'public',
         table: 'checklist_completions',
         filter: `schedule_job_id=eq.${job.id}`,
       }, (payload: { new: Record<string, unknown> }) => {
-        const newRow = payload.new as Record<string, unknown>;
-        if (!newRow) return;
-        let items: FieldAnswer[] = [];
-        try { items = typeof newRow.items === 'string' ? JSON.parse(newRow.items as string) : (newRow.items as FieldAnswer[] || []); } catch { /* */ }
-        const newCompletion: Completion = {
-          id: newRow.id as string,
-          schedule_job_id: newRow.schedule_job_id as string,
-          items,
-          notes: newRow.notes as string | null,
-          completed_by: newRow.completed_by as string,
-          completed_at: newRow.completed_at as string,
-          is_submitted: !!newRow.completed_at,
-        };
-        setLiveCompletion(newCompletion);
-        // Update jobs list too
-        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, completion: newCompletion } : j));
-        // Fetch any new user names
-        const newUids = items.map(a => a.completed_by).filter((id): id is string => !!id && !userNameMap.has(id));
-        if (newUids.length > 0) {
-          supabase.from('profiles').select('id, full_name').in('id', newUids).then((res: { data: unknown }) => {
-            const d = res.data as { id: string; full_name: string | null }[] | null;
-            if (d) setUserNameMap(prev => { const n = new Map(prev); d.forEach(p => n.set(p.id, p.full_name || 'Staff')); return n; });
-          });
-        }
+        const row = payload.new;
+        if (!row?.id) return;
+        const comp = parseCompletion({
+          id: row.id as string,
+          schedule_job_id: row.schedule_job_id as string,
+          items: row.items as unknown,
+          notes: row.notes as string | null,
+          completed_by: row.completed_by as string,
+          completed_at: row.completed_at as string,
+        });
+        setLiveCompletion(comp);
+        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, completion: comp } : j));
       })
       .subscribe();
-    realtimeChannelRef.current = channel;
-  }, [supabase, userNameMap]);
+    realtimeChannelRef.current = ch;
+  }, [supabase]);
 
   const handleClosePanel = useCallback(() => {
     setSelectedJob(null);
@@ -469,33 +613,31 @@ export default function CompletedPage() {
     }
   }, [supabase]);
 
-  // ── Week stats ─────────────────────────────────────────────────────────────
-  const weekStats = useMemo(() => {
-    const total = jobsWithNames.length;
-    const submitted = jobsWithNames.filter(j => j.completion?.is_submitted).length;
-    const inProgress = jobsWithNames.filter(j => j.completion && !j.completion.is_submitted).length;
-    return { total, submitted, inProgress };
-  }, [jobsWithNames]);
+  // ── Stats ───────────────────────────────────────────────────────────────────
+  const weekStats = useMemo(() => ({
+    total: jobs.length,
+    submitted: jobs.filter(j => j.completion?.is_submitted).length,
+    inProgress: jobs.filter(j => j.completion && !j.completion.is_submitted).length,
+  }), [jobs]);
 
-  // ── Jobs grouped by date ───────────────────────────────────────────────────
   const jobsByDate = useMemo(() => {
     const map = new Map<string, JobWithCompletion[]>();
     weekDates.forEach(d => map.set(d, []));
-    jobsWithNames.forEach(j => { if (map.has(j.date)) map.get(j.date)!.push(j); });
+    jobs.forEach(j => { if (map.has(j.date)) map.get(j.date)!.push(j); });
     return map;
-  }, [jobsWithNames, weekDates]);
+  }, [jobs, weekDates]);
 
   return (
     <div className="h-full flex flex-col bg-[#f5f6fa] overflow-hidden">
+
       {/* ── Header ── */}
       <div className="shrink-0 bg-white border-b border-border-light px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 flex-wrap justify-between">
           <div>
             <h1 className="text-lg font-bold text-text-primary">Completed Jobs</h1>
             <p className="text-sm text-text-tertiary mt-0.5">{weekLabel}</p>
           </div>
 
-          {/* Stats pills */}
           {!loading && (
             <div className="flex items-center gap-2">
               <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold">
@@ -509,20 +651,33 @@ export default function CompletedPage() {
             </div>
           )}
 
-          {/* Week navigation */}
           <div className="flex items-center gap-1">
             <button onClick={() => setWeekOffset(w => w - 1)}
               className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
             </button>
-            <button onClick={() => setWeekOffset(0)}
-              disabled={weekOffset === 0}
+            <button onClick={() => setWeekOffset(0)} disabled={weekOffset === 0}
               className="px-3 h-8 rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-elevated disabled:opacity-40 transition-all">
               Today
             </button>
             <button onClick={() => setWeekOffset(w => w + 1)}
               className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div className="w-px h-4 bg-border-light mx-1" />
+            {/* Manual refresh */}
+            <button onClick={loadWeek} disabled={loading}
+              title="Refresh"
+              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors disabled:opacity-40">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                className={loading ? 'animate-spin' : ''}>
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
             </button>
           </div>
         </div>
@@ -535,26 +690,27 @@ export default function CompletedPage() {
             {DAY_NAMES.map(d => (
               <div key={d}>
                 <div className="shimmer h-8 rounded-xl mb-2" />
-                {[1,2,3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
+                {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
               </div>
             ))}
           </div>
         ) : (
           <div className="p-6 grid grid-cols-7 gap-3 min-w-[900px]">
-            {weekDates.map((date, di) => {
+            {weekDates.map(date => {
               const dayJobs = jobsByDate.get(date) || [];
               const isToday = date === today;
               const dayLabel = getShortDayLabel(date);
               const daySubmitted = dayJobs.filter(j => j.completion?.is_submitted).length;
-              const dayInProgress = dayJobs.filter(j => j.completion && !j.completion.is_submitted).length;
 
               return (
                 <div key={date} className="flex flex-col gap-2">
                   {/* Day header */}
                   <div className={`flex items-center justify-between px-2 py-1.5 rounded-xl ${
-                    isToday ? 'bg-primary text-white' : 'bg-white border border-border-light'
+                    isToday ? 'bg-primary' : 'bg-white border border-border-light'
                   }`}>
-                    <span className={`text-xs font-bold ${isToday ? 'text-white' : 'text-text-primary'}`}>{dayLabel}</span>
+                    <span className={`text-xs font-bold ${isToday ? 'text-white' : 'text-text-primary'}`}>
+                      {dayLabel}
+                    </span>
                     {dayJobs.length > 0 && (
                       <span className={`text-[10px] font-semibold ${isToday ? 'text-white/80' : 'text-text-tertiary'}`}>
                         {daySubmitted}/{dayJobs.length}
@@ -562,16 +718,17 @@ export default function CompletedPage() {
                     )}
                   </div>
 
-                  {/* Job cards */}
+                  {/* Cards */}
                   {dayJobs.length === 0 ? (
-                    <div className="flex-1 min-h-[60px] rounded-xl border border-dashed border-border-light flex items-center justify-center">
+                    <div className="min-h-[60px] rounded-xl border border-dashed border-border-light flex items-center justify-center">
                       <span className="text-[10px] text-text-tertiary">No jobs</span>
                     </div>
                   ) : (
                     dayJobs.map(job => {
                       const isSubmitted = job.completion?.is_submitted;
                       const inProgress = job.completion && !isSubmitted;
-                      const pct = job.totalFields > 0 ? Math.round((job.answeredFields / job.totalFields) * 100) : 0;
+                      const pct = job.totalFields > 0
+                        ? Math.round((job.answeredFields / job.totalFields) * 100) : 0;
 
                       return (
                         <motion.button
@@ -579,38 +736,50 @@ export default function CompletedPage() {
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={() => handleSelectJob(job)}
-                          className={`w-full text-left rounded-xl border-2 p-3 bg-white transition-all shadow-sm ${
+                          className={`w-full text-left rounded-xl border-2 p-3 bg-white shadow-sm transition-all ${
                             selectedJob?.id === job.id ? 'border-primary shadow-md' :
                             isSubmitted ? 'border-emerald-300' :
                             inProgress ? 'border-primary/30' :
                             'border-border-light'
                           }`}
                         >
-                          {/* Color stripe + name */}
+                          {/* Name + team stripe */}
                           <div className="flex items-start gap-2">
-                            <div className="w-1 h-full min-h-[32px] rounded-full shrink-0 mt-0.5" style={{ backgroundColor: job.teamColor }} />
+                            <div className="w-1 min-h-[28px] rounded-full shrink-0"
+                              style={{ backgroundColor: job.teamColor }} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-text-primary leading-snug truncate">{job.name}</p>
-                              {job.teamName && <p className="text-[10px] text-text-tertiary mt-0.5 truncate">{job.teamName}</p>}
+                              <p className="text-xs font-bold text-text-primary leading-snug truncate">
+                                {job.name}
+                              </p>
+                              {job.teamName && (
+                                <p className="text-[10px] text-text-tertiary mt-0.5 truncate">{job.teamName}</p>
+                              )}
                             </div>
                           </div>
 
-                          {/* Status + progress */}
+                          {/* Staff + status */}
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex -space-x-1">
-                              {job.contributors.slice(0, 4).map(({ uid, color, name }) => (
-                                <div key={uid} title={name}
-                                  className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white"
-                                  style={{ backgroundColor: color }}>
-                                  {(name || '?')[0].toUpperCase()}
-                                </div>
-                              ))}
+                              {job.assignedStaff.length > 0
+                                ? job.assignedStaff.slice(0, 4).map(staff => (
+                                  <div key={staff.id} title={staff.name}
+                                    className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold text-white"
+                                    style={{ backgroundColor: staff.color }}>
+                                    {(staff.name || '?')[0].toUpperCase()}
+                                  </div>
+                                ))
+                                : <div className="w-5 h-5 rounded-full border border-dashed border-border-light bg-surface-elevated" />
+                              }
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div>
                               {isSubmitted ? (
-                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-lg">✓ Done</span>
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-lg">
+                                  ✓ Done
+                                </span>
                               ) : inProgress ? (
-                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-lg">Live</span>
+                                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-lg">
+                                  {pct}% done
+                                </span>
                               ) : (
                                 <span className="text-[10px] text-text-tertiary">Not started</span>
                               )}
@@ -627,7 +796,7 @@ export default function CompletedPage() {
         )}
       </div>
 
-      {/* ── Slide-in panel backdrop ── */}
+      {/* ── Slide-in panel ── */}
       <AnimatePresence>
         {selectedJob && (
           <>
@@ -640,10 +809,9 @@ export default function CompletedPage() {
               job={selectedJob}
               sections={jobSections}
               completion={liveCompletion}
-              contributors={selectedJob.contributors.map(c => ({ ...c, name: userNameMap.get(c.uid) || 'Staff' }))}
               userNameMap={userNameMap}
-              userColorMap={userColorMap}
               onClose={handleClosePanel}
+              loading={panelLoading}
             />
           </>
         )}

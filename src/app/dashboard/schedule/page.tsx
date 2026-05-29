@@ -759,8 +759,18 @@ export default function SchedulePage() {
     loadPublishHistory();
   };
 
-  const weekIsPublished = weekDates.every((d) => publishedDates.has(d));
-  const weekPartiallyPublished = !weekIsPublished && weekDates.some((d) => publishedDates.has(d));
+  // Only consider dates that have at least one schedule row for any team.
+  // Days with no jobs have no schedule row — they should not count as "unpublished".
+  const datesWithSchedules = useMemo(() => {
+    const s = new Set<string>();
+    weekSchedules.forEach((teamMap) => {
+      teamMap.forEach((day) => { if (day.scheduleId) s.add(day.date); });
+    });
+    return s;
+  }, [weekSchedules]);
+
+  const weekIsPublished = datesWithSchedules.size > 0 && [...datesWithSchedules].every((d) => publishedDates.has(d));
+  const weekPartiallyPublished = !weekIsPublished && [...datesWithSchedules].some((d) => publishedDates.has(d));
 
   // Check if current week has any jobs across all teams
   const weekHasJobs = useMemo(() => {

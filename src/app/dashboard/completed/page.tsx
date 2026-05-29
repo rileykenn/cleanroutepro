@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { getTodayISO, getWeekDates, addDays, getWeekLabel, getShortDayLabel } from '@/lib/timeUtils';
+import { getTodayISO, getWeekDates, getWeekLabel, getShortDayLabel } from '@/lib/timeUtils';
 import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import { COLLAB_COLORS } from '@/components/StaffChecklistView';
 
@@ -359,7 +359,13 @@ export default function CompletedPage() {
   const supabase = useMemo(() => createClient(), []);
   const orgId = profile?.org_id;
 
-  const [weekOffset, setWeekOffset] = useState(0);
+  // ── Published weeks navigation ──────────────────────────────────────────────
+  // Only weeks that have at least one published schedule row are shown.
+  // publishedWeekStarts is sorted newest → oldest (index 0 = most recent).
+  const [publishedWeekStarts, setPublishedWeekStarts] = useState<string[]>([]);
+  const [weekIndex, setWeekIndex] = useState(0); // 0 = most recent published week
+  const [weeksLoading, setWeeksLoading] = useState(true);
+
   const [jobs, setJobs] = useState<JobWithCompletion[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<JobWithCompletion | null>(null);
@@ -371,13 +377,57 @@ export default function CompletedPage() {
   const pageChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const today = useMemo(() => getTodayISO(), []);
-  const focusedDate = useMemo(() => addDays(today, weekOffset * 7), [today, weekOffset]);
-  const weekDates = useMemo(() => getWeekDates(focusedDate), [focusedDate]);
-  const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
 
-  // ── Load week ───────────────────────────────────────────────────────────────
-  const loadWeek = useCallback(async () => {
+  // Derive weekDates from the currently selected published week start
+  const currentWeekStart = publishedWeekStarts[weekIndex] ?? null;
+  const weekDates = useMemo(
+    () => currentWeekStart ? getWeekDates(currentWeekStart) : [],
+    [currentWeekStart]
+  );
+  const weekLabel = useMemo(
+    () => weekDates.length === 7 ? getWeekLabel(weekDates[0], weekDates[6]) : 'No published weeks',
+    [weekDates]
+  );
+
+  // ── Load all published week starts ─────────────────────────────────────────
+  const loadPublishedWeeks = useCallback(async () => {
     if (!orgId) return;
+    setWeeksLoading(true);
+
+    const { data: teamsRaw } = await supabase
+      .from('teams').select('id').eq('org_id', orgId);
+    if (!teamsRaw || teamsRaw.length === 0) { setWeeksLoading(false); return; }
+    const teamIds = (teamsRaw as { id: string }[]).map(t => t.id);
+
+    const { data: schedulesRaw } = await supabase
+      .from('schedules')
+      .select('schedule_date')
+      .in('team_id', teamIds)
+      .eq('is_published', true);
+
+    if (!schedulesRaw || schedulesRaw.length === 0) {
+      setPublishedWeekStarts([]);
+      setWeeksLoading(false);
+      setLoading(false);
+      return;
+    }
+
+    // Convert each date → its Monday (week start), deduplicate, sort newest first
+    const weekStartSet = new Set<string>();
+    (schedulesRaw as { schedule_date: string }[]).forEach(r => {
+      weekStartSet.add(getWeekDates(r.schedule_date)[0]);
+    });
+    const sorted = [...weekStartSet].sort((a, b) => b.localeCompare(a)); // newest first
+    setPublishedWeekStarts(sorted);
+    setWeekIndex(0);
+    setWeeksLoading(false);
+  }, [orgId, supabase]);
+
+  useEffect(() => { loadPublishedWeeks(); }, [loadPublishedWeeks]);
+
+  // ── Load week ────────────────────────────────────────────────────────────────
+  const loadWeek = useCallback(async () => {
+    if (!orgId || weekDates.length === 0) return;
     setLoading(true);
 
     // 1. Teams
@@ -390,10 +440,11 @@ export default function CompletedPage() {
     const teamColorMap = new Map<string, string>(teams.map(t => [t.id, STAFF_COLORS[(t.color_index || 0) % STAFF_COLORS.length]]));
     const teamNameMap = new Map<string, string>(teams.map(t => [t.id, t.name]));
 
-    // 2. Schedules for the week
+    // 2. Schedules for the week — PUBLISHED ONLY
     const { data: schedulesRaw } = await supabase
       .from('schedules').select('id, team_id, schedule_date')
-      .in('team_id', teamIds).in('schedule_date', weekDates);
+      .in('team_id', teamIds).in('schedule_date', weekDates)
+      .eq('is_published', true);
     if (!schedulesRaw || schedulesRaw.length === 0) { setJobs([]); setLoading(false); return; }
     type ScheduleRow = { id: string; team_id: string; schedule_date: string };
     const schedules = schedulesRaw as ScheduleRow[];
@@ -653,29 +704,34 @@ export default function CompletedPage() {
           )}
 
           <div className="flex items-center gap-1">
-            <button onClick={() => setWeekOffset(w => w - 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors">
+            {/* Older week (higher index = older) */}
+            <button
+              onClick={() => setWeekIndex(i => Math.min(i + 1, publishedWeekStarts.length - 1))}
+              disabled={weekIndex >= publishedWeekStarts.length - 1}
+              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors disabled:opacity-30">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="15 18 9 12 15 6"/>
               </svg>
             </button>
-            <button onClick={() => setWeekOffset(0)} disabled={weekOffset === 0}
-              className="px-3 h-8 rounded-xl text-xs font-semibold text-text-secondary hover:bg-surface-elevated disabled:opacity-40 transition-all">
-              Today
-            </button>
-            <button onClick={() => setWeekOffset(w => w + 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors">
+            <span className="px-2 text-xs text-text-tertiary font-medium">
+              {weekIndex + 1} / {publishedWeekStarts.length}
+            </span>
+            {/* Newer week (lower index = newer) */}
+            <button
+              onClick={() => setWeekIndex(i => Math.max(i - 1, 0))}
+              disabled={weekIndex <= 0}
+              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors disabled:opacity-30">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="9 18 15 12 9 6"/>
               </svg>
             </button>
             <div className="w-px h-4 bg-border-light mx-1" />
             {/* Manual refresh */}
-            <button onClick={loadWeek} disabled={loading}
+            <button onClick={() => { loadPublishedWeeks(); loadWeek(); }} disabled={loading || weeksLoading}
               title="Refresh"
               className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors disabled:opacity-40">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                className={loading ? 'animate-spin' : ''}>
+                className={loading || weeksLoading ? 'animate-spin' : ''}>
                 <polyline points="23 4 23 10 17 10"/>
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
               </svg>
@@ -686,7 +742,24 @@ export default function CompletedPage() {
 
       {/* ── Week grid ── */}
       <div className="flex-1 overflow-auto">
-        {loading ? (
+        {weeksLoading ? (
+          <div className="p-6 grid grid-cols-7 gap-3">
+            {DAY_NAMES.map(d => (
+              <div key={d}>
+                <div className="shimmer h-8 rounded-xl mb-2" />
+                {[1, 2, 3].map(i => <div key={i} className="shimmer h-20 rounded-xl mb-2" />)}
+              </div>
+            ))}
+          </div>
+        ) : publishedWeekStarts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
+            <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center text-3xl">📅</div>
+            <div>
+              <p className="text-sm font-bold text-text-primary">No published weeks yet</p>
+              <p className="text-xs text-text-tertiary mt-1">Publish a week from the Schedule page to see it here</p>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="p-6 grid grid-cols-7 gap-3">
             {DAY_NAMES.map(d => (
               <div key={d}>

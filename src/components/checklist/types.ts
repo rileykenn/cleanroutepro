@@ -33,7 +33,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   multidropdown: 'Multi-select',
   date: 'Date',
   time: 'Time',
-  photo: 'Photo',
+  photo: 'Photo / Image',
   video: 'Video',
 };
 

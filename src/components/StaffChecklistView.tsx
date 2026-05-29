@@ -280,7 +280,8 @@ function FieldCard({
           <input type="file" accept={isVideo ? 'video/*' : 'image/*'} capture="environment" multiple disabled={isNa}
             className="sr-only" onChange={e => e.target.files && onFileChange(e.target.files)} />
           <span className="text-2xl">{isVideo ? '🎥' : '📷'}</span>
-          <p className="text-sm text-text-secondary font-medium">Tap to {isVideo ? 'record / upload video' : 'take photo / upload'}</p>
+          <p className="text-sm text-text-secondary font-medium">Tap to {isVideo ? 'record / upload video' : 'take photo or upload image'}</p>
+          <p className="text-xs text-text-tertiary">{isVideo ? 'Camera or file' : 'Camera or camera roll'}</p>
         </label>
         {uploadedUrls.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">

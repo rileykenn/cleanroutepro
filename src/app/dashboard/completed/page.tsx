@@ -276,8 +276,15 @@ function ChecklistPanel({
                   if (ans?.na) displayVal = 'N/A';
                   else if (ans?.value === true || ans?.value === 'yes') displayVal = '✓  Yes';
                   else if (ans?.value === false || ans?.value === 'no') displayVal = '✗  No';
-                  else if (Array.isArray(ans?.value)) displayVal = (ans.value as string[]).join(', ');
-                  else if (ans?.value) displayVal = String(ans.value);
+                  else if (Array.isArray(ans?.value) && field.type !== 'photo' && field.type !== 'video')
+                    displayVal = (ans.value as string[]).join(', ');
+                  else if (ans?.value && field.type !== 'photo' && field.type !== 'video')
+                    displayVal = String(ans.value);
+
+                  // For photo/video fields: get array of URLs
+                  const mediaUrls: string[] = (field.type === 'photo' || field.type === 'video')
+                    ? (Array.isArray(ans?.value) ? (ans.value as string[]) : ans?.value ? [String(ans.value)] : [])
+                    : [];
 
                   return (
                     <div key={field.id}
@@ -292,7 +299,31 @@ function ChecklistPanel({
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-text-primary leading-snug">{field.label}</p>
-                        {displayVal ? (
+
+                        {/* ── Photo thumbnails ── */}
+                        {(field.type === 'photo' || field.type === 'video') ? (
+                          mediaUrls.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {mediaUrls.map((url, ui) =>
+                                field.type === 'photo' ? (
+                                  <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
+                                    className="block w-20 h-20 rounded-xl overflow-hidden border border-border-light bg-surface-elevated shrink-0 hover:opacity-80 transition-opacity">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={url} alt={`Photo ${ui + 1}`} className="w-full h-full object-cover" />
+                                  </a>
+                                ) : (
+                                  <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-light bg-surface-elevated text-xs font-medium text-primary hover:bg-primary/5 transition-colors">
+                                    <span className="text-base">🎬</span>
+                                    View video {ui + 1}
+                                  </a>
+                                )
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-text-tertiary mt-0.5">Not answered</p>
+                          )
+                        ) : displayVal ? (
                           <p className="text-xs text-text-secondary mt-0.5 font-medium">{displayVal}</p>
                         ) : (
                           <p className="text-[10px] text-text-tertiary mt-0.5">Not answered</p>
@@ -309,6 +340,7 @@ function ChecklistPanel({
                       )}
                     </div>
                   );
+
                 })}
               </div>
             </div>

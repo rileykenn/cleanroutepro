@@ -5,6 +5,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { CLIENT_COLORS } from '@/lib/types';
 
+// ── Duration helpers ───────────────────────────────────────────────────────────
+/** Convert minutes → "h:mm" (e.g. 90 → "1:30", 240 → "4:00") */
+function minutesToHM(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+/** Parse "h:mm" or "h:m" → total minutes. Returns null if invalid. */
+function hmToMinutes(str: string): number | null {
+  const trimmed = str.trim();
+  const colonIdx = trimmed.indexOf(':');
+  if (colonIdx === -1) {
+    // Allow plain number as hours (e.g. "2" → 120)
+    const h = parseInt(trimmed, 10);
+    if (isNaN(h) || h < 0) return null;
+    return h * 60;
+  }
+  const h = parseInt(trimmed.slice(0, colonIdx), 10);
+  const m = parseInt(trimmed.slice(colonIdx + 1), 10);
+  if (isNaN(h) || isNaN(m) || h < 0 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
 // ── Media section ─────────────────────────────────────────────────────────────
 function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) {
   const supabase = useMemo(() => createSupabaseClient(), []);
@@ -153,6 +176,8 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
   });
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Duration h:mm input string (kept in sync with form.default_duration_minutes)
+  const [durationHM, setDurationHM] = useState(() => minutesToHM(90));
 
   useEffect(() => {
     if (client) {
@@ -166,6 +191,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
         rate: client.rate != null ? client.rate : '',
         notes: client.notes || '',
       });
+      setDurationHM(minutesToHM(client.default_duration_minutes));
     }
   }, [client]);
 
@@ -288,29 +314,69 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
             {(['phone', 'email', 'default_duration_minutes', 'rate'] as const).map(field => (
               <div key={field}>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {field === 'default_duration_minutes' ? 'Default Duration (min)' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
+                  {field === 'default_duration_minutes' ? 'Default Duration (h:mm)' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
                 </label>
                 {editingField === field ? (
-                  <div className="flex gap-1">
-                    <input autoFocus
-                      type={field === 'rate' || field.includes('_') ? 'number' : field === 'email' ? 'email' : 'text'}
-                      value={form[field]}
-                      onChange={e => setForm(f => ({ ...f, [field]: field === 'rate' || field.includes('_') ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') saveField(field, form[field] === '' ? null as unknown as number : form[field]); if (e.key === 'Escape') setEditingField(null); }}
-                      placeholder={field === 'rate' ? '0.00' : ''}
-                      step={field === 'rate' ? '0.01' : undefined}
-                      min={field === 'rate' ? '0' : undefined}
-                      className="input-field text-sm flex-1 py-1.5"/>
-                    <button onClick={() => saveField(field, form[field] === '' ? null as unknown as number : form[field])} className="btn-primary text-xs py-1 px-2">✓</button>
-                    <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
-                  </div>
+                  field === 'default_duration_minutes' ? (
+                    /* ── h:mm duration input ── */
+                    <div className="flex gap-1">
+                      <input
+                        autoFocus
+                        type="text"
+                        inputMode="numeric"
+                        value={durationHM}
+                        onChange={e => setDurationHM(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            const mins = hmToMinutes(durationHM);
+                            if (mins !== null && mins > 0) {
+                              setDurationHM(minutesToHM(mins)); // normalise display
+                              saveField('default_duration_minutes', mins);
+                            }
+                          }
+                          if (e.key === 'Escape') setEditingField(null);
+                        }}
+                        placeholder="h:mm"
+                        className="input-field text-sm flex-1 py-1.5"
+                      />
+                      <button
+                        onClick={() => {
+                          const mins = hmToMinutes(durationHM);
+                          if (mins !== null && mins > 0) {
+                            setDurationHM(minutesToHM(mins));
+                            saveField('default_duration_minutes', mins);
+                          }
+                        }}
+                        className="btn-primary text-xs py-1 px-2">✓</button>
+                      <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1">
+                      <input autoFocus
+                        type={field === 'rate' ? 'number' : field === 'email' ? 'email' : 'text'}
+                        value={form[field]}
+                        onChange={e => setForm(f => ({ ...f, [field]: field === 'rate' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') saveField(field, form[field] === '' ? null as unknown as number : form[field]); if (e.key === 'Escape') setEditingField(null); }}
+                        placeholder={field === 'rate' ? '0.00' : ''}
+                        step={field === 'rate' ? '0.01' : undefined}
+                        min={field === 'rate' ? '0' : undefined}
+                        className="input-field text-sm flex-1 py-1.5"/>
+                      <button onClick={() => saveField(field, form[field] === '' ? null as unknown as number : form[field])} className="btn-primary text-xs py-1 px-2">✓</button>
+                      <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
+                    </div>
+                  )
                 ) : (
-                  <button onClick={() => setEditingField(field)}
+                  <button onClick={() => {
+                    if (field === 'default_duration_minutes') setDurationHM(minutesToHM(form.default_duration_minutes));
+                    setEditingField(field);
+                  }}
                     className="group flex items-center gap-1.5 w-full text-left px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover transition-colors">
                     <span className="text-sm text-text-primary flex-1">
                       {field === 'rate'
                         ? (form[field] !== '' && form[field] != null ? `$${Number(form[field]).toFixed(2)}/hr` : <span className="text-text-tertiary italic">Not set</span>)
-                        : (form[field] || <span className="text-text-tertiary italic">Not set</span>)
+                        : field === 'default_duration_minutes'
+                          ? minutesToHM(form.default_duration_minutes)
+                          : (form[field] || <span className="text-text-tertiary italic">Not set</span>)
                       }
                     </span>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

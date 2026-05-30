@@ -11,6 +11,26 @@ import { CLIENT_COLORS } from '@/lib/types';
 
 const ClientInfoPanel = lazy(() => import('@/components/ClientInfoPanel'));
 
+// ── Duration helpers ───────────────────────────────────────────────────────────
+function minutesToHM(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+function hmToMinutes(str: string): number | null {
+  const trimmed = str.trim();
+  const colonIdx = trimmed.indexOf(':');
+  if (colonIdx === -1) {
+    const h = parseInt(trimmed, 10);
+    if (isNaN(h) || h < 0) return null;
+    return h * 60;
+  }
+  const h = parseInt(trimmed.slice(0, colonIdx), 10);
+  const m = parseInt(trimmed.slice(colonIdx + 1), 10);
+  if (isNaN(h) || isNaN(m) || h < 0 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
 interface ChecklistTemplate { id: string; name: string; items: { id: string; text: string }[]; }
 
 export default function ClientsPage() {
@@ -30,6 +50,8 @@ export default function ClientsPage() {
   const [colorPickerId, setColorPickerId] = useState<string | null>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const colorTriggerRef = useRef<HTMLButtonElement>(null);
+  // h:mm duration string for the add/edit form
+  const [durationHM, setDurationHM] = useState(() => minutesToHM(90));
 
   // Close color picker on outside click
   useEffect(() => {
@@ -53,20 +75,27 @@ export default function ClientsPage() {
   const filtered = searchQuery.trim() ? searchFn(searchQuery) : clients;
 
   const handleAdd = async () => {
-    await addClient({ ...form, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null, color: null, rate: null });
+    const mins = hmToMinutes(durationHM);
+    const duration = mins !== null && mins > 0 ? mins : form.default_duration_minutes;
+    await addClient({ ...form, default_duration_minutes: duration, lat: null, lng: null, place_id: null, checklist_template_id: null, custom_checklist_items: null, color: null, rate: null });
     setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' });
+    setDurationHM(minutesToHM(90));
     setShowAdd(false);
   };
 
   const handleEdit = (client: SavedClient) => {
     setEditingId(client.id);
     setForm({ name: client.name, address: client.address, email: client.email || '', phone: client.phone || '', default_duration_minutes: client.default_duration_minutes, default_staff_count: client.default_staff_count, notes: client.notes || '' });
+    setDurationHM(minutesToHM(client.default_duration_minutes));
   };
 
   const handleUpdate = async () => {
     if (!editingId) return;
-    await updateClient(editingId, form);
+    const mins = hmToMinutes(durationHM);
+    const duration = mins !== null && mins > 0 ? mins : form.default_duration_minutes;
+    await updateClient(editingId, { ...form, default_duration_minutes: duration });
     setEditingId(null);
+    setDurationHM(minutesToHM(90));
     setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' });
   };
 
@@ -129,8 +158,11 @@ export default function ClientsPage() {
                   <input type="email" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} className="input-field text-sm" placeholder="email@example.com" /></div>
                 <div><label className="block text-xs font-medium text-text-secondary mb-1">Phone</label>
                   <input type="tel" value={form.phone} onChange={(e) => setForm({...form, phone: e.target.value})} className="input-field text-sm" placeholder="0400 000 000" /></div>
-                <div><label className="block text-xs font-medium text-text-secondary mb-1">Default Duration (min)</label>
-                  <input type="number" value={form.default_duration_minutes} onChange={(e) => setForm({...form, default_duration_minutes: Number(e.target.value)})} className="input-field text-sm" /></div>
+                <div><label className="block text-xs font-medium text-text-secondary mb-1">Default Duration (h:mm)</label>
+                  <input type="text" inputMode="numeric" value={durationHM}
+                    onChange={e => setDurationHM(e.target.value)}
+                    onBlur={() => { const mins = hmToMinutes(durationHM); if (mins !== null && mins > 0) { setDurationHM(minutesToHM(mins)); setForm({...form, default_duration_minutes: mins}); } }}
+                    className="input-field text-sm" placeholder="h:mm (e.g. 1:30)" /></div>
                 <div><label className="block text-xs font-medium text-text-secondary mb-1">Default Staff Count</label>
                   <input type="number" value={form.default_staff_count} onChange={(e) => setForm({...form, default_staff_count: Number(e.target.value)})} className="input-field text-sm" min={1} /></div>
               </div>
@@ -138,7 +170,7 @@ export default function ClientsPage() {
                 <textarea value={form.notes} onChange={(e) => setForm({...form, notes: e.target.value})} className="input-field text-sm resize-none" rows={2} placeholder="Access codes, special instructions..." /></div>
               <div className="flex gap-2">
                 <button onClick={editingId ? handleUpdate : handleAdd} className="btn-primary text-sm">{editingId ? 'Save Changes' : 'Add Client'}</button>
-                <button onClick={() => { setShowAdd(false); setEditingId(null); setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' }); }} className="btn-ghost text-sm">Cancel</button>
+                <button onClick={() => { setShowAdd(false); setEditingId(null); setDurationHM(minutesToHM(90)); setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' }); }} className="btn-ghost text-sm">Cancel</button>
               </div>
             </motion.div>
           )}
@@ -157,7 +189,7 @@ export default function ClientsPage() {
                   </div>
                   <p className="text-xs text-text-tertiary truncate mt-0.5">{client.address}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-text-secondary flex-wrap">
-                    <span>{client.default_duration_minutes} min</span>
+                    <span>{minutesToHM(client.default_duration_minutes)}</span>
                     <span>·</span>
                     <span>{client.default_staff_count} staff</span>
                     {client.email && <><span>·</span><span>{client.email}</span></>}

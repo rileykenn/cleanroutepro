@@ -1,6 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { formatDuration, formatDistance, formatTimeDisplay } from '@/lib/timeUtils';
 import { DaySummary, ScheduleAction, TeamSchedule } from '@/lib/types';
 import { exportScheduleCSV } from '@/lib/routeEngine';
@@ -20,6 +21,7 @@ interface DailySummaryProps {
 }
 
 export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates }: DailySummaryProps) {
+  const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
   const handleExport = () => {
     const csv = exportScheduleCSV(team, summary, staffNames);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -157,6 +159,22 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
           <span className="text-base font-bold" style={{ color: team.color.primary }}>{formatDistance(summary.totalDistanceKm)}</span>
         </div>
 
+        {/* Fuel Cost */}
+        {summary.fuelCost > 0 && (
+          <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+            <div className="text-xs font-medium text-text-secondary">Fuel Cost</div>
+            <span className="text-base font-bold text-text-primary">${summary.fuelCost.toFixed(2)}</span>
+          </div>
+        )}
+
+        {/* Per-KM Allowance */}
+        {summary.perKmCost > 0 && (
+          <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
+            <div className="text-xs font-medium text-text-secondary">KM Allowance (${team.perKmRate.toFixed(2)}/km)</div>
+            <span className="text-base font-bold text-text-primary">${summary.perKmCost.toFixed(2)}</span>
+          </div>
+        )}
+
         {/* Staff with rates */}
         {staffWages.length > 0 && (
           <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
@@ -196,25 +214,65 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
 
 
         {/* Divider before financials */}
-        {summary.totalRevenue > 0 && (
+        {team.clients.some(c => c.rate) && (
           <>
             <div className="border-t border-border-light" />
 
             {/* Revenue */}
-            <div className="flex items-center justify-between rounded-xl p-3 bg-emerald-50 border border-emerald-100">
-              <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                </svg>
-                Revenue
-                <span className="font-normal text-[10px] text-emerald-500">({team.clients.filter(c => c.rate).length} clients with rates)</span>
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100">
+              <div className="flex items-center justify-between p-3">
+                <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                  Revenue
+                  <span className="font-normal text-[10px] text-emerald-500">({team.clients.filter(c => c.rate).length} clients with rates)</span>
+                  <button
+                    onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+                    className="text-emerald-400 hover:text-emerald-600 transition-colors ml-1"
+                    title="Toggle breakdown"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      style={{ transform: showRevenueBreakdown ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                </div>
+                <span className="text-lg font-bold text-emerald-700">${summary.totalRevenue.toFixed(2)}</span>
               </div>
-              <span className="text-lg font-bold text-emerald-700">${summary.totalRevenue.toFixed(2)}</span>
+
+              {/* Per-client revenue breakdown */}
+              <AnimatePresence>
+                {showRevenueBreakdown && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="px-3 pb-3 space-y-1 border-t border-emerald-100 pt-2">
+                      {team.clients.filter(c => c.rate).map(c => {
+                        const hrs = c.jobDurationMinutes / 60;
+                        const rev = hrs * (c.rate || 0);
+                        return (
+                          <div key={c.id} className="flex items-center justify-between text-[11px]">
+                            <span className="text-emerald-600 truncate flex-1 mr-2">
+                              {c.name} · {hrs.toFixed(1)}hrs × ${c.rate}/hr
+                            </span>
+                            <span className="font-bold text-emerald-700 shrink-0">${rev.toFixed(2)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Total Costs */}
             {(() => {
-              const totalCosts = totalWages;
+              const totalCosts = totalWages + summary.fuelCost + summary.perKmCost;
               const profit = summary.totalRevenue - totalCosts;
               return (
                 <>

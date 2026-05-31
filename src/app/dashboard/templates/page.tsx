@@ -240,7 +240,7 @@ export default function TemplatesPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 10 }}
               transition={{ duration: 0.15 }}
-              className="h-full overflow-y-auto custom-scrollbar p-5 pb-24 lg:pb-5"
+              className="h-full overflow-y-auto custom-scrollbar p-5 pb-20 lg:pb-5"
             >
               <ScheduleTemplatesTab
                 templates={scheduleTemplates}

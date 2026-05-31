@@ -557,7 +557,7 @@ export default function StaffPortalPage() {
                   </button>
                 </div>
               ) : (
-                <div className="px-4 space-y-3 pb-24">
+                <div className="px-4 space-y-3 pb-20">
 
                   {/* Driver banner */}
                   {todayData.driverName && (
@@ -699,7 +699,7 @@ export default function StaffPortalPage() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
                     transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-                    className="p-4 space-y-3 pb-24"
+                    className="p-4 space-y-3 pb-20"
                   >
                     <button
                       onClick={() => setSelectedDay(null)}
@@ -782,7 +782,7 @@ export default function StaffPortalPage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="p-4 space-y-2 pb-24"
+                    className="p-4 space-y-2 pb-20"
                   >
                     {loading ? (
                       <div className="space-y-2">
@@ -912,7 +912,7 @@ export default function StaffPortalPage() {
                   <p className="text-sm text-text-secondary mt-1.5">Signed-off job checklists appear here</p>
                 </div>
               ) : (
-                <div className="px-4 space-y-2 pb-24">
+                <div className="px-4 space-y-2 pb-20">
                   {completedChecklists.map((c, i) => {
                     const date = new Date(c.completed_at);
                     const dateStr = date.toLocaleDateString('en-AU', {

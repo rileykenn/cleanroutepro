@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
@@ -186,6 +186,7 @@ export default function StaffPage() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'cleaner', hourly_rate: 38 });
 
   // Accounts & Access — sourced from org_members (the real source of truth)
@@ -324,6 +325,16 @@ export default function StaffPage() {
 
   useEffect(() => { if (profile?.org_id) loadStaff(); }, [profile?.org_id, loadStaff]);
   useEffect(() => { if (profile?.org_id && activeSection === 'accounts') loadAccounts(); }, [profile?.org_id, activeSection, loadAccounts]);
+
+  // Scroll to edit form when editingId changes
+  useEffect(() => {
+    if (editingId) {
+      // Small delay to allow AnimatePresence to render the form
+      setTimeout(() => {
+        editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [editingId]);
 
   // ── Add / Edit ─────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -467,7 +478,7 @@ export default function StaffPage() {
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-[860px] mx-auto px-4 lg:px-6 py-6 pb-24 lg:pb-6 space-y-6">
+      <div className="max-w-[860px] mx-auto px-4 lg:px-6 py-6 pb-20 lg:pb-6 space-y-6">
 
         {/* ── Page header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3">
@@ -568,6 +579,7 @@ export default function StaffPage() {
               <AnimatePresence>
                 {(showAdd || editingId) && (
                   <motion.div
+                    ref={editFormRef}
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -685,6 +697,18 @@ export default function StaffPage() {
                                   <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
                                 </svg>
                               )}
+                            </button>
+                          )}
+                          {/* Revoke Access — only for staff with active portal access */}
+                          {hasAccount && (
+                            <button
+                              onClick={() => setConfirmAction({ type: 'revoke', staff: s })}
+                              title="Revoke portal access"
+                              className="p-1.5 rounded-lg hover:bg-amber-50 text-text-tertiary hover:text-amber-600 transition-colors"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18.36 6.64A9 9 0 0 1 20.77 15M6.16 6.16a9 9 0 1 0 12.68 12.68M2 2l20 20"/>
+                              </svg>
                             </button>
                           )}
                           <button onClick={() => handleEdit(s)} title="Edit" className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors">

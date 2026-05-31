@@ -950,6 +950,8 @@ export default function SchedulePage() {
     setPendingDeleteTeam(null);
     // Remove from local state immediately so the UI reflects the deletion right away
     dispatch({ type: 'REMOVE_TEAM', teamId });
+    // Invalidate the cache so auto-save doesn't race and re-create the deleted schedule
+    invalidateScheduleCache();
     // Delete the schedule for this SPECIFIC DAY
     const { data: daySched } = await supabase
       .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
@@ -958,7 +960,6 @@ export default function SchedulePage() {
       await supabase.from('schedules').delete().eq('id', daySched.id);
     }
     // Also clean up any empty schedule rows (zero jobs) for this team in the week
-    // These may have been created by autosave when the team was visible but had no clients
     const { data: weekScheds } = await supabase
       .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
     if (weekScheds) {
@@ -970,8 +971,10 @@ export default function SchedulePage() {
         }
       }
     }
-    // Reload week to refresh
-    loadWeekSchedules(weekDates);
+    // Reload week and bump load generation so DayEditor re-records its baseline
+    // instead of treating the post-delete state as a user edit that triggers auto-save
+    await loadWeekSchedules(weekDates);
+    setDayLoadGen(g => g + 1);
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 
   // ─── Week template loading ───
@@ -981,35 +984,62 @@ export default function SchedulePage() {
 
     if (!orgId) return;
 
+    // ── Step 1: Clear the existing week to prevent ghost data ──
+    const { data: existingScheds } = await supabase
+      .from('schedules').select('id').eq('org_id', orgId).in('schedule_date', weekDates);
+    if (existingScheds && existingScheds.length > 0) {
+      const schedIds = existingScheds.map((r: { id: string }) => r.id);
+      await supabase.from('schedule_jobs').delete().in('schedule_id', schedIds);
+      await supabase.from('schedules').delete().eq('org_id', orgId).in('id', schedIds);
+    }
+
     // Use ALL org teams (not just the week-view subset in state.teams)
     const allTeams = allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : state.teams;
 
-    // Build a stable team lookup: name → team, id → team
+    // Build lookup maps
     const teamByName = new Map(allTeams.map(t => [t.name, t]));
     const teamById   = new Map(allTeams.map(t => [t.id,   t]));
 
-    // Cache of template teamName → actual DB team (created lazily if no match)
+    // ── Step 2: Resolve template teams → DB teams ──
+    // Track which DB teams have already been claimed to prevent double-assignment
+    const claimedTeamIds = new Set<string>();
     const resolvedTeams = new Map<string, typeof allTeams[0]>();
 
-    // Resolve or create a DB team for each unique template team name
-    const collectTemplateTeams = () => {
-      const names = new Set<string>();
-      for (let i = 0; i < 7; i++) {
-        for (const tt of weekData[String(i)] || []) names.add(tt.teamName);
+    // Collect all unique template teams with their saved IDs
+    const templateTeamEntries: { teamName: string; teamId: string }[] = [];
+    const seenNames = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      for (const tt of weekData[String(i)] || []) {
+        if (!seenNames.has(tt.teamName)) {
+          seenNames.add(tt.teamName);
+          templateTeamEntries.push({ teamName: tt.teamName, teamId: tt.teamId });
+        }
       }
-      return names;
-    };
+    }
 
-    for (const teamName of collectTemplateTeams()) {
-      // Match: name first, then saved teamId, else the first unresolved real team
-      const matched = teamByName.get(teamName)
-        ?? [...teamById.values()].find(t => !resolvedTeams.has(t.name) && !teamByName.has(teamName))
-        ?? null;
+    for (const { teamName, teamId: savedTeamId } of templateTeamEntries) {
+      let matched: typeof allTeams[0] | null = null;
+
+      // Priority 1: Match by saved teamId (most reliable — survives renames)
+      if (savedTeamId && teamById.has(savedTeamId) && !claimedTeamIds.has(savedTeamId)) {
+        matched = teamById.get(savedTeamId)!;
+      }
+
+      // Priority 2: Match by name (handles templates from other orgs or imports)
+      if (!matched && teamByName.has(teamName) && !claimedTeamIds.has(teamByName.get(teamName)!.id)) {
+        matched = teamByName.get(teamName)!;
+      }
+
+      // Priority 3: Grab the first unclaimed org team (fallback for renamed teams)
+      if (!matched) {
+        matched = allTeams.find(t => !claimedTeamIds.has(t.id)) ?? null;
+      }
 
       if (matched) {
+        claimedTeamIds.add(matched.id);
         resolvedTeams.set(teamName, matched);
       } else {
-        // No match — create a brand-new DB team so data isn't lost on Team 1
+        // No available team — create a brand-new DB team
         const colorIdx = allTeams.length + resolvedTeams.size;
         const { data: newTeam } = await supabase
           .from('teams')
@@ -1025,13 +1055,39 @@ export default function SchedulePage() {
             travelSegments: new Map(), dayStartTime: '08:00', breaks: [],
             hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
           };
+          claimedTeamIds.add(t.id);
           resolvedTeams.set(teamName, t as typeof allTeams[0]);
           allOrgTeamsRef.current = [...allOrgTeamsRef.current, t as typeof allTeams[0]];
         }
       }
     }
 
-    // For each day in the template, write clients+breaks into the DB
+    // ── Step 2.5: Clean stale staff references from template ──
+    // Remove assignedStaffIds that reference staff who no longer exist
+    const { data: currentStaff } = await supabase
+      .from('staff_members').select('id').eq('org_id', orgId);
+    const validStaffIds = new Set((currentStaff || []).map((s: { id: string }) => s.id));
+    let removedStaffCount = 0;
+
+    for (let i = 0; i < 7; i++) {
+      for (const tt of weekData[String(i)] || []) {
+        for (const client of tt.clients) {
+          if (client.assignedStaffIds && client.assignedStaffIds.length > 0) {
+            const cleaned = client.assignedStaffIds.filter((id: string) => validStaffIds.has(id));
+            if (cleaned.length < client.assignedStaffIds.length) {
+              removedStaffCount += client.assignedStaffIds.length - cleaned.length;
+              client.assignedStaffIds = cleaned;
+            }
+          }
+        }
+      }
+    }
+    // removedStaffCount can be used for a toast notification if needed
+    if (removedStaffCount > 0) {
+      console.info(`[Template Load] Removed ${removedStaffCount} former staff assignment(s)`);
+    }
+
+    // ── Step 3: Write template data to DB ──
     for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
       const dayTeams = weekData[String(dayIdx)];
       if (!dayTeams || dayTeams.length === 0) continue;
@@ -1047,24 +1103,11 @@ export default function SchedulePage() {
           await supabase.from('teams').update({ day_start_time: templateTeam.dayStartTime }).eq('id', matchedTeam.id);
         }
 
-        // Ensure schedule row exists
-        let scheduleId: string;
-        const { data: existing } = await supabase
-          .from('schedules').select('id').eq('team_id', matchedTeam.id).eq('schedule_date', date).maybeSingle();
-        if (existing) {
-          scheduleId = existing.id;
-        } else {
-          const { data: created } = await supabase
-            .from('schedules').insert({ org_id: orgId, team_id: matchedTeam.id, schedule_date: date }).select('id').single();
-          if (!created) continue;
-          scheduleId = created.id;
-        }
-
-        // Wipe and rewrite jobs for this schedule
-        await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
-
-        const rows: Record<string, unknown>[] = [];
-        let position = 0;
+        // Create schedule row (week was cleared above, so always insert fresh)
+        const { data: created } = await supabase
+          .from('schedules').insert({ org_id: orgId, team_id: matchedTeam.id, schedule_date: date }).select('id').single();
+        if (!created) continue;
+        const scheduleId = created.id;
 
         if (templateTeam.clients.length > 0) {
           // Map break indices for fast lookup
@@ -1073,8 +1116,7 @@ export default function SchedulePage() {
             breakByIndex.set(b.afterClientIndex, { durationMinutes: b.durationMinutes, label: b.label });
           }
 
-          // We need to know the DB job IDs for client rows so breaks can reference them.
-          // Strategy: insert clients first (collect their IDs), then insert break rows.
+          // Insert clients first (collect their IDs for break references)
           const clientRows: Record<string, unknown>[] = [];
           for (let ci = 0; ci < templateTeam.clients.length; ci++) {
             const c = templateTeam.clients[ci] as Client;
@@ -1098,9 +1140,9 @@ export default function SchedulePage() {
             insertedClientIds = (inserted || []).map((r: { id: string }) => r.id);
           }
 
-          // Insert break rows — reference the inserted client's DB id via afterClientId in notes
+          // Insert break rows — reference the inserted client's DB id
           const breakRows: Record<string, unknown>[] = [];
-          position = clientRows.length;
+          let position = clientRows.length;
           for (const [clientIdx, breakData] of breakByIndex) {
             const afterClientId = insertedClientIds[clientIdx] || '';
             breakRows.push({
@@ -1110,7 +1152,6 @@ export default function SchedulePage() {
               address: '', lat: 0, lng: 0, place_id: null,
               duration_minutes: breakData.durationMinutes,
               staff_count: 1, is_locked: false, is_break: true,
-              // Store afterClientId so the break-load logic can resolve it by UUID
               notes: JSON.stringify({
                 afterClientId,
                 afterPosition: clientIdx,
@@ -1123,8 +1164,6 @@ export default function SchedulePage() {
           if (breakRows.length > 0) {
             await supabase.from('schedule_jobs').insert(breakRows);
           }
-
-          rows; // (unused — kept for reference)
         }
       }
     }

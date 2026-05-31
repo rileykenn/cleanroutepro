@@ -292,7 +292,24 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
                   </svg>
                 </button>
               )}
-              <p className="text-sm text-text-tertiary mt-0.5 truncate">{client.address}</p>
+              {editingField === 'address' ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input autoFocus value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') saveField('address', form.address); if (e.key === 'Escape') setEditingField(null); }}
+                    className="input-field text-sm flex-1" placeholder="Full address"/>
+                  <button onClick={() => saveField('address', form.address)} className="btn-primary text-xs py-1.5 px-3">Save</button>
+                  <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1.5">Cancel</button>
+                </div>
+              ) : (
+                <button onClick={() => setEditingField('address')} className="group flex items-center gap-1.5 text-left w-full mt-0.5">
+                  <p className="text-sm text-text-tertiary truncate">{client.address}</p>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    className="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+              )}
+              <p className="text-[10px] text-text-tertiary mt-0.5 italic">Tip: Use the exact address including suburb and postcode for accurate route calculations</p>
               <p className="text-xs text-text-tertiary mt-1">
                 Added {new Date(client.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
               </p>

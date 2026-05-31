@@ -900,7 +900,7 @@ export default function CompletedPage() {
             </div>
 
             {/* ══ MOBILE: vertical day list ══ */}
-            <div className="lg:hidden p-3 space-y-2 pb-24">
+            <div className="lg:hidden p-3 space-y-2 pb-20">
               {weekDates.map(date => {
                 const dayJobs = jobsByDate.get(date) || [];
                 const isToday = date === today;

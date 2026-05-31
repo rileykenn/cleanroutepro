@@ -51,7 +51,7 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-24 lg:pb-6">
+    <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-20 lg:pb-6">
       <div className="max-w-[600px] mx-auto space-y-6">
         <div><h2 className="text-lg font-bold text-text-primary">Settings</h2><p className="text-sm text-text-secondary">Manage your business settings</p></div>
 

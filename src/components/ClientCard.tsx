@@ -532,6 +532,12 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
               <span className="text-text-tertiary font-normal">({(client.jobDurationMinutes / effectiveStaffCount / 60).toFixed(1)}h eff.)</span>
             </div>
           )}
+          {/* Client rate badge */}
+          {client.rate != null && client.rate > 0 && (
+            <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100">
+              <span>${client.rate}/hr</span>
+            </div>
+          )}
         </div>
         {client.startTime && client.endTime && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sm">
@@ -542,6 +548,16 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
           </motion.div>
         )}
       </div>
+
+      {/* Revenue from client rate */}
+      {client.rate != null && client.rate > 0 && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-emerald-600 pl-6">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+          <span>{(client.jobDurationMinutes / 60).toFixed(1)}hrs × ${client.rate}/hr = <strong>${(client.jobDurationMinutes / 60 * client.rate).toFixed(2)}</strong></span>
+        </div>
+      )}
 
       {/* Per-Job Staff Assignment */}
       {availableStaff && availableStaff.length > 0 && (

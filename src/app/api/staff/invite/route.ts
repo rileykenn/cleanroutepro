@@ -81,7 +81,24 @@ export async function POST(request: NextRequest) {
         .update({ user_id: existingUser.id, invite_status: 'pending', email })
         .eq('id', staffMemberId);
 
-      return NextResponse.json({ success: true, existing: true, message: 'Invitation sent — they will see it when they log in' });
+      // Send an email notification so the user knows they've been invited
+      // (inviteUserByEmail with an existing user triggers a magic-link email)
+      try {
+        await adminSupabase.auth.admin.inviteUserByEmail(email, {
+          data: {
+            full_name: name || '',
+            org_id: profile.org_id,
+            staff_member_id: staffMemberId,
+            role: 'staff',
+          },
+          redirectTo: `${request.nextUrl.origin}/auth/confirm`,
+        });
+      } catch (emailErr) {
+        // Non-fatal — the DB invite is already created, they can still log in manually
+        console.warn('[Staff Invite] Email notification failed for existing user:', emailErr);
+      }
+
+      return NextResponse.json({ success: true, existing: true, message: 'Invitation sent — they will receive an email notification' });
     }
 
     // New user — send invite email

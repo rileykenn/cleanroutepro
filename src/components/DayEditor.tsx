@@ -226,6 +226,112 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
   );
 }
 
+// ─── Team Settings Card (Collapsible) ──────────────────────────────────────────
+interface TeamSettingsCardProps {
+  activeTeam: TeamSchedule;
+  dispatch: Dispatch<ScheduleAction>;
+}
+
+function TeamSettingsCard({ activeTeam, dispatch }: TeamSettingsCardProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
+      className="card overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span className="text-xs font-bold text-text-primary">Team Settings</span>
+        </div>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          className="text-text-tertiary transition-transform"
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 space-y-2.5 border-t border-border-light pt-2.5">
+              {/* Hourly Rate */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-secondary">Hourly Rate ($/hr)</span>
+                <input
+                  type="number"
+                  value={activeTeam.hourlyRate}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value) || 0;
+                    dispatch({ type: 'SET_HOURLY_RATE', teamId: activeTeam.id, rate: v });
+                  }}
+                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                  min={0} step={1}
+                />
+              </div>
+
+              {/* Fuel Efficiency */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-secondary">Fuel Efficiency (L/100km)</span>
+                <input
+                  type="number"
+                  value={activeTeam.fuelEfficiency}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value) || 0;
+                    dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: v, fuelPrice: activeTeam.fuelPrice });
+                  }}
+                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                  min={0} step={0.5}
+                />
+              </div>
+
+              {/* Fuel Price */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-secondary">Fuel Price ($/L)</span>
+                <input
+                  type="number"
+                  value={activeTeam.fuelPrice}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value) || 0;
+                    dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: activeTeam.fuelEfficiency, fuelPrice: v });
+                  }}
+                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                  min={0} step={0.01}
+                />
+              </div>
+
+              {/* Per-KM Rate */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-text-secondary">Per-KM Rate ($/km)</span>
+                <input
+                  type="number"
+                  value={activeTeam.perKmRate}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value) || 0;
+                    dispatch({ type: 'SET_PER_KM_RATE', teamId: activeTeam.id, rate: v });
+                  }}
+                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                  min={0} step={0.01}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 interface DayEditorProps {
   state: AppState;
   dispatch: Dispatch<ScheduleAction>;
@@ -326,6 +432,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const needsSaveRef = useRef(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether there are unsaved changes (for the manual save button + beforeunload)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const saveNow = useCallback(async () => {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
@@ -479,6 +587,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       if (success) {
         invalidateScheduleCache(); // Expire the page cache so tab-switching re-fetches fresh data
         setSaveStatus('saved');
+        setHasUnsavedChanges(false);
         if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
         savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
       } else {
@@ -503,6 +612,18 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (disableAutoSave) return; // Template mode: no flush needed
     return () => { saveNowRef.current(); };
   }, [disableAutoSave]);
+
+  // Warn when closing/refreshing the browser with unsaved changes
+  useEffect(() => {
+    if (disableAutoSave) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges, disableAutoSave]);
 
   useEffect(() => {
     if (disableAutoSave) return; // Template mode: skip auto-save entirely
@@ -543,6 +664,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
     if (fingerprint === prevStateRef.current) return;
     prevStateRef.current = fingerprint;
+    setHasUnsavedChanges(true);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     // Structural = client/break count changed OR base/return address changed
@@ -569,9 +691,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (isStructural) {
       saveNow();
     } else {
-      // Detail changes (duration, notes, checklist, rates) — longer debounce
-      // to avoid hammering the DB while the user is still interacting.
-      saveTimerRef.current = setTimeout(() => { saveNow(); }, 2500);
+      // Detail changes (duration, notes, checklist, rates) — debounce to
+      // avoid hammering the DB while the user is still interacting.
+      saveTimerRef.current = setTimeout(() => { saveNow(); }, 1500);
     }
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [state, dbLoaded, orgId, saveNow]);
@@ -767,7 +889,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       <MapsInitializer onServiceReady={setDirectionsService} />
       <div className="flex-1 flex min-h-0 h-full">
         {/* Schedule Panel */}
-        <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light bg-white/50`}>
+        <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light bg-white/50 relative`}>
           <div className="flex items-center justify-between px-4 py-2 border-b border-border-light bg-white">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-text-primary">{formatDateDisplay(state.selectedDate)}</span>
@@ -876,6 +998,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                 </div>
               )}
             </motion.div>
+
+            {/* Team Settings (collapsible) */}
+            <TeamSettingsCard activeTeam={activeTeam} dispatch={dispatch} />
 
             {/* Driver for Today — Rich Picker */}
             {allStaff && allStaff.length > 0 && (() => {
@@ -1123,6 +1248,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               </div>
             )}
 
+            {/* Spacer for floating save button */}
+            {!disableAutoSave && <div className="h-16" />}
+
             {/* Empty state */}
             {activeTeam.clients.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="text-center py-12">
@@ -1134,6 +1262,54 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               </motion.div>
             )}
           </div>
+
+          {/* ── Floating Save Button ── */}
+          {!disableAutoSave && (
+            <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none">
+              <button
+                onClick={() => saveNow()}
+                disabled={saveStatus === 'saving' || (!hasUnsavedChanges && saveStatus !== 'error')}
+                className={`pointer-events-auto w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg ${
+                  saveStatus === 'error'
+                    ? 'bg-red-500 text-white hover:bg-red-600'
+                    : saveStatus === 'saving'
+                      ? 'bg-gray-100 text-text-tertiary cursor-wait'
+                      : saveStatus === 'saved' && !hasUnsavedChanges
+                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                        : hasUnsavedChanges
+                          ? 'bg-primary text-white hover:bg-primary-hover'
+                          : 'bg-surface-elevated text-text-tertiary border border-border-light'
+                }`}
+              >
+                {saveStatus === 'saving' ? (
+                  <>
+                    <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    Saving…
+                  </>
+                ) : saveStatus === 'error' ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    Save Failed — Tap to Retry
+                  </>
+                ) : saveStatus === 'saved' && !hasUnsavedChanges ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    Saved
+                  </>
+                ) : hasUnsavedChanges ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Save
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    All Changes Saved
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Map Panel or Checklist Panel */}

@@ -294,7 +294,7 @@ function Inner({ children }: { children: React.ReactNode }) {
         {/* ── Mobile bottom tab bar (admin nav only) ── */}
         {userRole !== 'staff' && (
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-border-light pb-safe" style={{ boxShadow: '0 -1px 0 0 #F3F4F6, 0 -4px 16px rgba(0,0,0,0.06)' }}>
-          <div className="flex items-stretch h-14">
+          <div className="flex items-stretch h-12">
             {navItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
               return (

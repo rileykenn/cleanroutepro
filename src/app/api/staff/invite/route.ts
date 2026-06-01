@@ -48,9 +48,14 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
 
-    // Check if this email already has an account
-    const { data: existingUsers } = await adminSupabase.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(u => u.email === email);
+    // Check if this email already has an account — use targeted DB lookup instead
+    // of listUsers() which fetches up to 1000 users in one shot (scalability risk).
+    const { data: existingUsersData } = await adminSupabase
+      .from('profiles')
+      .select('id, email')
+      .eq('email', email)
+      .maybeSingle();
+    const existingUser = existingUsersData ? { id: existingUsersData.id, email: existingUsersData.email } : null;
 
     if (existingUser) {
       // User already has an account — just link them to this org

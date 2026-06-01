@@ -44,12 +44,14 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
     if (!orgId || !name.trim()) return;
     setSaving(true);
 
-    // week_data: { "0": [{teamName, teamId, dayStartTime, baseAddress, breaks, clients}], ... }
+    // week_data: { "0": [{teamName, teamId, dayStartTime, baseAddress, returnAddress, driverStaffId, breaks, clients}], ... }
     const weekData: Record<string, {
       teamName: string;
       teamId: string;
       dayStartTime: string;
       baseAddress: unknown;
+      returnAddress: unknown;
+      driverStaffId: string | null;
       breaks: { afterClientIndex: number; durationMinutes: number; label: string }[];
       clients: Partial<Client>[];
     }[]> = {};
@@ -71,11 +73,18 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
           })
           .filter((b): b is { afterClientIndex: number; durationMinutes: number; label: string } => b !== null);
 
+        // Use per-day address overrides from dayData; fall back to team-level defaults
+        const perDayBase = dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress;
+        const perDayReturn = dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress;
+        const perDayDriver = dayData?.driverStaffId ?? null;
+
         dayTeams.push({
           teamName: team.name,
           teamId: team.id,
           dayStartTime: team.dayStartTime,
-          baseAddress: team.baseAddress,
+          baseAddress: perDayBase,
+          returnAddress: perDayReturn,
+          driverStaffId: perDayDriver,
           breaks,
           clients: clients.map(c => ({
             name: c.name,

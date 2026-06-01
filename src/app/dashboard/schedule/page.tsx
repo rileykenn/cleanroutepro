@@ -2,7 +2,7 @@
 
 import { useReducer, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays } from '@/lib/timeUtils';
@@ -43,6 +43,7 @@ export default function SchedulePage() {
   const [showMonth, setShowMonth] = useState(false);
   const [showClearWeek, setShowClearWeek] = useState(false);
   const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
+  const [templateToast, setTemplateToast] = useState<string | null>(null);
 
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
@@ -978,7 +979,7 @@ export default function SchedulePage() {
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 
   // ─── Week template loading ───
-  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>, templateName?: string, templateLabel?: string) => {
+  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; baseAddress?: unknown; returnAddress?: unknown; driverStaffId?: string | null; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>, templateName?: string, templateLabel?: string) => {
     // First save any pending day edits
     if (daySaveRef.current) await daySaveRef.current();
 
@@ -1082,9 +1083,10 @@ export default function SchedulePage() {
         }
       }
     }
-    // removedStaffCount can be used for a toast notification if needed
     if (removedStaffCount > 0) {
-      console.info(`[Template Load] Removed ${removedStaffCount} former staff assignment(s)`);
+      const msg = `${removedStaffCount} former staff assignment${removedStaffCount !== 1 ? 's' : ''} removed — those team members are no longer in your roster.`;
+      setTemplateToast(msg);
+      setTimeout(() => setTemplateToast(null), 6000);
     }
 
     // ── Step 3: Write template data to DB ──
@@ -1103,9 +1105,21 @@ export default function SchedulePage() {
           await supabase.from('teams').update({ day_start_time: templateTeam.dayStartTime }).eq('id', matchedTeam.id);
         }
 
+        // Build per-day base/return address objects from template
+        type SavedAddress = { address: string; lat: number; lng: number; placeId?: string } | null;
+        const tBase = templateTeam.baseAddress as SavedAddress;
+        const tReturn = templateTeam.returnAddress as SavedAddress;
+
         // Create schedule row (week was cleared above, so always insert fresh)
         const { data: created } = await supabase
-          .from('schedules').insert({ org_id: orgId, team_id: matchedTeam.id, schedule_date: date }).select('id').single();
+          .from('schedules').insert({
+            org_id: orgId,
+            team_id: matchedTeam.id,
+            schedule_date: date,
+            ...(templateTeam.driverStaffId ? { driver_staff_id: templateTeam.driverStaffId } : {}),
+            ...(tBase ? { base_address: tBase.address, base_lat: tBase.lat, base_lng: tBase.lng, base_place_id: tBase.placeId || null, has_start_base: true } : {}),
+            ...(tReturn ? { return_address: tReturn.address, return_lat: tReturn.lat, return_lng: tReturn.lng, return_place_id: tReturn.placeId || null, has_return_base: true } : {}),
+          }).select('id').single();
         if (!created) continue;
         const scheduleId = created.id;
 
@@ -1588,6 +1602,28 @@ export default function SchedulePage() {
             onCancel={() => setShowClearWeek(false)}
             danger
           />
+        )}
+      </AnimatePresence>
+
+      {/* Template-load toast: shown when former staff are stripped */}
+      <AnimatePresence>
+        {templateToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)]"
+          >
+            <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 shadow-lg">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" className="shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>
+              </svg>
+              <p className="text-sm text-amber-800 font-medium leading-snug">{templateToast}</p>
+              <button onClick={() => setTemplateToast(null)} className="ml-auto shrink-0 text-amber-500 hover:text-amber-700 transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

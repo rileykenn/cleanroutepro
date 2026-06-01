@@ -17,6 +17,7 @@ interface StaffMember {
   hourly_rate: number;
   user_id: string | null;
   invite_status: string | null;
+  archived: boolean;
 }
 
 /** A real account holder — sourced from org_members + profiles */
@@ -186,7 +187,7 @@ export default function StaffPage() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const editFormRef = useRef<HTMLDivElement>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', phone: '', role: 'cleaner', hourly_rate: 38 });
 
   // Accounts & Access — sourced from org_members (the real source of truth)
@@ -212,9 +213,6 @@ export default function StaffPage() {
 
     if (data) {
       // ── Self-heal: fix stale invite_status values ─────────────────────
-      // A staff member whose user accepted via email link may still show
-      // 'pending' because the confirm route previously didn't sync the status.
-      // Cross-check org_members and heal silently.
       const stale = data.filter(
         (s: StaffMember) => s.user_id && s.invite_status !== 'accepted'
       );
@@ -326,17 +324,6 @@ export default function StaffPage() {
   useEffect(() => { if (profile?.org_id) loadStaff(); }, [profile?.org_id, loadStaff]);
   useEffect(() => { if (profile?.org_id && activeSection === 'accounts') loadAccounts(); }, [profile?.org_id, activeSection, loadAccounts]);
 
-  // Scroll to edit form when editingId changes
-  useEffect(() => {
-    if (editingId) {
-      // Small delay to allow AnimatePresence to render the form
-      setTimeout(() => {
-        editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-    }
-  }, [editingId]);
-
-  // ── Add / Edit ─────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!profile?.org_id || !form.name.trim()) return;
     if (editingId) {
@@ -345,9 +332,9 @@ export default function StaffPage() {
       setEditingId(null);
     } else {
       const { data } = await supabase.from('staff_members').insert({
-        ...form, org_id: profile.org_id, available_days: WORK_DAYS,
+        ...form, org_id: profile.org_id, available_days: WORK_DAYS, archived: false,
       }).select().single();
-      if (data) setStaff(p => [...p, data].sort((a, b) => a.name.localeCompare(b.name)));
+      if (data) setStaff(p => [...p, data as StaffMember].sort((a, b) => a.name.localeCompare(b.name)));
       setShowAdd(false);
     }
     setForm({ name: '', email: '', phone: '', role: 'cleaner', hourly_rate: 38 });
@@ -357,6 +344,14 @@ export default function StaffPage() {
     setEditingId(s.id);
     setForm({ name: s.name, email: s.email || '', phone: s.phone || '', role: s.role, hourly_rate: s.hourly_rate || 38 });
     setActiveSection('roster');
+  };
+
+  // ── Archive / Unarchive ────────────────────────────────────────────────
+  const handleArchive = async (s: StaffMember) => {
+    const newArchived = !s.archived;
+    await supabase.from('staff_members').update({ archived: newArchived }).eq('id', s.id);
+    setStaff(prev => prev.map(m => m.id === s.id ? { ...m, archived: newArchived } : m));
+    showToast('success', newArchived ? `${s.name} archived` : `${s.name} restored to active roster`);
   };
 
   // ── Availability toggles ───────────────────────────────────────────────
@@ -466,7 +461,9 @@ export default function StaffPage() {
   const pendingAccounts = orgAccounts.filter(a => a.memberStatus === 'pending');
   // Staff without any account: in staff_members but NOT in org_members
   const staffWithAccount = new Set(orgAccounts.map(a => a.staffMemberId).filter(Boolean));
-  const noAccount = staff.filter(s => !staffWithAccount.has(s.id));
+  const noAccount = staff.filter(s => !staffWithAccount.has(s.id) && !s.archived);
+  const activeStaff = staff.filter(s => !s.archived);
+  const archivedStaff = staff.filter(s => s.archived);
 
   if (loading) {
     return (
@@ -485,7 +482,7 @@ export default function StaffPage() {
           <div>
             <h1 className="text-xl font-bold text-text-primary">Staff</h1>
             <p className="text-sm text-text-secondary mt-0.5">
-              {staff.length} member{staff.length !== 1 ? 's' : ''} ·{' '}
+              {activeStaff.length} active{archivedStaff.length > 0 ? ` · ${archivedStaff.length} archived` : ''} ·{' '}
               {activeAccounts.length} with portal access
             </p>
           </div>
@@ -575,66 +572,9 @@ export default function StaffPage() {
               exit={{ opacity: 0 }}
               className="space-y-4"
             >
-              {/* Add / Edit form */}
-              <AnimatePresence>
-                {(showAdd || editingId) && (
-                  <motion.div
-                    ref={editFormRef}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="card-elevated p-5 space-y-4 overflow-hidden"
-                  >
-                    <h3 className="text-sm font-bold text-text-primary">
-                      {editingId ? 'Edit Staff Member' : 'New Staff Member'}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Name</label>
-                        <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input-field text-sm" placeholder="Full name" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Role</label>
-                        <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="input-field text-sm">
-                          <option value="cleaner">Cleaner</option>
-                          <option value="supervisor">Supervisor</option>
-                          <option value="driver">Driver</option>
-                          <option value="trainee">Trainee</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Email</label>
-                        <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="input-field text-sm" placeholder="email@example.com" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Phone</label>
-                        <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="input-field text-sm" placeholder="0400 000 000" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Hourly Rate</label>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm text-text-tertiary">$</span>
-                          <input type="number" value={form.hourly_rate} onChange={e => setForm({ ...form, hourly_rate: parseFloat(e.target.value) || 0 })} className="input-field text-sm" min={0} step={0.5} />
-                          <span className="text-xs text-text-tertiary whitespace-nowrap">/hr</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={handleSave} className="btn-primary text-sm">
-                        {editingId ? 'Save Changes' : 'Add Staff'}
-                      </button>
-                      <button onClick={() => { setShowAdd(false); setEditingId(null); }} className="btn-ghost text-sm">
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               {/* Staff list */}
               <div className="space-y-2">
-                {staff.map((s, i) => {
+                {activeStaff.map((s, i) => {
                   const days = s.available_days ?? [0, 1, 2, 3, 4, 5, 6];
                   const hasAccount = s.invite_status === 'accepted';
                   const isPending = s.invite_status === 'pending';
@@ -711,6 +651,16 @@ export default function StaffPage() {
                               </svg>
                             </button>
                           )}
+                          {/* Archive */}
+                          <button
+                            onClick={() => handleArchive(s)}
+                            title="Archive staff member"
+                            className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-text-secondary transition-colors"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+                            </svg>
+                          </button>
                           <button onClick={() => handleEdit(s)} title="Edit" className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary hover:text-primary transition-colors">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -752,7 +702,7 @@ export default function StaffPage() {
                   );
                 })}
 
-                {staff.length === 0 && (
+                {activeStaff.length === 0 && (
                   <div className="text-center py-16">
                     <div className="w-14 h-14 rounded-2xl bg-surface-elevated border border-border-light flex items-center justify-center mx-auto mb-3">
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary">
@@ -765,6 +715,51 @@ export default function StaffPage() {
                   </div>
                 )}
               </div>
+
+              {/* ── Archived Staff ── */}
+              {archivedStaff.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowArchived(v => !v)}
+                    className="flex items-center gap-2 text-xs font-semibold text-text-tertiary hover:text-text-secondary transition-colors mb-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      className={`transition-transform ${showArchived ? 'rotate-90' : ''}`}>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                    Archived ({archivedStaff.length})
+                  </button>
+                  <AnimatePresence>
+                    {showArchived && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-2 overflow-hidden"
+                      >
+                        {archivedStaff.map((s) => (
+                          <div key={s.id} className="card p-4 opacity-60 flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-surface-elevated text-text-tertiary flex items-center justify-center text-sm font-bold shrink-0">
+                              {s.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-text-secondary line-through">{s.name}</p>
+                              <p className="text-xs text-text-tertiary capitalize">{s.role}</p>
+                            </div>
+                            <button
+                              onClick={() => handleArchive(s)}
+                              title="Restore to active roster"
+                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-surface-elevated border border-border-light text-text-secondary hover:text-primary hover:border-primary/30 transition-colors shrink-0"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -1062,6 +1057,96 @@ export default function StaffPage() {
                   className="flex-1 bg-amber-500 text-white text-sm py-2.5 rounded-xl font-semibold hover:bg-amber-600 transition-all disabled:opacity-60"
                 >
                   {actionLoading ? 'Revoking...' : 'Revoke access'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Slide-over Edit Panel ───────────────────────────────────────── */}
+      <AnimatePresence>
+        {(showAdd || editingId) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex justify-end"
+            onClick={() => { setShowAdd(false); setEditingId(null); }}
+          >
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              onClick={e => e.stopPropagation()}
+              className="relative bg-white w-full max-w-sm h-full shadow-2xl flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center gap-3 px-5 py-4 border-b border-border-light">
+                <div className="w-8 h-8 rounded-full bg-primary-light flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                  {form.name ? form.name.charAt(0).toUpperCase() : '?'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-text-primary truncate">
+                    {editingId ? (staff.find(s => s.id === editingId)?.name || 'Edit Staff') : 'New Staff Member'}
+                  </h3>
+                  <p className="text-xs text-text-tertiary">{editingId ? 'Edit details' : 'Add to roster'}</p>
+                </div>
+                <button
+                  onClick={() => { setShowAdd(false); setEditingId(null); }}
+                  className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              {/* Form */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Full Name</label>
+                  <input
+                    type="text" value={form.name}
+                    onChange={e => setForm({ ...form, name: e.target.value })}
+                    className="input-field text-sm" placeholder="Full name" autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Role</label>
+                  <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="input-field text-sm">
+                    <option value="cleaner">Cleaner</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="driver">Driver</option>
+                    <option value="trainee">Trainee</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Email</label>
+                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="input-field text-sm" placeholder="email@example.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Phone</label>
+                  <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="input-field text-sm" placeholder="0400 000 000" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Hourly Rate</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-text-tertiary">$</span>
+                    <input type="number" value={form.hourly_rate} onChange={e => setForm({ ...form, hourly_rate: parseFloat(e.target.value) || 0 })} className="input-field text-sm" min={0} step={0.5} />
+                    <span className="text-xs text-text-tertiary whitespace-nowrap">/hr</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-4 border-t border-border-light flex gap-2">
+                <button onClick={handleSave} disabled={!form.name.trim()} className="btn-primary flex-1 text-sm disabled:opacity-50">
+                  {editingId ? 'Save Changes' : 'Add Staff Member'}
+                </button>
+                <button onClick={() => { setShowAdd(false); setEditingId(null); }} className="btn-ghost text-sm">
+                  Cancel
                 </button>
               </div>
             </motion.div>

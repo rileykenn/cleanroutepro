@@ -41,10 +41,19 @@ export function useTeams(authOrgId: string | null) {
       setTeams(data.map(dbToTeam));
       setLoading(false);
     } else {
-      // Auto-create a default team for new orgs
+      // Auto-create a default team for new orgs — pull from org defaults
+      const { data: orgDefaults } = await supabase
+        .from('organizations')
+        .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate')
+        .eq('id', orgId)
+        .single();
       const { data: newTeam } = await supabase.from('teams').insert({
         org_id: orgId, name: 'Team 1', color_index: 0, sort_order: 0,
-        day_start_time: '08:00', hourly_rate: 38, fuel_efficiency: 10, fuel_price: 1.85, per_km_rate: 0,
+        day_start_time: '08:00',
+        hourly_rate: Number(orgDefaults?.default_hourly_rate) || 38,
+        fuel_efficiency: Number(orgDefaults?.default_fuel_efficiency) || 10,
+        fuel_price: Number(orgDefaults?.default_fuel_price) || 1.85,
+        per_km_rate: Number(orgDefaults?.default_per_km_rate) || 0,
       }).select().single();
       if (newTeam) setTeams([dbToTeam(newTeam)]);
       setLoading(false);
@@ -57,8 +66,18 @@ export function useTeams(authOrgId: string | null) {
     if (!orgId) return null;
     const usedIndices = teams.map(t => t.colorIndex);
     const colorIndex = getNextColorIndex(usedIndices);
+    // Fetch org defaults to pre-fill the new team
+    const { data: orgDefaults } = await supabase
+      .from('organizations')
+      .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate')
+      .eq('id', orgId)
+      .single();
     const { data, error } = await supabase.from('teams').insert({
       org_id: orgId, name: `Team ${teams.length + 1}`, color_index: colorIndex, sort_order: teams.length,
+      hourly_rate: Number(orgDefaults?.default_hourly_rate) || teams[0]?.hourlyRate || 38,
+      fuel_efficiency: Number(orgDefaults?.default_fuel_efficiency) || teams[0]?.fuelEfficiency || 10,
+      fuel_price: Number(orgDefaults?.default_fuel_price) || teams[0]?.fuelPrice || 1.85,
+      per_km_rate: Number(orgDefaults?.default_per_km_rate) ?? teams[0]?.perKmRate ?? 0,
       ...(teams[0]?.baseAddress ? { base_address: teams[0].baseAddress.address, base_lat: teams[0].baseAddress.lat, base_lng: teams[0].baseAddress.lng, base_place_id: teams[0].baseAddress.placeId || null } : {}),
     }).select().single();
     if (data && !error) { const nt = dbToTeam(data); setTeams((p) => [...p, nt]); return nt; }

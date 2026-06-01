@@ -11,13 +11,18 @@ interface TravelSegmentProps {
 }
 
 export default function TravelSegment({ segment, teamColor, onAddBreak }: TravelSegmentProps) {
-  if (!segment || segment.isCalculating) return null;
+  if (!segment) return null;
 
   return (
     <div className="travel-connector group" style={{ '--color-border': teamColor } as React.CSSProperties}>
       <div className="flex items-center gap-2 py-1">
         {segment.isCalculating ? (
-          <div className="shimmer h-5 w-24 rounded" />
+          <div className="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={teamColor} strokeWidth="2.5" className="animate-spin opacity-60">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+            </svg>
+            <span className="text-xs text-text-tertiary italic">Calculating...</span>
+          </div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-xs">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={teamColor} strokeWidth="2.5">

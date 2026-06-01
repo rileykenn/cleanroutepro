@@ -18,10 +18,40 @@ export default function SettingsPage() {
   const [tzSaving, setTzSaving] = useState(false);
   const [tzSaved, setTzSaved] = useState(false);
 
+  // Org-level defaults for new teams
+  const [defaults, setDefaults] = useState({
+    default_hourly_rate: 38,
+    default_fuel_efficiency: 10,
+    default_fuel_price: 1.85,
+    default_per_km_rate: 0,
+  });
+  const [defaultsSaving, setDefaultsSaving] = useState(false);
+  const [defaultsSaved, setDefaultsSaved] = useState(false);
+
   // Sync timezone state when profile loads
   useEffect(() => {
     setTimezone(getAppTimezone());
   }, [profile]);
+
+  // Load org defaults
+  useEffect(() => {
+    if (!profile?.org_id) return;
+    supabase
+      .from('organizations')
+      .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate')
+      .eq('id', profile.org_id)
+      .single()
+      .then(({ data }: { data: { default_hourly_rate: number; default_fuel_efficiency: number; default_fuel_price: number; default_per_km_rate: number } | null }) => {
+        if (data) {
+          setDefaults({
+            default_hourly_rate: Number(data.default_hourly_rate) || 38,
+            default_fuel_efficiency: Number(data.default_fuel_efficiency) || 10,
+            default_fuel_price: Number(data.default_fuel_price) || 1.85,
+            default_per_km_rate: Number(data.default_per_km_rate) || 0,
+          });
+        }
+      });
+  }, [supabase, profile?.org_id]);
 
   const handleSaveOrg = async () => {
     if (!profile?.org_id) return;
@@ -42,6 +72,14 @@ export default function SettingsPage() {
     setTimeout(() => setTzSaved(false), 2000);
   };
 
+  const handleSaveDefaults = async () => {
+    if (!profile?.org_id) return;
+    setDefaultsSaving(true);
+    await supabase.from('organizations').update(defaults).eq('id', profile.org_id);
+    setDefaultsSaving(false); setDefaultsSaved(true);
+    setTimeout(() => setDefaultsSaved(false), 2000);
+  };
+
   // Detect browser timezone for the label
   const browserTz = useMemo(() => {
     if (typeof Intl !== 'undefined') {
@@ -55,6 +93,7 @@ export default function SettingsPage() {
       <div className="max-w-[600px] mx-auto space-y-6">
         <div><h2 className="text-lg font-bold text-text-primary">Settings</h2><p className="text-sm text-text-secondary">Manage your business settings</p></div>
 
+        {/* Business Profile */}
         <div className="card-elevated p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Business Profile</h3>
           <div>
@@ -98,6 +137,86 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* ── Scheduling Defaults ─────────────────────────────────────────── */}
+        <div className="card-elevated p-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-text-primary">Scheduling Defaults</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">
+              These values pre-fill new teams. Existing teams keep their own rates and can be updated individually in the schedule view.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Hourly Rate */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Default Hourly Rate</label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-text-tertiary">$</span>
+                <input
+                  type="number" min={0} step={0.5}
+                  value={defaults.default_hourly_rate}
+                  onChange={e => setDefaults(d => ({ ...d, default_hourly_rate: parseFloat(e.target.value) || 0 }))}
+                  className="input-field text-sm"
+                />
+                <span className="text-xs text-text-tertiary whitespace-nowrap">/hr</span>
+              </div>
+            </div>
+
+            {/* Fuel Efficiency */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Fuel Efficiency</label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number" min={0} step={0.5}
+                  value={defaults.default_fuel_efficiency}
+                  onChange={e => setDefaults(d => ({ ...d, default_fuel_efficiency: parseFloat(e.target.value) || 0 }))}
+                  className="input-field text-sm"
+                />
+                <span className="text-xs text-text-tertiary whitespace-nowrap">L/100km</span>
+              </div>
+            </div>
+
+            {/* Fuel Price */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Fuel Price</label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-text-tertiary">$</span>
+                <input
+                  type="number" min={0} step={0.01}
+                  value={defaults.default_fuel_price}
+                  onChange={e => setDefaults(d => ({ ...d, default_fuel_price: parseFloat(e.target.value) || 0 }))}
+                  className="input-field text-sm"
+                />
+                <span className="text-xs text-text-tertiary whitespace-nowrap">/litre</span>
+              </div>
+            </div>
+
+            {/* Per-km Allowance */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Per-km Allowance</label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-text-tertiary">$</span>
+                <input
+                  type="number" min={0} step={0.01}
+                  value={defaults.default_per_km_rate}
+                  onChange={e => setDefaults(d => ({ ...d, default_per_km_rate: parseFloat(e.target.value) || 0 }))}
+                  className="input-field text-sm"
+                />
+                <span className="text-xs text-text-tertiary whitespace-nowrap">/km</span>
+              </div>
+              <p className="text-[11px] text-text-tertiary mt-1">Set to 0 to use fuel cost calculation instead</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button onClick={handleSaveDefaults} disabled={defaultsSaving} className="btn-primary text-sm">
+              {defaultsSaving ? 'Saving...' : 'Save Defaults'}
+            </button>
+            {defaultsSaved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
+          </div>
+        </div>
+
+        {/* Subscription */}
         <div className="card-elevated p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Subscription</h3>
           <div className="flex items-center gap-3">
@@ -110,6 +229,7 @@ export default function SettingsPage() {
           <button className="btn-secondary text-sm" onClick={() => window.open('/api/stripe/portal', '_blank')}>Manage Subscription</button>
         </div>
 
+        {/* Account Info */}
         <div className="card-elevated p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Account</h3>
           <div className="text-sm text-text-secondary space-y-1">

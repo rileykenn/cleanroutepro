@@ -449,15 +449,19 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       needsSaveRef.current = false;
       isSavingRef.current = true;
       setSaveStatus('saving');
+
+      // ⚠️ SNAPSHOT state outside the retry loop so we don't accidentally save
+      // a different day's data if the user switches days during a retry wait!
+      const currentStateSnapshot = stateRef.current;
+      const today = currentStateSnapshot.selectedDate;
+
       let attempt = 0;
       let success = false;
       while (attempt < 2 && !success) {
         attempt++;
         try {
         if (!orgId) break;
-        const currentState = stateRef.current;
-        const today = currentState.selectedDate;
-        for (const team of currentState.teams) {
+        for (const team of currentStateSnapshot.teams) {
           const teamSettingsKey = JSON.stringify({
             id: team.id, name: team.name, start: team.dayStartTime,
             rate: team.hourlyRate, fuel: team.fuelEfficiency,
@@ -642,6 +646,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
           assignedStaff: c.assignedStaffIds, color: c.clientColor,
           checklist: c.checklistId || null,
+          startTime: c.startTime, endTime: c.endTime,
         })),
         breaks: t.breaks,
       }))

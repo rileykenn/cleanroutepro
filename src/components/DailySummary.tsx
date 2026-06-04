@@ -49,14 +49,22 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
     finishTime = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   }
 
-  // Calculate wages from individual staff rates
-  const payableHours = summary.payableMinutes / 60;
+  // Calculate wages from individual staff rates using exact computed labor minutes
   const staffWages = (staffRates && staffRates.length > 0)
-    ? staffRates.map((s) => ({ name: s.name, rate: s.hourly_rate, wage: payableHours * s.hourly_rate }))
+    ? staffRates.map((s) => {
+        const exactMinutes = summary.staffLaborMinutes?.get(s.id) || 0;
+        return { 
+          name: s.name, 
+          rate: s.hourly_rate, 
+          wage: (exactMinutes / 60) * s.hourly_rate,
+          minutes: exactMinutes 
+        };
+      }).filter(s => s.minutes > 0) // Only show staff who actually worked on this team today
     : [];
+
   const totalWages = staffWages.length > 0
     ? staffWages.reduce((sum, s) => sum + s.wage, 0)
-    : summary.wageAmount; // fallback to old calc if no staff assigned
+    : summary.wageAmount; // fallback to route total if no staff configured
 
   return (
     <motion.div

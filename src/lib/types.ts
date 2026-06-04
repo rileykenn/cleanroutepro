@@ -147,6 +147,7 @@ export interface DaySummary {
   totalBreakMinutes: number;
   payableMinutes: number;
   wageAmount: number;
+  staffLaborMinutes: Map<string, number>;
   fuelCost: number;
   perKmCost: number;
   clientCount: number;

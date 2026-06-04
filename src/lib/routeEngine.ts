@@ -202,14 +202,55 @@ export function calculateDaySummary(team: TeamSchedule): DaySummary {
   const payableMinutes = effectiveJobMinutes + totalTravelMinutes;
   // Revenue = rate ($/hr) × booked job hours (not affected by staff count)
   const totalRevenue = team.clients.reduce((s, c) => s + (c.rate || 0) * (c.jobDurationMinutes / 60), 0);
-  // Count unique assigned staff (all count — drivers work on jobs too)
-  const allStaffIds = new Set<string>();
-  team.clients.forEach(c => (c.assignedStaffIds || []).forEach(id => allStaffIds.add(id)));
-  const staffCount = allStaffIds.size;
+  // Calculate individualized labor wages
+  const staffLaborMinutes = new Map<string, number>();
+  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
+
+  team.clients.forEach((c, i) => {
+    const staffIds = c.assignedStaffIds || [];
+    if (staffIds.length === 0) return;
+    
+    // 1. Add effective job duration
+    const effDur = c.jobDurationMinutes / staffIds.length;
+    staffIds.forEach(id => {
+      staffLaborMinutes.set(id, (staffLaborMinutes.get(id) || 0) + effDur);
+    });
+
+    // 2. Add preceding travel time to the staff working this job
+    const prevId = i === 0 ? (hasBase ? 'base' : null) : team.clients[i - 1].id;
+    const seg = team.travelSegments.get(`${prevId}->${c.id}`);
+    if (seg && !seg.isCalculating) {
+      staffIds.forEach(id => {
+        staffLaborMinutes.set(id, (staffLaborMinutes.get(id) || 0) + seg.durationMinutes);
+      });
+    }
+  });
+
+  // 3. Add return travel time to the staff working the final job
+  if (hasBase && team.clients.length > 0) {
+    const lastClient = team.clients[team.clients.length - 1];
+    const retSeg = team.travelSegments.get(`${lastClient.id}->base-return`);
+    if (retSeg && !retSeg.isCalculating) {
+      const lastStaff = lastClient.assignedStaffIds || [];
+      lastStaff.forEach(id => {
+        staffLaborMinutes.set(id, (staffLaborMinutes.get(id) || 0) + retSeg.durationMinutes);
+      });
+    }
+  }
+
+  // If there's a dedicated driver who ISN'T assigned to jobs, they still need to be paid for travel
+  // (In V1, drivers are usually assigned to the jobs, but if not, this is a placeholder for future logic)
+
+  let wageAmount = 0;
+  staffLaborMinutes.forEach(minutes => {
+    wageAmount += (minutes / 60) * team.hourlyRate;
+  });
+
   return {
     totalJobMinutes, totalTravelMinutes, totalDistanceKm, totalWorkMinutes,
     totalBreakMinutes, payableMinutes,
-    wageAmount: staffCount > 0 ? (payableMinutes / 60) * team.hourlyRate * staffCount : 0,
+    wageAmount,
+    staffLaborMinutes,
     fuelCost: (totalDistanceKm / 100) * team.fuelEfficiency * team.fuelPrice,
     perKmCost: totalDistanceKm * team.perKmRate,
     clientCount: team.clients.length,

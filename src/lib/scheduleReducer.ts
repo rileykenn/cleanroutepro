@@ -84,7 +84,19 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'CLEAR_TRAVEL':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, travelSegments: new Map() } : t) };
     case 'SET_CLIENT_TIMES':
-      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: action.clients } : t) };
+      return {
+        ...state,
+        teams: state.teams.map((t) => {
+          if (t.id !== action.teamId) return t;
+          // Merge computed times into current state to avoid erasing keystrokes
+          const updatedClients = t.clients.map(c => {
+            const computedClient = action.clients.find(ac => ac.id === c.id);
+            if (!computedClient) return c;
+            return { ...c, startTime: computedClient.startTime, endTime: computedClient.endTime };
+          });
+          return { ...t, clients: updatedClients };
+        })
+      };
     case 'ADD_BREAK':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: [...t.breaks, action.breakItem] } : t) };
     case 'REMOVE_BREAK':

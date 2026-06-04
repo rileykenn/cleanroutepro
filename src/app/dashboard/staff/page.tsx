@@ -349,9 +349,26 @@ export default function StaffPage() {
   // ── Archive / Unarchive ────────────────────────────────────────────────
   const handleArchive = async (s: StaffMember) => {
     const newArchived = !s.archived;
+
+    // If archiving, automatically revoke their portal access for security
+    if (newArchived && s.user_id) {
+      try {
+        await fetch('/api/staff/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staffMemberId: s.id, revokeAccountOnly: true })
+        });
+        // The backend clears user_id and invite_status, so update local state
+        s.user_id = null;
+        s.invite_status = null;
+      } catch (err) {
+        console.error('Failed to revoke access during archive:', err);
+      }
+    }
+
     await supabase.from('staff_members').update({ archived: newArchived }).eq('id', s.id);
-    setStaff(prev => prev.map(m => m.id === s.id ? { ...m, archived: newArchived } : m));
-    showToast('success', newArchived ? `${s.name} archived` : `${s.name} restored to active roster`);
+    setStaff(prev => prev.map(m => m.id === s.id ? { ...m, archived: newArchived, user_id: s.user_id, invite_status: s.invite_status } : m));
+    showToast('success', newArchived ? `${s.name} archived and access revoked` : `${s.name} restored to active roster`);
   };
 
   // ── Availability toggles ───────────────────────────────────────────────

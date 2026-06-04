@@ -185,7 +185,7 @@ export default function AddClientButton({ teamId, teamColor, dispatch, orgId }: 
                   {searchResults.map((client) => (
                     <button
                       key={client.id}
-                      onMouseDown={(e) => { e.preventDefault(); addSavedClient(client); }}
+                      onClick={() => addSavedClient(client)}
                       className="w-full text-left px-3 py-2.5 hover:bg-surface-elevated transition-colors border-b border-border-light last:border-b-0"
                     >
                       <div className="flex items-center gap-1.5">

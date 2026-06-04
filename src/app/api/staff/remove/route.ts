@@ -91,8 +91,16 @@ export async function POST(request: NextRequest) {
 
     // ── 5. Optionally delete the staff_members row entirely ─────────────────
     if (!revokeAccountOnly) {
+      // Clean up foreign keys before deleting
       await adminSupabase.from('staff_assignments').delete().eq('staff_id', staffMemberId);
-      await adminSupabase.from('staff_members').delete().eq('id', staffMemberId);
+      await adminSupabase.from('schedules').update({ driver_staff_id: null }).eq('driver_staff_id', staffMemberId);
+      await adminSupabase.from('org_members').delete().eq('staff_member_id', staffMemberId);
+      
+      const { error: delErr } = await adminSupabase.from('staff_members').delete().eq('id', staffMemberId);
+      if (delErr) {
+        console.error('Error deleting staff member:', delErr);
+        return NextResponse.json({ error: 'Failed to delete staff member. ' + delErr.message }, { status: 500 });
+      }
     }
 
     return NextResponse.json({

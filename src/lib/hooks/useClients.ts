@@ -32,7 +32,11 @@ export function useClients(orgId: string | null) {
   const addClient = useCallback(async (client: Omit<SavedClient, 'id' | 'org_id' | 'created_at'>) => {
     if (!orgId) return null;
     const { data, error } = await supabase.from('clients').insert({ ...client, org_id: orgId }).select().single();
-    if (data && !error) { setClients((p) => [...p, data].sort((a, b) => a.name.localeCompare(b.name))); return data; }
+    if (data && !error) { 
+      setClients((p) => [...p, data].sort((a, b) => a.name.localeCompare(b.name))); 
+      return data; 
+    }
+    console.error('Failed to add client in useClients.ts:', error);
     return null;
   }, [supabase, orgId]);
 

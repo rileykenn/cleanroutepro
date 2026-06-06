@@ -1470,15 +1470,7 @@ export default function SchedulePage() {
         {/* Content */}
         {/* Content */}
         <div className="flex-1 min-h-0">
-          {state.viewMode === 'week' && (() => {
-             let totalClients = 0;
-             activeWeekSchedules.forEach(teamMap => {
-               teamMap.forEach(day => {
-                 totalClients += day.clients.length;
-               });
-             });
-             return state.teams.length === 0 || totalClients === 0;
-          })() ? (
+          {state.viewMode === 'week' && state.teams.length === 0 ? (
             // ── Empty week state ──
             <div className="h-full flex flex-col items-center justify-center gap-4 text-center px-6">
               <div className="w-16 h-16 rounded-2xl bg-surface-elevated flex items-center justify-center">

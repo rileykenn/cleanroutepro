@@ -4,7 +4,7 @@ import { useReducer, useEffect, useLayoutEffect, useMemo, useState, useCallback,
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
-import { DndContext, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays, generateId } from '@/lib/timeUtils';
@@ -46,6 +46,7 @@ export default function SchedulePage() {
   const [showLoadTemplate, setShowLoadTemplate] = useState(false);
   const [showMonth, setShowMonth] = useState(false);
   const [showClearWeek, setShowClearWeek] = useState(false);
+  const [activeDragClient, setActiveDragClient] = useState<SavedClient | null>(null);
   const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
   const [templateToast, setTemplateToast] = useState<string | null>(null);
 
@@ -73,7 +74,12 @@ export default function SchedulePage() {
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
 
   // ─── Drag and Drop Handler ───
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragClient(event.active.data.current?.client || null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragClient(null);
     const { active, over } = event;
     if (!over || !orgId) return;
     
@@ -111,7 +117,6 @@ export default function SchedulePage() {
 
     const position = count || 0;
     
-    // 3. Insert new job
     const newJob = {
       id: generateId(),
       schedule_id: scheduleRow.id,
@@ -125,11 +130,25 @@ export default function SchedulePage() {
       staff_count: clientData.default_staff_count,
       is_locked: false,
       position: position,
+      clientColor: clientData.color || undefined,
+      clientRate: clientData.rate || undefined,
+      assigned_staff_ids: [],
     };
+
+    // Optimistic UI update:
+    setWeekSchedules((prev) => {
+      const next = new Map(prev);
+      const teamMap = next.get(state.activeTeamId) || new Map<string, DaySchedule>();
+      const nextTeamMap = new Map(teamMap);
+      const day = nextTeamMap.get(targetDate) || { date: targetDate, isPublished: false, clients: [] };
+      nextTeamMap.set(targetDate, { ...day, clients: [...day.clients, newJob as any] });
+      next.set(state.activeTeamId, nextTeamMap);
+      return next;
+    });
 
     await supabase.from('schedule_jobs').insert(newJob);
 
-    // 4. Reload schedules to reflect changes
+    // 4. Reload schedules to sync any missing data
     loadWeekSchedules(weekDates);
   };
 
@@ -1502,7 +1521,7 @@ export default function SchedulePage() {
               </div>
             </div>
           ) : state.viewMode === 'week' ? (
-            <DndContext onDragEnd={handleDragEnd}>
+            <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className="flex h-full min-w-0 bg-gradient-to-br from-transparent to-surface-hover/30">
                 {state.activeTeamId !== 'all' && (
                   <div className="shrink-0 h-full pl-4 pb-4 lg:pl-6 lg:pb-6 pt-1">
@@ -1523,6 +1542,31 @@ export default function SchedulePage() {
                   />
                 </div>
               </div>
+              <DragOverlay dropAnimation={null}>
+                {activeDragClient ? (
+                  <div className="group relative p-3 rounded-[14px] bg-white border border-primary cursor-grabbing shadow-dropdown scale-105 ring-2 ring-primary">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-[13px] font-bold text-primary leading-tight truncate transition-colors">{activeDragClient.name}</h4>
+                        <p className="text-[11px] text-text-secondary mt-1.5 truncate">{activeDragClient.address}</p>
+                      </div>
+                      {activeDragClient.color && (
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 shadow-sm" style={{ backgroundColor: activeDragClient.color }} />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className="text-[10px] font-semibold text-text-secondary bg-surface-hover px-2 py-1 rounded-md flex items-center gap-1.5">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        {activeDragClient.default_duration_minutes}m
+                      </span>
+                      <span className="text-[10px] font-semibold text-text-secondary bg-surface-hover px-2 py-1 rounded-md flex items-center gap-1.5">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        {activeDragClient.default_staff_count}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </DragOverlay>
             </DndContext>
           ) : (
             <DayEditor

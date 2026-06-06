@@ -13,8 +13,7 @@ function DraggableClient({ client }: { client: SavedClient }) {
   });
 
   const style = {
-    transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.9 : 1,
+    opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 999 : 'auto',
   };
 

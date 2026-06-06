@@ -1,5 +1,6 @@
 'use client';
 
+import { useDroppable } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
 import { DaySchedule, TeamColor } from '@/lib/types';
 import { formatTimeDisplay, isToday, getShortDayLabel } from '@/lib/timeUtils';
@@ -20,14 +21,21 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
   const clients = daySchedule.clients;
   const hasJobs = clients.length > 0;
 
+  const { isOver, setNodeRef } = useDroppable({
+    id: daySchedule.date,
+  });
+
   return (
     <div
-      className={`flex flex-col min-w-[140px] flex-1 rounded-xl border transition-all cursor-pointer ${
-        isActive
-          ? 'border-primary shadow-glow-primary bg-white'
-          : today
-            ? 'border-primary-border bg-primary-light/30'
-            : 'border-border-light bg-white hover:border-border hover:shadow-card'
+      ref={setNodeRef}
+      className={`flex flex-col min-w-[140px] flex-1 rounded-[16px] border transition-all duration-300 cursor-pointer relative z-0 ${
+        isOver
+          ? 'border-primary bg-primary/5 ring-4 ring-primary/10 shadow-[0_8px_30px_rgb(79,70,229,0.12)] scale-[1.02] z-10'
+          : isActive
+            ? 'border-primary shadow-glow-primary bg-white z-0'
+            : today
+              ? 'border-primary-border bg-primary-light/30 z-0'
+              : 'border-border-light bg-white hover:border-border hover:shadow-card z-0'
       }`}
       onClick={onDayClick}
     >

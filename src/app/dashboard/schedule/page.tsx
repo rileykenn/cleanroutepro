@@ -4,14 +4,18 @@ import { useReducer, useEffect, useLayoutEffect, useMemo, useState, useCallback,
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
+import { DndContext, DragEndEvent } from '@dnd-kit/core';
+
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
-import { getTodayISO, getWeekDates, getWeekLabel, addDays } from '@/lib/timeUtils';
+import { getTodayISO, getWeekDates, getWeekLabel, addDays, generateId } from '@/lib/timeUtils';
 import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex, Location as AppLocation } from '@/lib/types';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
+import { SavedClient } from '@/lib/hooks/useClients';
 
 import TeamTabs from '@/components/TeamTabs';
 import WeekView from '@/components/WeekView';
+import WeekClientSidebar from '@/components/WeekClientSidebar';
 import MonthOverlay from '@/components/MonthOverlay';
 import SaveTemplateModal from '@/components/SaveTemplateModal';
 import LoadTemplateModal from '@/components/LoadTemplateModal';
@@ -67,6 +71,67 @@ export default function SchedulePage() {
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
+
+  // ─── Drag and Drop Handler ───
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !orgId) return;
+    
+    // Cannot drop clients in "All Teams" view (need a specific team)
+    if (state.activeTeamId === 'all') return;
+
+    const targetDate = over.id as string;
+    const clientData = active.data.current?.client as SavedClient;
+    if (!clientData || !targetDate) return;
+
+    // 1. Ensure schedule row exists for this team/date
+    let { data: scheduleRow } = await supabase
+      .from('schedules')
+      .select('id')
+      .eq('team_id', state.activeTeamId)
+      .eq('schedule_date', targetDate)
+      .maybeSingle();
+
+    if (!scheduleRow) {
+      const { data: newRow } = await supabase
+        .from('schedules')
+        .insert({ org_id: orgId, team_id: state.activeTeamId, schedule_date: targetDate })
+        .select('id')
+        .single();
+      scheduleRow = newRow;
+    }
+
+    if (!scheduleRow) return;
+
+    // 2. Get current job count for position
+    const { count } = await supabase
+      .from('schedule_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('schedule_id', scheduleRow.id);
+
+    const position = count || 0;
+    
+    // 3. Insert new job
+    const newJob = {
+      id: generateId(),
+      schedule_id: scheduleRow.id,
+      client_id: clientData.id,
+      name: clientData.name,
+      address: clientData.address,
+      lat: clientData.lat,
+      lng: clientData.lng,
+      place_id: clientData.place_id,
+      duration_minutes: clientData.default_duration_minutes,
+      staff_count: clientData.default_staff_count,
+      is_locked: false,
+      position: position,
+    };
+
+    await supabase.from('schedule_jobs').insert(newJob);
+
+    // 4. Reload schedules to reflect changes
+    loadWeekSchedules(weekDates);
+  };
 
   // ─── Restore from cache on client (no SSR hydration mismatch) ───
   // useLayoutEffect runs only on the client, synchronously before paint,
@@ -1388,6 +1453,14 @@ export default function SchedulePage() {
                 onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
                 onAddTeam={isStaff ? undefined : handleAddTeam}
                 onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
+                onChangeTeamColor={isStaff ? undefined : (teamId, colorIndex) => {
+                  dispatch({ type: 'SET_TEAM_COLOR', teamId, colorIndex });
+                  void supabase.from('teams').update({ color_index: colorIndex }).eq('id', teamId);
+                }}
+                onChangeTeamName={isStaff ? undefined : (teamId, name) => {
+                  dispatch({ type: 'RENAME_TEAM', teamId, name });
+                  void supabase.from('teams').update({ name }).eq('id', teamId);
+                }}
                 teamStaffMap={teamStaffMap}
               />
             </div>
@@ -1437,17 +1510,28 @@ export default function SchedulePage() {
               </div>
             </div>
           ) : state.viewMode === 'week' ? (
-            <WeekView
-              weekDates={weekDates}
-              daySchedules={activeWeekSchedules}
-              teamColor={activeTeam?.color || TEAM_COLORS[0]}
-              activeDate={state.focusedDate}
-              onDayClick={handleDayClick}
-              allTeamsMode={state.activeTeamId === 'all'}
-              allTeams={state.teams}
-              allTeamSchedules={weekSchedules}
-              staffNameMap={Object.fromEntries(allStaff.map(s => [s.id, s.name]))}
-            />
+            <DndContext onDragEnd={handleDragEnd}>
+              <div className="flex h-full min-w-0 bg-gradient-to-br from-transparent to-surface-hover/30">
+                {state.activeTeamId !== 'all' && (
+                  <div className="shrink-0 h-full pl-4 pb-4 lg:pl-6 lg:pb-6 pt-1">
+                    <WeekClientSidebar />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 h-full">
+                  <WeekView
+                    weekDates={weekDates}
+                    daySchedules={activeWeekSchedules}
+                    teamColor={activeTeam?.color || TEAM_COLORS[0]}
+                    activeDate={state.focusedDate}
+                    onDayClick={handleDayClick}
+                    allTeamsMode={state.activeTeamId === 'all'}
+                    allTeams={state.teams}
+                    allTeamSchedules={weekSchedules}
+                    staffNameMap={Object.fromEntries(allStaff.map(s => [s.id, s.name]))}
+                  />
+                </div>
+              </div>
+            </DndContext>
           ) : (
             <DayEditor
               state={state}

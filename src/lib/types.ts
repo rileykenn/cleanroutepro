@@ -308,7 +308,9 @@ export type ScheduleAction =
   | { type: 'SET_RETURN_ADDRESS'; teamId: string; location: Location }
   | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string }
   | { type: 'CLEAR_BASE_ADDRESS'; teamId: string }
-  | { type: 'SET_DRIVER'; teamId: string; staffId: string | null };
+  | { type: 'SET_DRIVER'; teamId: string; staffId: string | null }
+  | { type: 'SET_TEAM_COLOR'; teamId: string; colorIndex: number }
+  | { type: 'RENAME_TEAM'; teamId: string; name: string };
 
 
 export interface AppState {

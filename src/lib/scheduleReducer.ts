@@ -157,6 +157,18 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
         }
         return updated;
       }) };
+    case 'SET_TEAM_COLOR':
+      return { ...state, teams: state.teams.map(t =>
+        t.id !== action.teamId ? t : {
+          ...t,
+          colorIndex: action.colorIndex,
+          color: TEAM_COLORS[action.colorIndex % TEAM_COLORS.length],
+        }
+      ) };
+    case 'RENAME_TEAM':
+      return { ...state, teams: state.teams.map(t =>
+        t.id !== action.teamId ? t : { ...t, name: action.name }
+      ) };
     default:
       return state;
   }

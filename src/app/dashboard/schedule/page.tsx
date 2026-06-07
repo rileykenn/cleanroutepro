@@ -395,7 +395,7 @@ export default function SchedulePage() {
       const teamIds = teamsList.map((t: TeamSchedule) => t.id);
       const { data: allScheduleRows } = await supabase
         .from('schedules')
-        .select('id, team_id, schedule_date, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
+        .select('id, team_id, schedule_date, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id, staff_ids')
         .in('team_id', teamIds)
         .in('schedule_date', dates);
 

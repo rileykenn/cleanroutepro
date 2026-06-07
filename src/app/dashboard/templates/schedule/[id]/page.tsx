@@ -101,6 +101,8 @@ export default function ScheduleTemplateEditorPage({ params }: { params: Promise
       fuelEfficiency: Number(row.fuel_efficiency) || 10,
       fuelPrice: Number(row.fuel_price) || 1.85,
       perKmRate: Number(row.per_km_rate) || 0,
+      staffIds: [],
+      driverStaffId: null,
     }));
     allOrgTeamsRef.current = teams;
     return teams;
@@ -446,6 +448,8 @@ export default function ScheduleTemplateEditorPage({ params }: { params: Promise
       fuelEfficiency: 10,
       fuelPrice: 1.85,
       perKmRate: 0,
+      staffIds: [],
+      driverStaffId: null,
     };
 
     // Add to all cached days

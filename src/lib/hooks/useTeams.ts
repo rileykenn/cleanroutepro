@@ -32,6 +32,7 @@ export function useTeams(authOrgId: string | null) {
     dayStartTime: row.day_start_time || '08:00', breaks: [],
     hourlyRate: Number(row.hourly_rate) || 38, fuelEfficiency: Number(row.fuel_efficiency) || 10,
     fuelPrice: Number(row.fuel_price) || 1.85, perKmRate: Number(row.per_km_rate) || 0,
+    staffIds: [], driverStaffId: null,
   }), []);
 
   const loadTeams = useCallback(async () => {

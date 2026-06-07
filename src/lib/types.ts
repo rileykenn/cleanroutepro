@@ -126,7 +126,9 @@ export interface TeamSchedule {
   fuelEfficiency: number;
   fuelPrice: number;
   perKmRate: number;
-  /** Staff member assigned as driver for this day */
+  /** All staff on this team for this day (replaces per-job assignedStaffIds) */
+  staffIds: string[];
+  /** @deprecated use staffIds[0] or team.staffIds to find driver — kept for DB compat */
   driverStaffId?: string | null;
 }
 
@@ -171,6 +173,8 @@ export interface DaySchedule {
   hasReturnBase?: boolean;
   /** Driver assigned for this day */
   driverStaffId?: string | null;
+  /** All staff on this team for this day */
+  staffIds?: string[];
 }
 
 export const TEAM_COLORS: TeamColor[] = [
@@ -304,13 +308,14 @@ export type ScheduleAction =
   | { type: 'LOAD_STATE'; teams: TeamSchedule[]; activeTeamId: string; selectedDate: string }
   | { type: 'SET_VIEW_MODE'; viewMode: 'week' | 'day' }
   | { type: 'SET_FOCUSED_DATE'; date: string }
-  | { type: 'ASSIGN_STAFF_TO_JOB'; teamId: string; clientId: string; staffIds: string[] }
   | { type: 'SET_RETURN_ADDRESS'; teamId: string; location: Location }
   | { type: 'CLEAR_RETURN_ADDRESS'; teamId: string }
   | { type: 'CLEAR_BASE_ADDRESS'; teamId: string }
   | { type: 'SET_DRIVER'; teamId: string; staffId: string | null }
   | { type: 'SET_TEAM_COLOR'; teamId: string; colorIndex: number }
-  | { type: 'RENAME_TEAM'; teamId: string; name: string };
+  | { type: 'RENAME_TEAM'; teamId: string; name: string }
+  /** Set the full staff roster for a team on this day. Replaces per-job ASSIGN_STAFF_TO_JOB. */
+  | { type: 'SET_TEAM_STAFF'; teamId: string; staffIds: string[] };
 
 
 export interface AppState {

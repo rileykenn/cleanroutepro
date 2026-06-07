@@ -16,6 +16,20 @@ export default function RouteMap({ team }: RouteMapProps) {
   const lastBoundsRef = useRef<string>('');
   const boundsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ─── Stable refs so effects don't over-depend on the team object ───────────
+  // We only want markers to re-render when client *positions* or base address
+  // actually change — not on every travel-segment update (which would cause
+  // N-1 flickers for N jobs as each route leg resolves).
+  const clientPositionsKey = [
+    team.baseAddress ? `${team.baseAddress.lat},${team.baseAddress.lng}` : 'no-base',
+    ...team.clients.map((c) => `${c.id}:${c.location.lat},${c.location.lng}`),
+  ].join('|');
+
+  // Keep a ref to the latest team data so the route effect can read it without
+  // being in its own dependency array.
+  const teamRef = useRef(team);
+  teamRef.current = team;
+
   // Initialize services
   useEffect(() => {
     if (!routesLibrary || !map) return;
@@ -38,7 +52,8 @@ export default function RouteMap({ team }: RouteMapProps) {
     return () => {
       directionsRenderer.setMap(null);
     };
-  }, [routesLibrary, map, team.color.primary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routesLibrary, map]);
 
   // Update route polyline color when team changes
   useEffect(() => {
@@ -54,13 +69,14 @@ export default function RouteMap({ team }: RouteMapProps) {
 
   // Calculate and render the route
   const renderRoute = useCallback(() => {
-    if (!service || !renderer || !map || team.clients.length === 0) {
+    const t = teamRef.current;
+    if (!service || !renderer || !map || t.clients.length === 0) {
       renderer?.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
       return;
     }
 
-    const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
-    const returnAddr = team.returnAddress === 'none' ? null : (team.returnAddress || team.baseAddress);
+    const hasBase = t.baseAddress && t.baseAddress.lat !== 0;
+    const returnAddr = t.returnAddress === 'none' ? null : (t.returnAddress || t.baseAddress);
 
     let origin: google.maps.LatLngLiteral;
     let destination: google.maps.LatLngLiteral;
@@ -68,30 +84,30 @@ export default function RouteMap({ team }: RouteMapProps) {
 
     if (hasBase) {
       // Base → clients → return (or base)
-      origin = { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng };
+      origin = { lat: t.baseAddress!.lat, lng: t.baseAddress!.lng };
       destination = returnAddr
         ? { lat: returnAddr.lat, lng: returnAddr.lng }
-        : { lat: team.baseAddress!.lat, lng: team.baseAddress!.lng };
-      waypoints = team.clients.map((c) => ({
+        : { lat: t.baseAddress!.lat, lng: t.baseAddress!.lng };
+      waypoints = t.clients.map((c) => ({
         location: { lat: c.location.lat, lng: c.location.lng },
         stopover: true,
       }));
-    } else if (team.clients.length === 1) {
+    } else if (t.clients.length === 1) {
       // Single client, no base — nothing to route
       renderer?.setDirections({ routes: [] } as unknown as google.maps.DirectionsResult);
       return;
     } else {
       // No base: first client → intermediate clients → last client
-      const first = team.clients[0];
-      const last = team.clients[team.clients.length - 1];
+      const first = t.clients[0];
+      const last = t.clients[t.clients.length - 1];
       origin = { lat: first.location.lat, lng: first.location.lng };
       destination = returnAddr
         ? { lat: returnAddr.lat, lng: returnAddr.lng }
         : { lat: last.location.lat, lng: last.location.lng };
       // Middle clients are waypoints (skip first, and skip last if no return)
       const middleClients = returnAddr
-        ? team.clients.slice(1)  // all except first become waypoints
-        : team.clients.slice(1, -1); // skip first and last
+        ? t.clients.slice(1)  // all except first become waypoints
+        : t.clients.slice(1, -1); // skip first and last
       waypoints = middleClients.map((c) => ({
         location: { lat: c.location.lat, lng: c.location.lng },
         stopover: true,
@@ -112,22 +128,31 @@ export default function RouteMap({ team }: RouteMapProps) {
         }
       }
     );
-  }, [service, renderer, map, team.baseAddress, team.returnAddress, team.clients]);
+  // clientPositionsKey covers changes to client positions and base address.
+  // We intentionally exclude team.clients (object ref) so travel-segment
+  // updates don't retrigger the directions API.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service, renderer, map, clientPositionsKey]);
 
   useEffect(() => {
     renderRoute();
   }, [renderRoute]);
 
-  // Custom markers — stable, no-animation positioning
+  // ─── Custom markers ─────────────────────────────────────────────────────────
+  // Depends only on clientPositionsKey (positions + IDs) and team.color.primary.
+  // This means travel-segment updates — which only change travelSegments /
+  // startTime / endTime on clients — will NOT tear down and recreate markers.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!map) return;
 
+    const t = teamRef.current;
     const markers: google.maps.Marker[] = [];
 
     // Base marker
-    if (team.baseAddress) {
+    if (t.baseAddress) {
       const baseMarker = new google.maps.Marker({
-        position: { lat: team.baseAddress.lat, lng: team.baseAddress.lng },
+        position: { lat: t.baseAddress.lat, lng: t.baseAddress.lng },
         map,
         label: {
           text: '🏠',
@@ -140,7 +165,7 @@ export default function RouteMap({ team }: RouteMapProps) {
     }
 
     // Client markers
-    team.clients.forEach((client, index) => {
+    t.clients.forEach((client, index) => {
       const marker = new google.maps.Marker({
         position: { lat: client.location.lat, lng: client.location.lng },
         map,
@@ -154,7 +179,7 @@ export default function RouteMap({ team }: RouteMapProps) {
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
           scale: 16,
-          fillColor: team.color.primary,
+          fillColor: t.color.primary,
           fillOpacity: 1,
           strokeColor: 'white',
           strokeWeight: 3,
@@ -162,13 +187,13 @@ export default function RouteMap({ team }: RouteMapProps) {
         zIndex: 999 - index,
       });
 
-      // Info window
+      // Info window — reads live data from teamRef so it's always fresh
       const infoWindow = new google.maps.InfoWindow({
         content: `
           <div style="font-family: Inter, system-ui, sans-serif; padding: 4px 0;">
             <div style="font-weight: 600; font-size: 14px; color: #111827; margin-bottom: 4px;">${client.name}</div>
             <div style="font-size: 13px; color: #6B7280; margin-bottom: 4px;">${client.location.address}</div>
-            <div style="font-size: 13px; color: ${team.color.primary}; font-weight: 500;">
+            <div style="font-size: 13px; color: ${t.color.primary}; font-weight: 500;">
               ${client.startTime || ''} – ${client.endTime || ''} · ${client.jobDurationMinutes} min
             </div>
           </div>
@@ -183,10 +208,7 @@ export default function RouteMap({ team }: RouteMapProps) {
     });
 
     // Build a stable fingerprint of marker positions so we only refit when positions actually change
-    const boundsFingerprint = [
-      team.baseAddress ? `${team.baseAddress.lat},${team.baseAddress.lng}` : '',
-      ...team.clients.map(c => `${c.location.lat},${c.location.lng}`),
-    ].join('|');
+    const boundsFingerprint = clientPositionsKey;
 
     // Only fit bounds if marker positions actually changed (not on every time/color re-render)
     if (markers.length > 0 && boundsFingerprint !== lastBoundsRef.current) {
@@ -219,8 +241,8 @@ export default function RouteMap({ team }: RouteMapProps) {
       markers.forEach((m) => m.setMap(null));
       if (boundsTimerRef.current) clearTimeout(boundsTimerRef.current);
     };
-  }, [map, team.baseAddress, team.clients, team.color.primary]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, clientPositionsKey, team.color.primary]);
 
   return null;
 }
-

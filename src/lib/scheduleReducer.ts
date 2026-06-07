@@ -17,6 +17,8 @@ function createDefaultTeam(colorIndex: number): TeamSchedule {
     fuelEfficiency: 10,
     fuelPrice: 1.85,
     perKmRate: 0,
+    staffIds: [],
+    driverStaffId: null,
   };
 }
 
@@ -111,14 +113,25 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: action.clients } : t) };
     case 'SET_FIXED_START_TIME':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, fixedStartTime: action.time } : c) } : t) };
-    case 'LOAD_STATE':
-      return { ...state, teams: action.teams, activeTeamId: action.activeTeamId, selectedDate: action.selectedDate };
+    case 'LOAD_STATE': {
+      // Deduplicate teams by ID — multiple concurrent dispatches (loadDayForEdit,
+      // loadWeekSchedules, handleAddTeam) can race and produce duplicate entries.
+      const seen = new Set<string>();
+      const uniqueTeams = action.teams.filter(t => {
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      });
+      return { ...state, teams: uniqueTeams, activeTeamId: action.activeTeamId, selectedDate: action.selectedDate };
+    }
     case 'SET_VIEW_MODE':
       return { ...state, viewMode: action.viewMode };
     case 'SET_FOCUSED_DATE':
       return { ...state, focusedDate: action.date, selectedDate: action.date };
-    case 'ASSIGN_STAFF_TO_JOB':
-      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, clients: t.clients.map((c) => c.id === action.clientId ? { ...c, assignedStaffIds: action.staffIds, staffCount: Math.max(1, action.staffIds.length) } : c) } : t) };
+    case 'SET_TEAM_STAFF':
+      return { ...state, teams: state.teams.map(t =>
+        t.id !== action.teamId ? t : { ...t, staffIds: action.staffIds }
+      ) };
     case 'SET_RETURN_ADDRESS': {
       return { ...state, teams: state.teams.map((t) => {
         if (t.id !== action.teamId) return t;
@@ -134,28 +147,11 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
     case 'CLEAR_BASE_ADDRESS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, baseAddress: null, returnAddress: 'none', travelSegments: new Map() } : t) };
     case 'SET_DRIVER':
-      return { ...state, teams: state.teams.map((t) => {
+      return { ...state, teams: state.teams.map(t => {
         if (t.id !== action.teamId) return t;
-        const oldDriverId = t.driverStaffId;
-        const updated = { ...t, driverStaffId: action.staffId };
-        // Remove old driver from all jobs
-        if (oldDriverId) {
-          updated.clients = (updated.clients || t.clients).map(c => {
-            const ids = c.assignedStaffIds || [];
-            if (!ids.includes(oldDriverId)) return c;
-            return { ...c, assignedStaffIds: ids.filter(id => id !== oldDriverId) };
-          });
-        }
-        // Add new driver to all jobs
-        if (action.staffId) {
-          const sid = action.staffId;
-          updated.clients = (updated.clients || t.clients).map(c => {
-            const ids = c.assignedStaffIds || [];
-            if (ids.includes(sid)) return c;
-            return { ...c, assignedStaffIds: [...ids, sid] };
-          });
-        }
-        return updated;
+        // SET_DRIVER now just updates driverStaffId for DB compat;
+        // actual staff roster is managed via SET_TEAM_STAFF.
+        return { ...t, driverStaffId: action.staffId };
       }) };
     case 'SET_TEAM_COLOR':
       return { ...state, teams: state.teams.map(t =>

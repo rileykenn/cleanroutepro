@@ -4,11 +4,12 @@ import { useReducer, useEffect, useLayoutEffect, useMemo, useState, useCallback,
 import { APIProvider } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
-import { DndContext, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays, generateId } from '@/lib/timeUtils';
 import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex, Location as AppLocation } from '@/lib/types';
+import { computeDayWarnings } from '@/lib/scheduleWarnings';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { SavedClient } from '@/lib/hooks/useClients';
@@ -24,19 +25,39 @@ import ConfirmModal from '@/components/ConfirmModal';
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
-// Module-level cache — persists across route changes in the same browser session.
-// This eliminates the loading skeleton when switching back to the schedule tab.
-type SchedulePageCache = {
-  weekSchedules: Map<string, Map<string, DaySchedule>>;
-  allStaff: StaffMember[];
-  publishedDates: Set<string>;
-  timestamp: number;
-};
-let _pageCache: SchedulePageCache | null = null;
-const CACHE_TTL = 30_000; // 30 seconds — short enough that stale ghosts expire quickly
-/** Called by DayEditor after every autosave so the next tab-switch re-fetches fresh data */
-export function invalidateScheduleCache() {
-  if (_pageCache) _pageCache.timestamp = 0;
+/** Called by DayEditor after every autosave — kept as a no-op export so DayEditor import doesn't break. */
+export function invalidateScheduleCache() {}
+
+// ─── Delete drop zone ─────────────────────────────────────────────────────────
+function DeleteZone() {
+  const { isOver, setNodeRef } = useDroppable({ id: 'delete-zone' });
+  return (
+    <motion.div
+      ref={setNodeRef}
+      initial={{ y: 40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 40, opacity: 0 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
+      className={`fixed bottom-20 lg:bottom-8 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-8 py-4 rounded-2xl border-2 transition-colors duration-100 pointer-events-none ${
+        isOver
+          ? 'bg-red-500 border-red-400 shadow-[0_0_40px_rgba(239,68,68,0.5)]'
+          : 'bg-white/95 border-red-300 backdrop-blur-xl shadow-xl'
+      }`}
+    >
+      <svg
+        width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke={isOver ? 'white' : '#ef4444'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      >
+        <polyline points="3 6 5 6 21 6" />
+        <path d="M19 6l-1 14H6L5 6" />
+        <path d="M10 11v6M14 11v6" />
+        <path d="M9 6V4h6v2" />
+      </svg>
+      <span className={`text-sm font-bold ${isOver ? 'text-white' : 'text-red-500'}`}>
+        {isOver ? 'Release to delete' : 'Drop here to remove'}
+      </span>
+    </motion.div>
+  );
 }
 
 export default function SchedulePage() {
@@ -47,6 +68,7 @@ export default function SchedulePage() {
   const [showMonth, setShowMonth] = useState(false);
   const [showClearWeek, setShowClearWeek] = useState(false);
   const [activeDragClient, setActiveDragClient] = useState<SavedClient | null>(null);
+  const [activeDragJob, setActiveDragJob] = useState<Client | null>(null);
   const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
   const [templateToast, setTemplateToast] = useState<string | null>(null);
 
@@ -54,16 +76,30 @@ export default function SchedulePage() {
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
   const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
-  const daySaveRef = useRef<(() => Promise<void>) | null>(null);
+  const selectedDateRef = useRef(state.selectedDate);
+  selectedDateRef.current = state.selectedDate;
+
   const activeTeamIdRef = useRef(state.activeTeamId);
   activeTeamIdRef.current = state.activeTeamId;
   const viewModeRef = useRef(state.viewMode);
   viewModeRef.current = state.viewMode;
-  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; date: string; dayJobCount: number } | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<{ id: string; name: string; weekJobCount: number } | null>(null);
   const allOrgTeamsRef = useRef<TeamSchedule[]>([]);
+  // Teams active for the CURRENT WEEK only (those with a schedules row this week).
+  // loadDayForEdit uses this so day view shows the same teams as week view.
+  const weekTeamsRef = useRef<TeamSchedule[]>([]);
   // Increments after every loadDayForEdit/loadDayFromCache so DayEditor re-records
   // its autosave baseline and doesn't mistake the load for a user edit.
   const [dayLoadGen, setDayLoadGen] = useState(0);
+  const daySaveRef = useRef<(() => Promise<void>) | null>(null);
+  // Set to true just before an explicit flush so DayEditor's unmount cleanup
+  // doesn't double-save and race with the following loadWeekSchedules read.
+  const skipUnmountSaveRef = useRef<boolean>(false);
+  // Guards against stale loadDayForEdit responses when the user rapidly cycles days.
+  // Each call increments this; if the value changed by the time the DB responds, discard.
+  const dayLoadRequestRef = useRef(0);
 
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
@@ -73,14 +109,114 @@ export default function SchedulePage() {
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
 
+  // ─── Drag and Drop sensors ───
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
+  );
+
   // ─── Drag and Drop Handler ───
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveDragClient(event.active.data.current?.client || null);
+    const data = event.active.data.current;
+    if (data?.type === 'job') {
+      setActiveDragJob(data.job as Client);
+    } else {
+      setActiveDragClient(data?.client || null);
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveDragClient(null);
     const { active, over } = event;
+    const dragType = active.data.current?.type;
+
+    // ─── Job card drag (move between days or delete) ───────────────────────
+    if (dragType === 'job') {
+      setActiveDragJob(null);
+      if (!orgId) return;
+
+      const jobData = active.data.current?.job as Client;
+      const fromDate = active.data.current?.date as string;
+
+      // ── Delete zone ──
+      if (over?.id === 'delete-zone') {
+        setWeekSchedules(prev => {
+          const next = new Map(prev);
+          const teamMap = next.get(state.activeTeamId);
+          if (!teamMap) return next;
+          const nextTeamMap = new Map(teamMap);
+          const day = nextTeamMap.get(fromDate);
+          if (day) nextTeamMap.set(fromDate, { ...day, clients: day.clients.filter(c => c.id !== jobData.id) });
+          next.set(state.activeTeamId, nextTeamMap);
+          return next;
+        });
+        await supabase.from('schedule_jobs').delete().eq('id', jobData.id);
+        return;
+      }
+
+      // ── Move to a different day ──
+      if (!over) return;
+      const targetDate = over.id as string;
+      if (targetDate === fromDate) return; // same day — no-op
+      if (state.activeTeamId === 'all') return;
+
+      // Ensure schedule row exists for target date
+      let { data: targetSched } = await supabase
+        .from('schedules').select('id')
+        .eq('team_id', state.activeTeamId).eq('schedule_date', targetDate)
+        .maybeSingle();
+
+      if (!targetSched) {
+        const { data: newSched } = await supabase
+          .from('schedules')
+          .insert({ org_id: orgId, team_id: state.activeTeamId, schedule_date: targetDate })
+          .select('id').single();
+        targetSched = newSched;
+      }
+      if (!targetSched) return;
+
+      const { count } = await supabase
+        .from('schedule_jobs').select('id', { count: 'exact', head: true })
+        .eq('schedule_id', targetSched.id).eq('is_break', false);
+
+      // Optimistic move
+      setWeekSchedules(prev => {
+        const next = new Map(prev);
+        const teamMap = next.get(state.activeTeamId) || new Map<string, DaySchedule>();
+        const nextTeamMap = new Map(teamMap);
+
+        // Remove from source day
+        const srcDay = nextTeamMap.get(fromDate);
+        if (srcDay) nextTeamMap.set(fromDate, { ...srcDay, clients: srcDay.clients.filter(c => c.id !== jobData.id) });
+
+        // Add to target day
+        const tgtDay = nextTeamMap.get(targetDate) || {
+          date: targetDate,
+          dayOfWeek: new Date(targetDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
+          scheduleId: targetSched!.id,
+          clients: [],
+          breaks: [],
+          isPublished: false,
+        };
+        const movedJob = { ...jobData, startTime: undefined, endTime: undefined };
+        nextTeamMap.set(targetDate, { ...tgtDay, clients: [...tgtDay.clients, movedJob] });
+
+        next.set(state.activeTeamId, nextTeamMap);
+        return next;
+      });
+
+      await supabase.from('schedule_jobs').update({
+        schedule_id: targetSched.id,
+        position: count || 0,
+        start_time: null,
+        end_time: null,
+      }).eq('id', jobData.id);
+
+      return;
+    }
+
+    // ─── Client roster drag (from sidebar) ────────────────────────────────
+    setActiveDragClient(null);
     if (!over || !orgId) return;
     
     // Cannot drop clients in "All Teams" view (need a specific team)
@@ -118,51 +254,53 @@ export default function SchedulePage() {
     const position = count || 0;
     
     const newJob = {
-      id: generateId(),
+      id: crypto.randomUUID(),
+      org_id: orgId,
       schedule_id: scheduleRow.id,
       client_id: clientData.id,
       name: clientData.name,
-      address: clientData.address,
-      lat: clientData.lat,
-      lng: clientData.lng,
-      place_id: clientData.place_id,
+      address: clientData.address || '',
+      lat: clientData.lat ?? 0,
+      lng: clientData.lng ?? 0,
+      place_id: clientData.place_id || null,
       duration_minutes: clientData.default_duration_minutes,
       staff_count: clientData.default_staff_count,
       is_locked: false,
+      is_break: false,
       position: position,
-      clientColor: clientData.color || undefined,
-      clientRate: clientData.rate || undefined,
+      notes: '',
+      fixed_start_time: null,
       assigned_staff_ids: [],
     };
 
-    // Optimistic UI update:
+    // Optimistic UI update — show immediately before the DB round-trip
     setWeekSchedules((prev) => {
       const next = new Map(prev);
       const teamMap = next.get(state.activeTeamId) || new Map<string, DaySchedule>();
       const nextTeamMap = new Map(teamMap);
-      const day = nextTeamMap.get(targetDate) || { date: targetDate, isPublished: false, clients: [] };
+      const day = nextTeamMap.get(targetDate) || {
+        date: targetDate,
+        dayOfWeek: new Date(targetDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
+        scheduleId: scheduleRow!.id,
+        clients: [],
+        breaks: [],
+        isPublished: false,
+      };
       nextTeamMap.set(targetDate, { ...day, clients: [...day.clients, newJob as any] });
       next.set(state.activeTeamId, nextTeamMap);
       return next;
     });
 
-    await supabase.from('schedule_jobs').insert(newJob);
-
-    // 4. Reload schedules to sync any missing data
-    loadWeekSchedules(weekDates);
+    // Persist to DB — await so we can catch failures and reload to correct state
+    const { error: insertError } = await supabase.from('schedule_jobs').insert(newJob);
+    if (insertError) {
+      console.error('Failed to save dropped client:', insertError);
+      // Roll back the optimistic update by reloading from DB
+      loadWeekSchedules(weekDates);
+    }
   };
 
-  // ─── Restore from cache on client (no SSR hydration mismatch) ───
-  // useLayoutEffect runs only on the client, synchronously before paint,
-  // so if the cache is fresh the user never sees the skeleton on tab switch.
-  useLayoutEffect(() => {
-    if (_pageCache && Date.now() - _pageCache.timestamp < CACHE_TTL) {
-      setWeekSchedules(_pageCache.weekSchedules);
-      setPublishedDates(_pageCache.publishedDates);
-      setAllStaff(_pageCache.allStaff);
-      setDbLoaded(true);
-    }
-  }, []);
+  // Cache removed — always load fresh from DB on mount to avoid stale-state conflicts with autosave.
 
   // ─── Load teams on mount ───
   const loadTeams = useCallback(async () => {
@@ -194,6 +332,8 @@ export default function SchedulePage() {
       fuelEfficiency: Number(row.fuel_efficiency) || 10,
       fuelPrice: Number(row.fuel_price) || 1.85,
       perKmRate: Number(row.per_km_rate) || 0,
+      staffIds: [],
+      driverStaffId: null,
     }));
 
     // Auto-fix duplicate color indices
@@ -213,7 +353,10 @@ export default function SchedulePage() {
   }, [orgId, supabase]);
 
   // ─── Load week schedules for overview ───
-  const loadWeekSchedules = useCallback(async (dates: string[]) => {
+  // skipDispatch=true: update cache/refs but don't re-render teams in state.
+  // Used by handleBackToWeek's background sync to avoid a second LOAD_STATE
+  // dispatch after the UI has already been updated from the local cache patch.
+  const loadWeekSchedules = useCallback(async (dates: string[], { skipDispatch = false }: { skipDispatch?: boolean } = {}) => {
     if (!orgId) return;
     try {
       const teamsList = await loadTeams();
@@ -226,8 +369,9 @@ export default function SchedulePage() {
             id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0], colorIndex: 0,
             baseAddress: null, returnAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
             breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+            staffIds: [], driverStaffId: null,
           };
-          dispatch({ type: 'LOAD_STATE', teams: [defaultTeam], activeTeamId: defaultTeam.id, selectedDate: state.selectedDate });
+          if (!skipDispatch) dispatch({ type: 'LOAD_STATE', teams: [defaultTeam], activeTeamId: defaultTeam.id, selectedDate: state.selectedDate });
         }
         setDbLoaded(true);
         return;
@@ -293,6 +437,7 @@ export default function SchedulePage() {
           let hasStartBase = schedule?.has_start_base !== false;
           let hasReturnBase = schedule?.has_return_base !== false;
           let dayDriverStaffId: string | null = (schedule?.driver_staff_id as string) || null;
+          let dayStaffIds: string[] = (schedule?.staff_ids as string[]) || [];
 
           // Per-day base address (from schedule row, or fallback to team default)
           let dayBaseAddress: AppLocation | null = team.baseAddress;
@@ -374,6 +519,7 @@ export default function SchedulePage() {
             hasStartBase,
             hasReturnBase,
             driverStaffId: dayDriverStaffId,
+            staffIds: dayStaffIds,
           });
         }
 
@@ -383,30 +529,25 @@ export default function SchedulePage() {
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
-      // Invalidate the module-level page cache so tab-switching never restores stale data.
-      // We clear it here and re-set it ONLY after a successful full load.
-      _pageCache = { weekSchedules: allTeamMaps, publishedDates: newPublished, allStaff: _pageCache?.allStaff || [], timestamp: Date.now() };
 
       // Store ALL org teams — used by addTeam, template save, template load, etc.
       allOrgTeamsRef.current = teamsList;
 
       // ── Only show teams that have at least one schedule row this week ──
-      // Teams are global per-org, but each week is independent. A team only
-      // appears in a given week if it has a `schedules` row for any day of that week.
-      // Navigating to a week you've never touched shows zero teams (correct).
-      if (viewModeRef.current !== 'day') {
-        const today = state.selectedDate;
+      const teamsThisWeek = teamsList.filter((team: TeamSchedule) => {
+        const teamMap = allTeamMaps.get(team.id);
+        if (!teamMap) return false;
+        for (const [, day] of teamMap) {
+          if (day.scheduleId !== null) return true;
+        }
+        return false;
+      });
+      weekTeamsRef.current = teamsThisWeek;
 
-        // Filter: only teams with at least one non-null scheduleId this week
-        const teamsThisWeek = teamsList.filter((team: TeamSchedule) => {
-          const teamMap = allTeamMaps.get(team.id);
-          if (!teamMap) return false;
-          for (const [, day] of teamMap) {
-            if (day.scheduleId !== null) return true;
-          }
-          return false;
-        });
-
+      // skipDispatch=true: cache and refs are updated above; skip the LOAD_STATE
+      // dispatch to avoid a second render when the UI is already showing correct data.
+      if (!skipDispatch && viewModeRef.current !== 'day') {
+        const today = selectedDateRef.current;
         const teamsWithClients = teamsThisWeek.map((team: TeamSchedule) => {
           const teamMap = allTeamMaps.get(team.id);
           const dayData = teamMap?.get(today);
@@ -415,12 +556,12 @@ export default function SchedulePage() {
             clients: dayData?.clients || [],
             breaks: dayData?.breaks || [],
             driverStaffId: dayData?.driverStaffId || null,
+            staffIds: dayData?.staffIds || [],
             baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
             returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
           };
         });
 
-        // Empty week — dispatch empty teams array so the UI shows the "no teams" empty state
         if (teamsWithClients.length === 0) {
           dispatch({ type: 'LOAD_STATE', teams: [], activeTeamId: '', selectedDate: today });
         } else {
@@ -435,40 +576,34 @@ export default function SchedulePage() {
       setDbLoaded(true);
     } catch (err) {
       console.error('[Schedule] Failed to load week schedules:', err);
-      setDbLoaded(true); // Unblock the UI even on error
+      setDbLoaded(true);
     }
-  }, [orgId, supabase, loadTeams, state.selectedDate]);
+  }, [orgId, supabase, loadTeams]);
 
-  // ─── Load staff directory once ───
   const loadStaffMembers = useCallback(async () => {
     if (!orgId) return;
     const { data } = await supabase.from('staff_members').select('id, name, role, hourly_rate, available_days').eq('org_id', orgId).order('name');
     if (data) {
       setAllStaff(data as StaffMember[]);
-      if (_pageCache) _pageCache = { ..._pageCache, allStaff: data as StaffMember[], timestamp: Date.now() };
+      // (cache removed)
     }
   }, [orgId, supabase]);
 
-  // Derive teamStaffMap from per-job assignments (for TeamTabs badges)
+  // Derive teamStaffMap from team-level staffIds (for TeamTabs badges)
   const deriveTeamStaffMap = useCallback(() => {
     const map = new Map<string, { id: string; name: string; hourly_rate: number }[]>();
     const staffLookup = new Map(allStaff.map(s => [s.id, { name: s.name, hourly_rate: s.hourly_rate }]));
     for (const team of state.teams) {
-      const seen = new Set<string>();
       const list: { id: string; name: string; hourly_rate: number }[] = [];
-      for (const c of team.clients) {
-        for (const sid of c.assignedStaffIds || []) {
-          if (!seen.has(sid)) {
-            seen.add(sid);
-            const info = staffLookup.get(sid);
-            if (info) list.push({ id: sid, name: info.name, hourly_rate: info.hourly_rate });
-          }
-        }
+      for (const staffId of team.staffIds || []) {
+        const s = staffLookup.get(staffId);
+        if (s) list.push({ id: staffId, name: s.name, hourly_rate: s.hourly_rate });
       }
-      if (list.length > 0) map.set(team.id, list);
+      map.set(team.id, list);
     }
     setTeamStaffMap(map);
   }, [state.teams, allStaff]);
+
 
   // Initial load
   useEffect(() => {
@@ -521,7 +656,17 @@ export default function SchedulePage() {
   // ─── Load specific day into reducer for Day View (bulk queries) ───
   const loadDayForEdit = useCallback(async (date: string) => {
     if (!orgId) return;
-    const allTeams = allOrgTeamsRef.current.length > 0 ? allOrgTeamsRef.current : (await loadTeams() || []);
+    // Capture a unique token for this request. If a newer call starts before this
+    // one resolves, the check at the bottom will discard the stale response.
+    const requestToken = ++dayLoadRequestRef.current;
+    // Use week-active teams (same set shown in week view) so day view always shows
+    // exactly the same teams. Fallback to allOrgTeamsRef only on first load before
+    // loadWeekSchedules has populated weekTeamsRef.
+    const allTeams = weekTeamsRef.current.length > 0
+      ? weekTeamsRef.current
+      : allOrgTeamsRef.current.length > 0
+        ? allOrgTeamsRef.current
+        : (await loadTeams() || []);
     if (allTeams.length === 0) return;
 
     const teamIds = allTeams.map((t: TeamSchedule) => t.id);
@@ -529,7 +674,7 @@ export default function SchedulePage() {
     // ── 1 bulk query: all schedules for these teams on this date ──
     const { data: schedules } = await supabase
       .from('schedules')
-      .select('id, team_id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id')
+      .select('id, team_id, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id, staff_ids')
       .eq('schedule_date', date)
       .in('team_id', teamIds);
 
@@ -600,8 +745,9 @@ export default function SchedulePage() {
             lng: Number(schedule.return_lng) || 0, placeId: schedule.return_place_id ? String(schedule.return_place_id) : undefined,
           };
         }
-        // Restore driver for this day
+        // Restore driver and team staff roster for this day
         team.driverStaffId = (schedule.driver_staff_id as string) || null;
+        team.staffIds = (schedule.staff_ids as string[]) || [];
 
         const jobs = jobsBySchedule.get(schedule.id as string) || [];
         team.clients = jobs
@@ -659,17 +805,25 @@ export default function SchedulePage() {
       teamsList.push(team);
     }
 
-    const visibleTeams = teamsList.filter(t => teamsWithSchedule.has(t.id));
-    const finalTeams = visibleTeams.length > 0 ? visibleTeams : [teamsList[0]];
+    // Guard: if a newer loadDayForEdit was started while we were awaiting the DB,
+    // discard this stale response so we don't overwrite the correct state.
+    if (requestToken !== dayLoadRequestRef.current) return;
 
-    dispatch({ type: 'LOAD_STATE', teams: finalTeams, activeTeamId: finalTeams.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id, selectedDate: date });
+    // Day view always shows ALL org teams (not just those with a schedules row).
+    // Teams without a schedule row on this day appear empty — they still exist.
+    // The "only show teams with rows" filter belongs in WEEK view only, where it
+    // hides teams that were never added to a particular historical week.
+    // Filtering here caused phantom team duplication: as autosave created rows
+    // while cycling between days, more teams appeared with each navigation.
+    dispatch({ type: 'LOAD_STATE', teams: teamsList, activeTeamId: teamsList.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsList[0].id, selectedDate: date });
     setDayLoadGen(g => g + 1);
   }, [orgId, supabase, loadTeams]);
 
   // ─── Instant day switch from weekSchedules cache ───
   const loadDayFromCache = useCallback((date: string): boolean => {
     if (weekSchedules.size === 0) return false;
-    const allTeams = allOrgTeamsRef.current;
+    // Use week-active teams (same as week view) so day view is consistent.
+    const allTeams = weekTeamsRef.current.length > 0 ? weekTeamsRef.current : allOrgTeamsRef.current;
     if (allTeams.length === 0) return false;
 
     // Only use cache for dates within the currently loaded week
@@ -686,23 +840,19 @@ export default function SchedulePage() {
         ...team,
         clients: dayData?.clients || [],
         travelSegments: new Map<string, TravelSegment>(),
-        // Use breaks from the week cache (populated by loadWeekSchedules)
         breaks: dayData?.breaks || [] as typeof team.breaks,
         baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
         returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
         driverStaffId: dayData?.driverStaffId !== undefined ? dayData.driverStaffId : null,
+        staffIds: dayData?.staffIds || [],
       };
     });
 
-    // Always show ALL teams in day view (same as week view).
-    // Teams with no jobs today appear as empty — they don't disappear.
-    const finalTeams = teamsWithClients.length > 0 ? teamsWithClients : [teamsWithClients[0]];
-
-
+    // Show week-active teams in day view — teams with no jobs on this day appear empty.
     dispatch({
       type: 'LOAD_STATE',
-      teams: finalTeams,
-      activeTeamId: finalTeams.find(t => t.id === activeTeamIdRef.current)?.id || finalTeams[0].id,
+      teams: teamsWithClients,
+      activeTeamId: teamsWithClients.find(t => t.id === activeTeamIdRef.current)?.id || teamsWithClients[0].id,
       selectedDate: date,
     });
     setDayLoadGen(g => g + 1);
@@ -725,16 +875,21 @@ export default function SchedulePage() {
     dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
     // Try instant load from weekSchedules cache
     if (!loadDayFromCache(newDate)) {
-      // Cross-week or no cache: clear stale data immediately, then fetch
+      // Cross-week or no cache: immediately clear client lists so the UI doesn't
+      // show stale jobs while we await the DB. Use allOrgTeamsRef (not the stale
+      // state.teams closure) so team count stays correct.
+      const currentTeams = allOrgTeamsRef.current.length > 0
+        ? allOrgTeamsRef.current
+        : stateRef.current.teams;
       dispatch({
         type: 'LOAD_STATE',
-        teams: state.teams.map(t => ({ ...t, clients: [], travelSegments: new Map<string, TravelSegment>(), breaks: [] as typeof t.breaks })),
-        activeTeamId: state.activeTeamId,
+        teams: currentTeams.map(t => ({ ...t, clients: [], travelSegments: new Map<string, TravelSegment>(), breaks: [] as typeof t.breaks })),
+        activeTeamId: activeTeamIdRef.current || currentTeams[0]?.id || '',
         selectedDate: newDate,
       });
       await loadDayForEdit(newDate);
     }
-  }, [loadDayFromCache, loadDayForEdit, state.teams, state.activeTeamId]);
+  }, [loadDayFromCache, loadDayForEdit]);
 
   const goToPrevDay = async () => {
     if (daySaveRef.current) await daySaveRef.current();
@@ -757,58 +912,60 @@ export default function SchedulePage() {
     }
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' });
     dispatch({ type: 'SET_FOCUSED_DATE', date });
-    // Always do a fresh DB read when entering day view from week view.
-    // The week cache (weekSchedules) is stale at this point — handleBackToWeek
-    // fires loadWeekSchedules in the background, so it may not have finished
-    // by the time the user clicks a day cell. loadDayForEdit reads the DB
-    // directly and will have any data that saveNow flushed before leaving day view.
-    loadDayForEdit(date);
+    // Try the week cache first — instant render, no DB round-trip, no map pin flicker.
+    // Falls back to a DB fetch only for cross-week navigation where cache has no data.
+    if (!loadDayFromCache(date)) {
+      loadDayForEdit(date);
+    }
   };
 
-  const handleBackToWeek = async () => {
-    // Flush pending save before switching views
-    if (daySaveRef.current) await daySaveRef.current();
+  const handleBackToWeek = () => {
+    // ── 1. Instantly patch weekSchedules from the reducer state ──────────────
+    // The reducer already holds the ground truth for the day being edited —
+    // every client add/remove/edit is already in state.teams. Write it straight
+    // into weekSchedules so the week view renders with correct data immediately,
+    // with no DB round-trip and no flicker at all.
+    const editedDate = stateRef.current.selectedDate;
+    setWeekSchedules(prev => {
+      const next = new Map(prev);
+      for (const team of stateRef.current.teams) {
+        const teamMap = new Map(next.get(team.id) || new Map<string, DaySchedule>());
+        const existing = teamMap.get(editedDate);
+        teamMap.set(editedDate, {
+          date: editedDate,
+          dayOfWeek: existing?.dayOfWeek ||
+            new Date(editedDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
+          scheduleId: existing?.scheduleId || null,
+          clients: team.clients,
+          breaks: team.breaks,
+          templateCode: existing?.templateCode,
+          isPublished: existing?.isPublished || false,
+          baseAddress: team.baseAddress,
+          returnAddress: team.returnAddress,
+          driverStaffId: team.driverStaffId || null,
+          staffIds: team.staffIds || [],
+        });
+        next.set(team.id, teamMap);
+      }
+      return next;
+    });
+
+    // ── 2. Switch view immediately ─────────────────────────────────────────
     dispatch({ type: 'SET_VIEW_MODE', viewMode: 'week' });
 
-    // Instantly restore all org teams with cached week data so tabs appear immediately
-    const allTeams = allOrgTeamsRef.current;
-    if (allTeams.length > 0 && weekSchedules.size > 0) {
-      const today = state.selectedDate;
-      const restoredTeams = allTeams.map((team: TeamSchedule) => {
-        const teamMap = weekSchedules.get(team.id);
-        const dayData = teamMap?.get(today);
-        return {
-          ...team,
-          clients: dayData?.clients || [],
-          travelSegments: new Map<string, TravelSegment>(),
-          breaks: [] as typeof team.breaks,
-          baseAddress: dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
-          returnAddress: dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress,
-        };
-      });
-      // Show only teams that have a schedule row this week — same logic as loadWeekSchedules
-      const teamsWithWeekSchedule = restoredTeams.filter((t: TeamSchedule) => {
-        const teamMap = weekSchedules.get(t.id);
-        if (!teamMap) return false;
-        for (const [, d] of teamMap) { if (d.scheduleId !== null) return true; }
-        return false;
-      });
-      // Empty week: dispatch empty array rather than falling back to showing a random team
-      if (teamsWithWeekSchedule.length === 0) {
-        dispatch({ type: 'LOAD_STATE', teams: [], activeTeamId: '', selectedDate: today });
-      } else {
-        dispatch({
-          type: 'LOAD_STATE',
-          teams: teamsWithWeekSchedule,
-          activeTeamId: teamsWithWeekSchedule.find((t: TeamSchedule) => t.id === activeTeamIdRef.current)?.id || teamsWithWeekSchedule[0].id,
-          selectedDate: today,
-        });
-      }
-    }
-
-    // Background refresh to pick up any changes made during day editing
-    loadWeekSchedules(weekDates);
+    // ── 3. Persist to DB in the background (no UI blocking) ───────────────
+    // Signal DayEditor to skip its unmount-cleanup flush — we flush explicitly.
+    skipUnmountSaveRef.current = true;
+    (async () => {
+      if (daySaveRef.current) await daySaveRef.current();
+      // Silently reconcile DB → weekSchedules after save completes.
+      // skipDispatch:true ensures no LOAD_STATE is fired, so the week job cards
+      // that are already showing the correct state won't remount or re-animate.
+      await loadWeekSchedules(weekDates, { skipDispatch: true });
+      skipUnmountSaveRef.current = false;
+    })();
   };
+
 
 
   // ─── Publish / Unpublish Week ───
@@ -968,9 +1125,17 @@ export default function SchedulePage() {
   const handleAddTeam = useCallback(async () => {
     if (!orgId) return;
 
-    // Check if there are existing teams not currently shown this week
     const shownTeamIds = new Set(state.teams.map(t => t.id));
-    const unusedTeam = allOrgTeamsRef.current.find(t => !shownTeamIds.has(t.id));
+
+    let unusedTeam: TeamSchedule | null = null;
+    if (state.teams.length === 0) {
+      // Fresh/cleared week — reuse the first org team (Team 1) so we don't keep
+      // creating "Team 8", "Team 9" etc. from accumulated history.
+      unusedTeam = allOrgTeamsRef.current[0] || null;
+    } else {
+      // Week already has teams — pick the next org team not yet shown this week.
+      unusedTeam = allOrgTeamsRef.current.find(t => !shownTeamIds.has(t.id)) || null;
+    }
 
     let teamToAdd: TeamSchedule;
 
@@ -992,72 +1157,73 @@ export default function SchedulePage() {
         baseAddress: baseAddr ? { ...baseAddr } : null, returnAddress: null,
         clients: [], travelSegments: new Map(), dayStartTime: '08:00',
         breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+        staffIds: [], driverStaffId: null,
       };
       allOrgTeamsRef.current = [...allOrgTeamsRef.current, teamToAdd];
     }
 
-    // Create an empty schedule row for the SELECTED DATE only
-    // (not the whole week — teams are per-day)
-    const targetDate = state.selectedDate;
-    const { data: existingSched } = await supabase
-      .from('schedules').select('id').eq('team_id', teamToAdd.id).eq('schedule_date', targetDate).maybeSingle();
-    if (!existingSched) {
-      await supabase.from('schedules').insert({ org_id: orgId, team_id: teamToAdd.id, schedule_date: targetDate });
+    // ── Update UI immediately — show the new team tab before any DB work ──
+    const newTeamEntry = { ...teamToAdd, clients: [], travelSegments: new Map(), breaks: [], staffIds: [] };
+    const updatedWeekTeams = [...weekTeamsRef.current, newTeamEntry];
+    weekTeamsRef.current = updatedWeekTeams;
+    dispatch({ type: 'LOAD_STATE', teams: updatedWeekTeams, activeTeamId: teamToAdd.id, selectedDate: state.selectedDate });
+
+    // ── Create schedule rows for all days of the week (1 bulk select + 1 insert) ──
+    // Previously: 7 sequential per-day SELECTs — very slow.
+    // Now: 1 SELECT to find already-existing rows, then 1 INSERT for the missing ones.
+    const { data: existingRows } = await supabase
+      .from('schedules')
+      .select('schedule_date')
+      .eq('team_id', teamToAdd.id)
+      .in('schedule_date', weekDates);
+    const existingDates = new Set((existingRows || []).map((r: { schedule_date: string }) => r.schedule_date));
+    const scheduleInserts = weekDates
+      .filter(date => !existingDates.has(date))
+      .map(date => ({ org_id: orgId, team_id: teamToAdd.id, schedule_date: date }));
+    if (scheduleInserts.length > 0) {
+      await supabase.from('schedules').insert(scheduleInserts);
     }
 
-    // Add to UI immediately
-    dispatch({ type: 'LOAD_STATE', teams: [...state.teams, { ...teamToAdd, clients: [], travelSegments: new Map(), breaks: [] }], activeTeamId: teamToAdd.id, selectedDate: state.selectedDate });
     // Reload to sync fully
-    loadWeekSchedules(weekDates);
+    await loadWeekSchedules(weekDates);
   }, [orgId, supabase, state.teams, state.selectedDate, weekDates, loadWeekSchedules]);
 
   const handleRemoveTeam = useCallback(async (teamId: string) => {
     if (state.teams.length <= 1) return;
     const team = state.teams.find(t => t.id === teamId);
-    // Count jobs for this team on the SELECTED DAY only
-    const targetDate = state.selectedDate;
-    let dayJobCount = 0;
-    const { data: daySched } = await supabase
-      .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
-    if (daySched) {
-      const { count } = await supabase
-        .from('schedule_jobs').select('id', { count: 'exact', head: true })
-        .eq('schedule_id', daySched.id).eq('is_break', false);
-      dayJobCount = count || 0;
+    // Count ALL jobs for this team across the entire week
+    const { data: weekScheds } = await supabase
+      .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
+    let weekJobCount = 0;
+    if (weekScheds) {
+      for (const s of weekScheds) {
+        const { count } = await supabase
+          .from('schedule_jobs').select('id', { count: 'exact', head: true })
+          .eq('schedule_id', s.id).eq('is_break', false);
+        weekJobCount += count || 0;
+      }
     }
-    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', date: targetDate, dayJobCount });
-  }, [state.teams, state.selectedDate, supabase]);
+    setPendingDeleteTeam({ id: teamId, name: team?.name || 'this team', weekJobCount });
+  }, [state.teams, weekDates, supabase]);
 
   const confirmDeleteTeam = useCallback(async () => {
     if (!pendingDeleteTeam) return;
     const teamId = pendingDeleteTeam.id;
-    const targetDate = pendingDeleteTeam.date;
     setPendingDeleteTeam(null);
     // Remove from local state immediately so the UI reflects the deletion right away
     dispatch({ type: 'REMOVE_TEAM', teamId });
     // Invalidate the cache so auto-save doesn't race and re-create the deleted schedule
     invalidateScheduleCache();
-    // Delete the schedule for this SPECIFIC DAY
-    const { data: daySched } = await supabase
-      .from('schedules').select('id').eq('team_id', teamId).eq('schedule_date', targetDate).maybeSingle();
-    if (daySched) {
-      await supabase.from('schedule_jobs').delete().eq('schedule_id', daySched.id);
-      await supabase.from('schedules').delete().eq('id', daySched.id);
-    }
-    // Also clean up any empty schedule rows (zero jobs) for this team in the week
+    // Delete ALL schedule rows (and their jobs) for this team across the whole week
     const { data: weekScheds } = await supabase
       .from('schedules').select('id').eq('team_id', teamId).in('schedule_date', weekDates);
     if (weekScheds) {
       for (const s of weekScheds) {
-        const { count } = await supabase
-          .from('schedule_jobs').select('id', { count: 'exact', head: true }).eq('schedule_id', s.id);
-        if (!count || count === 0) {
-          await supabase.from('schedules').delete().eq('id', s.id);
-        }
+        await supabase.from('schedule_jobs').delete().eq('schedule_id', s.id);
+        await supabase.from('schedules').delete().eq('id', s.id);
       }
     }
     // Reload week and bump load generation so DayEditor re-records its baseline
-    // instead of treating the post-delete state as a user edit that triggers auto-save
     await loadWeekSchedules(weekDates);
     setDayLoadGen(g => g + 1);
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
@@ -1123,6 +1289,7 @@ export default function SchedulePage() {
             baseAddress: null, returnAddress: null, clients: [],
             travelSegments: new Map(), dayStartTime: '08:00', breaks: [],
             hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+            staffIds: [], driverStaffId: null,
           };
           claimedTeamIds.add(t.id);
           resolvedTeams.set(teamName, t as typeof allTeams[0]);
@@ -1300,6 +1467,37 @@ export default function SchedulePage() {
     return m;
   }, [weekSchedules]);
 
+  // Compute per-day warnings from weekSchedules for week view badges.
+  // We reconstruct a minimal TeamSchedule[] for each date so the warning
+  // engine can check time overlaps and staff assignments.
+  const weekDayWarnings = useMemo(() => {
+    const result = new Map<string, ReturnType<typeof computeDayWarnings>>();
+    if (allStaff.length === 0 || weekSchedules.size === 0) return result;
+
+    // Build the set of teams (shape + metadata) from allOrgTeamsRef for this week
+    const baseTeams = weekTeamsRef.current.length > 0 ? weekTeamsRef.current : state.teams;
+    if (baseTeams.length === 0) return result;
+
+    for (const date of weekDates) {
+      const teamsForDay: TeamSchedule[] = baseTeams.map(team => {
+        const teamMap = weekSchedules.get(team.id);
+        const dayData = teamMap?.get(date);
+        return {
+          ...team,
+          clients: dayData?.clients || [],
+          breaks: dayData?.breaks || [] as typeof team.breaks,
+          staffIds: dayData?.staffIds || [],
+          travelSegments: new Map(),
+        };
+      });
+      // Only compute if at least one team has jobs this day
+      if (teamsForDay.some(t => t.clients.length > 0)) {
+        result.set(date, computeDayWarnings(teamsForDay, allStaff));
+      }
+    }
+    return result;
+  }, [weekSchedules, weekDates, allStaff, state.teams]);
+
   // Guard: state.teams may be empty for an untouched week
   const activeTeam = useMemo(
     () => state.teams.find((t) => t.id === state.activeTeamId) ?? state.teams[0] ?? null,
@@ -1441,27 +1639,6 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* ── Unpublished warning banner ────────────────────────────────── */}
-          {state.viewMode === 'week' && !isStaff && weekHasJobs && !weekIsPublished && (
-            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 mx-0">
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                </span>
-                <p className="text-sm font-semibold text-amber-800">
-                  Staff can&apos;t see this schedule yet
-                </p>
-                <span className="hidden sm:inline text-xs text-amber-600">— publish when you&apos;re ready</span>
-              </div>
-              <button
-                onClick={handlePublishWeek}
-                className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors"
-              >
-                Publish now
-              </button>
-            </div>
-          )}
 
           {/* Team tabs — only render when there are teams */}
           {state.teams.length > 0 && (
@@ -1502,11 +1679,11 @@ export default function SchedulePage() {
               </div>
               <div>
                 <h3 className="text-base font-semibold text-text-primary">Nothing planned for this week</h3>
-                <p className="text-sm text-text-tertiary mt-1 max-w-xs">Switch to Day view to start building your schedule, or load a saved template.</p>
+                <p className="text-sm text-text-tertiary mt-1 max-w-xs">Add a team to start building your schedule, or load a saved template.</p>
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' }); loadDayForEdit(state.focusedDate); }}
+                  onClick={handleAddTeam}
                   className="btn-primary text-sm px-4 py-2 flex items-center gap-2"
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1519,15 +1696,27 @@ export default function SchedulePage() {
                   </button>
                 )}
               </div>
+
             </div>
           ) : state.viewMode === 'week' ? (
-            <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
               <div className="flex h-full min-w-0 bg-gradient-to-br from-transparent to-surface-hover/30">
-                {state.activeTeamId !== 'all' && (
-                  <div className="shrink-0 h-full pl-4 pb-4 lg:pl-6 lg:pb-6 pt-1">
-                    <WeekClientSidebar />
-                  </div>
-                )}
+                <AnimatePresence initial={false}>
+                  {state.activeTeamId !== 'all' && (
+                    <motion.div
+                      key="client-sidebar"
+                      initial={{ width: 0, opacity: 0 }}
+                      animate={{ width: 'auto', opacity: 1 }}
+                      exit={{ width: 0, opacity: 0 }}
+                      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+                      className="shrink-0 h-full overflow-hidden"
+                    >
+                      <div className="pl-4 pb-4 lg:pl-6 lg:pb-6 pt-1 h-full">
+                        <WeekClientSidebar />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 <div className="flex-1 min-w-0 h-full">
                   <WeekView
                     weekDates={weekDates}
@@ -1539,19 +1728,26 @@ export default function SchedulePage() {
                     allTeams={state.teams}
                     allTeamSchedules={weekSchedules}
                     staffNameMap={Object.fromEntries(allStaff.map(s => [s.id, s.name]))}
+                    dayWarnings={weekDayWarnings}
                   />
                 </div>
               </div>
+              {/* ── Delete drop zone — floats up when dragging ── */}
+              <AnimatePresence>
+                {(activeDragClient || activeDragJob) && <DeleteZone />}
+              </AnimatePresence>
+
+
               <DragOverlay dropAnimation={null}>
                 {activeDragClient ? (
                   <div className="group relative p-3 rounded-[14px] bg-white border border-primary cursor-grabbing shadow-dropdown scale-105 ring-2 ring-primary">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-[13px] font-bold text-primary leading-tight truncate transition-colors">{activeDragClient.name}</h4>
+                        <h4 className="text-[13px] font-bold text-primary leading-tight truncate">{activeDragClient.name}</h4>
                         <p className="text-[11px] text-text-secondary mt-1.5 truncate">{activeDragClient.address}</p>
                       </div>
                       {activeDragClient.color && (
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5 shadow-sm" style={{ backgroundColor: activeDragClient.color }} />
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: activeDragClient.color }} />
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-3">
@@ -1564,6 +1760,11 @@ export default function SchedulePage() {
                         {activeDragClient.default_staff_count}
                       </span>
                     </div>
+                  </div>
+                ) : activeDragJob ? (
+                  <div className="rounded-lg p-2.5 bg-white border border-primary shadow-dropdown cursor-grabbing ring-2 ring-primary scale-105 min-w-[130px]">
+                    <p className="text-[12px] font-semibold text-text-primary leading-tight truncate">{activeDragJob.name || 'Unnamed'}</p>
+                    <p className="text-[10px] text-text-tertiary mt-0.5">{activeDragJob.jobDurationMinutes}m</p>
                   </div>
                 ) : null}
               </DragOverlay>
@@ -1578,6 +1779,7 @@ export default function SchedulePage() {
               saveRef={daySaveRef}
               allStaff={allStaff}
               loadGeneration={dayLoadGen}
+              skipUnmountSaveRef={skipUnmountSaveRef}
             />
           )}
         </div>
@@ -1695,13 +1897,13 @@ export default function SchedulePage() {
         )}
         {pendingDeleteTeam && (
           <ConfirmModal
-            title={`Clear ${pendingDeleteTeam.name} on ${new Date(pendingDeleteTeam.date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })}?`}
+            title={`Delete ${pendingDeleteTeam.name}?`}
             message={
-              pendingDeleteTeam.dayJobCount > 0
-                ? `This will remove ${pendingDeleteTeam.dayJobCount} scheduled job${pendingDeleteTeam.dayJobCount !== 1 ? 's' : ''} for ${pendingDeleteTeam.name} on this day only. All other days remain unaffected.`
-                : `This will clear ${pendingDeleteTeam.name} from this day. All other days remain unaffected.`
+              pendingDeleteTeam.weekJobCount > 0
+                ? `This will permanently delete ${pendingDeleteTeam.name} and its ${pendingDeleteTeam.weekJobCount} scheduled job${pendingDeleteTeam.weekJobCount !== 1 ? 's' : ''} across the entire week. This cannot be undone.`
+                : `This will permanently delete ${pendingDeleteTeam.name} from the entire week. This cannot be undone.`
             }
-            confirmLabel="Clear This Day"
+            confirmLabel="Delete Team"
             onConfirm={confirmDeleteTeam}
             onCancel={() => setPendingDeleteTeam(null)}
             danger

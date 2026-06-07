@@ -72,7 +72,7 @@ export function calculateWage(totalMinutes: number, hourlyRate: number): number 
  * Generate a unique ID
  */
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  return crypto.randomUUID();
 }
 
 /**

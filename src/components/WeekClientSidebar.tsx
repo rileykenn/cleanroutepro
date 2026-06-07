@@ -1,21 +1,24 @@
 'use client';
 
 import { useState } from 'react';
+import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
+
 import { useClients, SavedClient } from '@/lib/hooks/useClients';
 import { useAuth } from '@/lib/hooks/useAuth';
 
 function DraggableClient({ client }: { client: SavedClient }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `client-${client.id}`,
     data: { client },
   });
 
-  const style = {
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 999 : 'auto',
-  };
+  // When dragging: hide the original in place — DragOverlay is the only visible ghost.
+  // Do NOT apply transform here; that would move the original card along with the cursor
+  // and cause a doubled/stretched visual behind the overlay.
+  const style: React.CSSProperties = isDragging
+    ? { opacity: 0, pointerEvents: 'none' }
+    : {};
 
   return (
     <div
@@ -23,8 +26,7 @@ function DraggableClient({ client }: { client: SavedClient }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`group relative p-3 rounded-[14px] bg-white border border-border-light cursor-grab active:cursor-grabbing transition-all duration-200 
-      ${isDragging ? 'shadow-dropdown scale-105 ring-2 ring-primary border-primary' : 'hover:border-primary/30 hover:shadow-card hover:-translate-y-[2px]'}`}
+      className="group relative p-3 rounded-[14px] bg-white border border-border-light cursor-grab active:cursor-grabbing transition-all duration-200 hover:border-primary/30 hover:shadow-card hover:-translate-y-[2px]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -57,7 +59,7 @@ export default function WeekClientSidebar() {
   const filtered = searchClients(search);
 
   return (
-    <div className="w-72 h-full flex flex-col bg-white/80 backdrop-blur-xl rounded-[20px] border border-white/50 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.08)] overflow-hidden shrink-0 relative z-10">
+    <div className="w-72 h-full flex flex-col bg-white/80 backdrop-blur-xl rounded-[20px] border border-white/50 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.08)] shrink-0 relative z-10" style={{ overflow: 'visible' }}>
       <div className="p-4 border-b border-border-light/50 bg-white/50 shrink-0">
         <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
@@ -79,7 +81,7 @@ export default function WeekClientSidebar() {
         </div>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar bg-surface-elevated/30">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2.5 custom-scrollbar bg-surface-elevated/30 rounded-b-[20px]">
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />

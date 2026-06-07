@@ -5,6 +5,7 @@ import { Map as GoogleMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { calculateAllTravel, calculateScheduleTimes, calculateDaySummary, ScheduleTimesResult } from '@/lib/routeEngine';
+import { computeDayWarnings, getStaffConflict, getOtherTeamEndLabel, ScheduleWarning } from '@/lib/scheduleWarnings';
 import { formatDateDisplay, generateId, parseTime } from '@/lib/timeUtils';
 import { TravelSegment, Client, AppState, ScheduleAction, StaffMember } from '@/lib/types';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -22,20 +23,25 @@ const ClientChecklistPanel = lazy(() => import('@/components/ClientChecklistPane
 
 import type { TeamSchedule } from '@/lib/types';
 
-// ─── Driver Picker Card ────────────────────────────────────────────────────────
-interface DriverPickerCardProps {
+// ─── Team Staff Picker Card ────────────────────────────────────────────────────
+// Replaces the per-job staff assignment. All staff on this card are fixed for
+// ALL jobs this team handles today. Conflict detection prevents assigning staff
+// who are already on another team today.
+interface TeamStaffPickerCardProps {
   activeTeam: TeamSchedule;
-  currentDriver: StaffMember | null;
-  freeStaff: StaffMember[];
-  drivingOther: { staff: StaffMember; teamName: string }[];
-  unavailableToday: StaffMember[];
+  availableStaff: StaffMember[];     // staff available on this day-of-week (no time conflict)
+  busyStaff: { staff: StaffMember; teamName: string }[];  // on another team with overlapping hours
+  unavailableToday: StaffMember[];   // day-off staff
+  /** staffId → label like "Shared · Team 2 ends 5:32 PM" for non-conflicting shared staff */
+  sharedStaffLabels: Map<string, string>;
   dispatch: Dispatch<ScheduleAction>;
 }
 
-function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, unavailableToday, dispatch }: DriverPickerCardProps) {
+function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailableToday, sharedStaffLabels, dispatch }: TeamStaffPickerCardProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const currentStaffIds = activeTeam.staffIds || [];
 
   // Close on outside click
   useEffect(() => {
@@ -50,15 +56,19 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const selectDriver = (staffId: string) => {
-    dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId });
-    setOpen(false);
+  const toggleStaff = (staffId: string) => {
+    const next = currentStaffIds.includes(staffId)
+      ? currentStaffIds.filter(id => id !== staffId)
+      : [...currentStaffIds, staffId];
+    dispatch({ type: 'SET_TEAM_STAFF', teamId: activeTeam.id, staffIds: next });
   };
 
-  const clearDriver = () => {
-    dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: null });
-    setOpen(false);
+  const clearAll = () => {
+    dispatch({ type: 'SET_TEAM_STAFF', teamId: activeTeam.id, staffIds: [] });
   };
+
+  // Include shared (non-conflicting) staff in the chips — they may be already assigned
+  const assignedStaff = availableStaff.filter(s => currentStaffIds.includes(s.id));
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 }}
@@ -67,62 +77,54 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
-            <circle cx="12" cy="12" r="10"/>
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
           </svg>
-          <span className="text-xs font-bold text-text-primary">Driver for Today</span>
+          <span className="text-xs font-bold text-text-primary">Team Staff</span>
+          {currentStaffIds.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: activeTeam.color.primary }}>
+              {currentStaffIds.length}
+            </span>
+          )}
         </div>
-        {currentDriver && (
+        {currentStaffIds.length > 0 && (
           <button
-            onClick={clearDriver}
+            onClick={clearAll}
             className="text-[10px] text-text-tertiary hover:text-danger transition-colors px-1.5 py-0.5 rounded-md hover:bg-red-50"
-            title="Remove driver"
-          >✕ Clear</button>
+          >✕ Clear all</button>
         )}
       </div>
 
-      {/* Current driver display / trigger button */}
+      {/* Current staff chips */}
+      {assignedStaff.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {assignedStaff.map(s => (
+            <button
+              key={s.id}
+              onClick={() => toggleStaff(s.id)}
+              className="text-[11px] font-semibold px-2 py-1 rounded-lg text-white flex items-center gap-1 transition-all hover:opacity-80"
+              style={{ backgroundColor: activeTeam.color.primary }}
+              title={`Remove ${s.name}`}
+            >
+              {s.name}
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Add staff button */}
       <button
         ref={btnRef}
         onClick={() => setOpen(!open)}
-        className={`mt-2 w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all text-left ${
-          currentDriver
-            ? 'border-transparent'
-            : 'border-dashed border-border-light hover:border-primary hover:bg-primary-light/20'
-        }`}
-        style={currentDriver ? {
-          backgroundColor: `${activeTeam.color.primary}08`,
-          borderColor: `${activeTeam.color.primary}30`,
-        } : {}}
+        className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-xl border-dashed border-2 border-border-light hover:border-primary hover:bg-primary-light/20 transition-all text-xs text-text-tertiary font-medium"
       >
-        {currentDriver ? (
-          <>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ backgroundColor: activeTeam.color.primary }}>
-              {currentDriver.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-text-primary truncate">{currentDriver.name}</div>
-              <div className="text-[11px] text-text-tertiary capitalize">{currentDriver.role} · ${currentDriver.hourly_rate}/hr</div>
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </>
-        ) : (
-          <>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-surface-elevated shrink-0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-              </svg>
-            </div>
-            <span className="text-xs font-medium text-text-tertiary">Assign a driver…</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0 ml-auto">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </>
-        )}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        {currentStaffIds.length === 0 ? 'Assign team staff…' : 'Add more staff…'}
       </button>
 
       {/* Picker popover */}
@@ -136,71 +138,70 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
             className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-border-light p-2 mx-3"
           >
-            {/* Available staff */}
-            <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1">Available</div>
-            {freeStaff.length === 0 && drivingOther.length === 0 && unavailableToday.length === 0 ? (
+            <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1">Available Today</div>
+            {availableStaff.length === 0 && busyStaff.length === 0 && unavailableToday.length === 0 ? (
               <div className="text-xs text-text-tertiary px-2 py-4 text-center">No staff found</div>
             ) : (
               <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                {freeStaff.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => selectDriver(s.id)}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left transition-all ${
-                      currentDriver?.id === s.id
-                        ? 'bg-primary-light/40'
-                        : 'hover:bg-surface-hover'
-                    }`}
-                    style={currentDriver?.id === s.id ? { outline: `2px solid ${activeTeam.color.primary}40`, outlineOffset: '-2px' } : {}}
-                  >
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: activeTeam.color.primary }}>
-                      {s.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-semibold text-text-primary block truncate">{s.name}</span>
-                      <span className="text-[10px] text-text-tertiary capitalize">{s.role} · ${s.hourly_rate}/hr</span>
-                    </div>
-                    {currentDriver?.id === s.id && (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2.5" className="shrink-0">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    )}
-                  </button>
-                ))}
+                {availableStaff.map(s => {
+                  const isSelected = currentStaffIds.includes(s.id);
+                  const sharedLabel = sharedStaffLabels.get(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => { toggleStaff(s.id); }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left transition-all ${
+                        isSelected ? 'bg-primary-light/40' : 'hover:bg-surface-hover'
+                      }`}
+                      style={isSelected ? { outline: `2px solid ${activeTeam.color.primary}40`, outlineOffset: '-2px' } : {}}
+                    >
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: isSelected ? activeTeam.color.primary : '#9CA3AF' }}>
+                        {s.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-text-primary block truncate">{s.name}</span>
+                        {sharedLabel ? (
+                          <span className="text-[10px] text-amber-600 font-medium">{sharedLabel}</span>
+                        ) : (
+                          <span className="text-[10px] text-text-tertiary capitalize">{s.role} · ${s.hourly_rate}/hr</span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2.5" className="shrink-0">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
 
-                {/* Driving for another team (greyed out) */}
-                {drivingOther.length > 0 && (
+                {/* Overlapping conflict — greyed out */}
+                {busyStaff.length > 0 && (
                   <>
-                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Driving Another Team</div>
-                    {drivingOther.map(({ staff: s, teamName }) => (
+                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Unavailable — Schedule Conflict</div>
+                    {busyStaff.map(({ staff: s, teamName }) => (
                       <div
                         key={s.id}
                         className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-45 cursor-not-allowed"
-                        title={`Driving for ${teamName} today`}
+                        title={`Already on ${teamName} today`}
                       >
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-400">
                           {s.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
                           <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
-                          <span className="text-[10px] text-red-400 flex items-center gap-1">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
-                              <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-                            </svg>
-                            Driving for {teamName}
-                          </span>
+                          <span className="text-[10px] text-orange-400">{teamName}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
 
-                {/* Unavailable today (greyed out) */}
+                {/* Not available today */}
                 {unavailableToday.length > 0 && (
                   <>
                     <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Not Available Today</div>
-                    {unavailableToday.map((s) => (
+                    {unavailableToday.map(s => (
                       <div
                         key={s.id}
                         className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-40 cursor-not-allowed"
@@ -211,7 +212,7 @@ function DriverPickerCard({ activeTeam, currentDriver, freeStaff, drivingOther, 
                         </div>
                         <div className="min-w-0 flex-1">
                           <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
-                          <span className="text-[10px] text-text-tertiary">Not available today · ${s.hourly_rate}/hr</span>
+                          <span className="text-[10px] text-text-tertiary">Not available · ${s.hourly_rate}/hr</span>
                         </div>
                       </div>
                     ))}
@@ -348,9 +349,12 @@ interface DayEditorProps {
    *  template editor so the same DayEditor UI operates on in-memory state only.
    *  All future UI additions to DayEditor automatically appear in template mode. */
   disableAutoSave?: boolean;
+  /** Ref set to true by the parent just before an explicit flush + view-mode switch.
+   *  When true the unmount-cleanup save is skipped to prevent a double-save race. */
+  skipUnmountSaveRef?: MutableRefObject<boolean>;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -397,14 +401,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     return periods;
   }, [state.teams]);
 
-  // Build cross-team driver assignments map (staffId → teamName)
-  // Used by both the driver picker and per-job staff pickers
+  // Build cross-team staff assignments map (staffId → teamName)
+  // Used by the ClientCard per-job staff picker to grey out busy staff
   const crossTeamDrivers = useMemo(() => {
     const map = new Map<string, string>();
     if (!activeTeam) return map;
     for (const team of state.teams) {
-      if (team.driverStaffId && team.id !== activeTeam.id) {
-        map.set(team.driverStaffId, team.name);
+      if (team.id === activeTeam.id) continue;
+      for (const sid of team.staffIds || []) {
+        map.set(sid, team.name);
       }
     }
     return map;
@@ -413,6 +418,9 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   // ─── Auto-save ───
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStateRef = useRef<string>('');
+  // Fingerprint that excludes computed startTime/endTime — used to detect
+  // when the schedule calculation ran post-load without user changes.
+  const prevNoTimesRef = useRef<string>('');
   const prevClientCountRef = useRef<number>(-1);
   const prevBreakCountRef = useRef<number>(-1);
   const prevBaseRef = useRef<string>('');
@@ -481,10 +489,11 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           const hasReturnAddress = team.returnAddress !== null && team.returnAddress !== 'none';
           const hasBreaks = team.breaks.length > 0;
           const hasDriver = !!team.driverStaffId;
+          const hasStaff = (team.staffIds || []).length > 0;
           const { data: existingSched } = await supabase
             .from('schedules').select('id').eq('team_id', team.id).eq('schedule_date', today).maybeSingle();
 
-          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !hasDriver && !existingSched) continue;
+          if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !hasDriver && !hasStaff && !existingSched) continue;
 
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
@@ -492,6 +501,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             // null = not set → false; 'none' = explicitly cleared → false; Location = set → true
             has_return_base: team.returnAddress !== null && team.returnAddress !== 'none',
             driver_staff_id: team.driverStaffId || null,
+            staff_ids: team.staffIds || [],
           };
           if (team.baseAddress) {
             scheduleData.base_address = team.baseAddress.address;
@@ -529,6 +539,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           // Build rows: regular clients first, then breaks
           const allRows: Record<string, unknown>[] = [
             ...team.clients.map((c, i) => ({
+              id: c.id,
               schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
               position: i, name: c.name, address: c.location.address,
               lat: c.location.lat, lng: c.location.lng, place_id: c.location.placeId || null,
@@ -611,11 +622,14 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   }, [saveRef, saveNow, disableAutoSave]);
 
   // Flush any pending debounced save when navigating away (sidebar, browser back, etc.)
-  // saveNow reads stateRef.current so it always has fresh data even in this closure.
+  // Skipped when the parent sets skipUnmountSaveRef (it already flushed explicitly).
   useEffect(() => {
-    if (disableAutoSave) return; // Template mode: no flush needed
-    return () => { saveNowRef.current(); };
-  }, [disableAutoSave]);
+    if (disableAutoSave) return;
+    return () => {
+      if (skipUnmountSaveRef?.current) return; // parent already flushed — skip to avoid race
+      saveNowRef.current();
+    };
+  }, [disableAutoSave, skipUnmountSaveRef]);
 
   // Warn when closing/refreshing the browser with unsaved changes
   useEffect(() => {
@@ -634,19 +648,43 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (!dbLoaded || !orgId) return;
 
     const totalClients = state.teams.reduce((sum, t) => sum + t.clients.length, 0);
+
+    // Full fingerprint — used as the save baseline
     const fingerprint = JSON.stringify(
       state.teams.map((t) => ({
         id: t.id, name: t.name, base: t.baseAddress, ret: t.returnAddress, start: t.dayStartTime,
         rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
         driver: t.driverStaffId || null,
+        staffIds: t.staffIds || [],
         clients: t.clients.map((c) => ({
           id: c.id, name: c.name, addr: c.location.address,
           lat: c.location.lat, lng: c.location.lng,
           dur: c.jobDurationMinutes, notes: c.notes || '',
           staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
-          assignedStaff: c.assignedStaffIds, color: c.clientColor,
+          color: c.clientColor,
           checklist: c.checklistId || null,
           startTime: c.startTime, endTime: c.endTime,
+        })),
+        breaks: t.breaks,
+      }))
+    );
+
+    // No-times fingerprint — excludes computed startTime/endTime so a
+    // post-load schedule calculation doesn't look like a user change.
+    const fingerprintNoTimes = JSON.stringify(
+      state.teams.map((t) => ({
+        id: t.id, name: t.name, base: t.baseAddress, ret: t.returnAddress, start: t.dayStartTime,
+        rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
+        driver: t.driverStaffId || null,
+        staffIds: t.staffIds || [],
+        clients: t.clients.map((c) => ({
+          id: c.id, name: c.name, addr: c.location.address,
+          lat: c.location.lat, lng: c.location.lng,
+          dur: c.jobDurationMinutes, notes: c.notes || '',
+          staff: c.staffCount, locked: c.isLocked, fixed: c.fixedStartTime,
+          color: c.clientColor,
+          checklist: c.checklistId || null,
+          // startTime / endTime intentionally omitted
         })),
         breaks: t.breaks,
       }))
@@ -656,10 +694,11 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (justLoadedRef.current) {
       justLoadedRef.current = false;
       prevStateRef.current = fingerprint;
+      prevNoTimesRef.current = fingerprintNoTimes;
       prevClientCountRef.current = totalClients;
       prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
       prevBaseRef.current = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
-      prevStaffRef.current = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
+      prevStaffRef.current = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staffIds: t.staffIds || [] })));
       prevTeamSettingsRef.current = JSON.stringify(state.teams.map(t => ({
         id: t.id, name: t.name, start: t.dayStartTime,
         rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
@@ -668,16 +707,25 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     }
 
     if (fingerprint === prevStateRef.current) return;
+
+    // If the only thing that changed is computed startTime/endTime (schedule calculation
+    // just ran on freshly loaded data), silently update the baseline — no save needed.
+    if (fingerprintNoTimes === prevNoTimesRef.current) {
+      prevStateRef.current = fingerprint; // absorb the time update into baseline
+      return;
+    }
+
     prevStateRef.current = fingerprint;
+    prevNoTimesRef.current = fingerprintNoTimes;
     setHasUnsavedChanges(true);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     // Structural = client/break count changed OR base/return address changed
     //            OR staff assignments/driver changed → save immediately.
-    // Detail change (duration, notes etc.) → 800ms debounce.
+    // Detail change (duration, notes etc.) → 1500ms debounce.
     const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
     const curBase = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
-    const curStaff = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staff: t.clients.map(c => c.assignedStaffIds) })));
+    const curStaff = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staffIds: t.staffIds || [] })));
     const curTeamSettings = JSON.stringify(state.teams.map(t => ({
       id: t.id, name: t.name, start: t.dayStartTime,
       rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
@@ -770,7 +818,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     if (!activeTeam) return 'empty';
     const base = activeTeam.baseAddress ? `${activeTeam.baseAddress.lat},${activeTeam.baseAddress.lng}` : 'none';
     const ret = activeTeam.returnAddress === 'none' ? 'no-return' : (activeTeam.returnAddress ? `${activeTeam.returnAddress.lat},${activeTeam.returnAddress.lng}` : 'default');
-    const clients = activeTeam.clients.map((c) => `${c.id}:${c.location.lat},${c.location.lng}`).join('|');
+    const clients = activeTeam.clients.map((c) => `${c.id}:${c.location?.lat ?? 0},${c.location?.lng ?? 0}`).join('|');
     return `${activeTeam.id}::${base}::${ret}::${clients}`;
   }, [activeTeam]);
 
@@ -833,49 +881,25 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     return activeTeam.travelSegments.get(`${fromId}->${toId}`);
   };
 
-  // Build per-job staff rates for DailySummary
+  // Build team staff rates for DailySummary (team-level, not per-job)
   const jobStaffRates = useMemo(() => {
     if (!activeTeam || !allStaff || allStaff.length === 0) return [];
     const staffMap = new Map(allStaff.map(s => [s.id, s]));
     const rates: { id: string; name: string; hourly_rate: number }[] = [];
-    const seen = new Set<string>();
-    for (const c of activeTeam.clients) {
-      for (const sid of c.assignedStaffIds || []) {
-        if (!seen.has(sid)) {
-          seen.add(sid);
-          const s = staffMap.get(sid);
-          if (s) rates.push({ id: s.id, name: s.name, hourly_rate: s.hourly_rate });
-        }
-      }
+    for (const sid of activeTeam.staffIds || []) {
+      const s = staffMap.get(sid);
+      if (s) rates.push({ id: s.id, name: s.name, hourly_rate: s.hourly_rate });
     }
     return rates;
   }, [activeTeam, allStaff]);
 
-  // ─── Auto-assign driver to newly-added jobs ───
-  const prevClientCountRef2 = useRef(activeTeam?.clients.length ?? 0);
-  useEffect(() => {
-    if (!activeTeam?.driverStaffId) {
-      prevClientCountRef2.current = activeTeam?.clients.length ?? 0;
-      return;
-    }
-    if (activeTeam.clients.length <= prevClientCountRef2.current) {
-      prevClientCountRef2.current = activeTeam.clients.length;
-      return;
-    }
-    prevClientCountRef2.current = activeTeam.clients.length;
-    const driverId = activeTeam.driverStaffId;
-    for (const client of activeTeam.clients) {
-      const ids = client.assignedStaffIds || [];
-      if (!ids.includes(driverId)) {
-        dispatch({
-          type: 'ASSIGN_STAFF_TO_JOB',
-          teamId: activeTeam.id,
-          clientId: client.id,
-          staffIds: [...ids, driverId],
-        });
-      }
-    }
-  }, [activeTeam, dispatch]);
+  // ─── Day-level warnings (cross-team conflicts, travel feasibility, no staff) ───
+  const dayWarnings = useMemo(() => {
+    if (!allStaff) return [] as ScheduleWarning[];
+    return computeDayWarnings(state.teams, allStaff);
+  }, [state.teams, allStaff]);
+
+
 
   // Guard: if there are no teams yet (empty/cleared week), don't attempt to render
   if (!activeTeam) {
@@ -934,6 +958,30 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             </button>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+            {/* ── Warning banners ── */}
+            {dayWarnings.filter(w => w.level !== 'info').map(w => (
+              <div
+                key={w.id}
+                className={`rounded-xl px-3 py-2.5 flex gap-2.5 items-start ${
+                  w.level === 'error'
+                    ? 'bg-red-50 border border-red-200'
+                    : 'bg-amber-50 border border-amber-200'
+                }`}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke={w.level === 'error' ? '#ef4444' : '#d97706'} strokeWidth="2.5"
+                  className="shrink-0 mt-0.5"
+                >
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-[11px] font-bold ${ w.level === 'error' ? 'text-red-700' : 'text-amber-700'}`}>{w.title}</p>
+                  <p className={`text-[10px] mt-0.5 leading-relaxed ${ w.level === 'error' ? 'text-red-600' : 'text-amber-600'}`}>{w.detail}</p>
+                </div>
+              </div>
+            ))}
             {/* Base Address */}
             {activeTeam.baseAddress !== null ? (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card p-4">
@@ -1004,81 +1052,52 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
               )}
             </motion.div>
 
-            {/* Team Settings (collapsible) */}
-            <TeamSettingsCard activeTeam={activeTeam} dispatch={dispatch} />
-
-            {/* Driver for Today — Rich Picker */}
-            {allStaff && allStaff.length > 0 && (() => {
-              // Partition staff: available, driving-other-team, unavailable-today
+            {/* Team Staff Picker (replaces driver picker + per-job assignment) */}
+            {(() => {
               const parts = state.selectedDate.split('-').map(Number);
               const dayOfWeek = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
-              const freeForDriver: StaffMember[] = [];
-              const drivingOther: { staff: StaffMember; teamName: string }[] = [];
+              const todayAvail: StaffMember[] = [];
+              const busyOnOtherTeam: { staff: StaffMember; teamName: string }[] = [];
               const unavailableToday: StaffMember[] = [];
-              for (const s of allStaff) {
+              const sharedStaffLabels = new Map<string, string>();
+
+              for (const s of allStaff || []) {
                 const availDays = s.available_days;
                 const isAvailableToday = !availDays || availDays.length === 0 || availDays.includes(dayOfWeek);
                 if (!isAvailableToday) {
                   unavailableToday.push(s);
-                } else if (crossTeamDrivers.has(s.id)) {
-                  drivingOther.push({ staff: s, teamName: crossTeamDrivers.get(s.id)! });
+                  continue;
+                }
+                // Check whether this staff member is on another team and if so, do their hours overlap?
+                const conflict = getStaffConflict(s.id, state.teams, activeTeam.id);
+                if (conflict && conflict.overlapping && !(activeTeam.staffIds || []).includes(s.id)) {
+                  // True time conflict → grey out
+                  busyOnOtherTeam.push({ staff: s, teamName: conflict.teamName });
                 } else {
-                  freeForDriver.push(s);
+                  // Available (possibly shared across non-overlapping teams)
+                  todayAvail.push(s);
+                  if (conflict && !conflict.overlapping) {
+                    // Show a contextual label so the user knows this person is already on another team
+                    const label = getOtherTeamEndLabel(s.id, state.teams, activeTeam.id);
+                    if (label) sharedStaffLabels.set(s.id, label);
+                  }
                 }
               }
-              const currentDriver = allStaff.find(s => s.id === activeTeam.driverStaffId);
               return (
-                <DriverPickerCard
+                <TeamStaffPickerCard
                   activeTeam={activeTeam}
-                  currentDriver={currentDriver || null}
-                  freeStaff={freeForDriver}
-                  drivingOther={drivingOther}
+                  availableStaff={todayAvail}
+                  busyStaff={busyOnOtherTeam}
                   unavailableToday={unavailableToday}
+                  sharedStaffLabels={sharedStaffLabels}
                   dispatch={dispatch}
                 />
               );
             })()}
 
-            {/* Available staff summary */}
-            {(() => {
-              const teamAvailableStaff = availableStaff.filter(s => !crossTeamDrivers.has(s.id));
-              return teamAvailableStaff.length > 0 ? (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-                className="card p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                    <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
-                  </svg>
-                  <span className="text-xs font-bold text-text-primary">Available Today</span>
-                  <span className="text-[10px] text-text-tertiary">{teamAvailableStaff.length} staff</span>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {teamAvailableStaff.map((s) => {
-                    const isDriver = activeTeam.driverStaffId === s.id;
-                    return (
-                      <span key={s.id}
-                        className={`text-[11px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors ${
-                          isDriver
-                            ? 'text-white'
-                            : 'bg-surface-elevated text-text-secondary'
-                        }`}
-                        style={isDriver ? { backgroundColor: activeTeam.color.primary } : {}}
-                      >
-                        {isDriver && (
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
-                            <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-                          </svg>
-                        )}
-                        {s.name}
-                      </span>
-                    );
-                  })}
-                </div>
-              </motion.div>
-              ) : null;
-            })()}
+            {/* Team Settings (collapsible) */}
+            <TeamSettingsCard activeTeam={activeTeam} dispatch={dispatch} />
+
 
             {/* Optimize */}
             {activeTeam.clients.length >= 2 && (

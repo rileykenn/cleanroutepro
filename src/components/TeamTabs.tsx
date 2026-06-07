@@ -77,8 +77,8 @@ export default function TeamTabs({
 
   return (
     <div className="flex items-center gap-1.5 px-1">
-      {/* View All tab — only when 2+ teams in week view */}
-      {teams.length >= 2 && state.viewMode === 'week' && (
+      {/* View All tab — always visible in week view */}
+      {state.viewMode === 'week' && (
         <motion.div
           onClick={() => onSelectTeam('all')}
           className="relative flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition-all cursor-pointer select-none"
@@ -107,8 +107,8 @@ export default function TeamTabs({
         </motion.div>
       )}
 
-      {/* Team tabs */}
-      {teams.map((team) => {
+      {/* Team tabs — deduplicate by ID as a safety net against race-condition duplicates */}
+      {teams.filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i).map((team) => {
         const isActive = team.id === activeTeamId;
         const assignedStaff = teamStaffMap?.get(team.id) || [];
         const showPicker = colorPickerTeamId === team.id;
@@ -178,8 +178,8 @@ export default function TeamTabs({
                 </span>
               )}
 
-              {/* Remove team button — day view only */}
-              {teams.length > 1 && isActive && state.viewMode === 'day' && (
+              {/* Remove team button */}
+              {teams.length > 1 && isActive && onRemoveTeam && (
                 <span
                   role="button"
                   tabIndex={0}
@@ -196,7 +196,7 @@ export default function TeamTabs({
                     }
                   }}
                   className="ml-0.5 p-0.5 rounded hover:bg-white/60 opacity-50 hover:opacity-100 transition-opacity"
-                  title="Remove team from this day"
+                  title="Delete team"
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M18 6L6 18M6 6l12 12" />
@@ -243,8 +243,8 @@ export default function TeamTabs({
         );
       })}
 
-      {/* Add team button — day view only */}
-      {state.viewMode === 'day' && (
+      {/* Add team button */}
+      {onAddTeam && (
         <motion.button
           onClick={() => { if (onAddTeam) onAddTeam(); else dispatch({ type: 'ADD_TEAM' }); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-text-tertiary
@@ -258,6 +258,7 @@ export default function TeamTabs({
           Add Team
         </motion.button>
       )}
+
     </div>
   );
 }

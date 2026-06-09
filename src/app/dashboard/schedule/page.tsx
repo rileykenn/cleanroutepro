@@ -1911,10 +1911,19 @@ export default function SchedulePage() {
                 onChangeTeamColor={isStaff ? undefined : (teamId, colorIndex) => {
                   dispatch({ type: 'SET_TEAM_COLOR', teamId, colorIndex });
                   void supabase.from('teams').update({ color_index: colorIndex }).eq('id', teamId);
+                  // Keep refs in sync — day view reads from these refs, not reducer state
+                  const applyColor = (t: TeamSchedule) =>
+                    t.id === teamId ? { ...t, colorIndex, color: TEAM_COLORS[colorIndex % TEAM_COLORS.length] } : t;
+                  allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyColor);
+                  weekTeamsRef.current = weekTeamsRef.current.map(applyColor);
                 }}
                 onChangeTeamName={isStaff ? undefined : (teamId, name) => {
                   dispatch({ type: 'RENAME_TEAM', teamId, name });
                   void supabase.from('teams').update({ name }).eq('id', teamId);
+                  // Keep refs in sync — day view reads from these refs, not reducer state
+                  const applyName = (t: TeamSchedule) => t.id === teamId ? { ...t, name } : t;
+                  allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyName);
+                  weekTeamsRef.current = weekTeamsRef.current.map(applyName);
                 }}
                 teamStaffMap={teamStaffMap}
               />

@@ -707,16 +707,16 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
               <span>{effectiveStaffCount}×</span>
             </div>
           )}
-          {/* Effective time per staff — shown only when multiple staff are assigned */}
-          {effectiveStaffCount > 1 && (() => {
-            const effectiveMins = Math.round(client.jobDurationMinutes / effectiveStaffCount);
+          {/* Effective time per staff — shown when team has 2+ staff for the day */}
+          {team.staffIds.length > 1 && (() => {
+            const effectiveMins = Math.round(client.jobDurationMinutes / team.staffIds.length);
             const h = Math.floor(effectiveMins / 60);
             const m = effectiveMins % 60;
             const label = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`;
             return (
               <div className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg bg-surface-elevated border border-border-light text-text-secondary">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span>{label}/staff</span>
+                <span>{label} effective</span>
               </div>
             );
           })()}

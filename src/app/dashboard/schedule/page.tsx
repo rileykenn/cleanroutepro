@@ -1914,7 +1914,7 @@ export default function SchedulePage() {
                 onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
                 onChangeTeamColor={isStaff ? undefined : (teamId, colorIndex) => {
                   dispatch({ type: 'SET_TEAM_COLOR', teamId, colorIndex });
-                  void supabase.from('teams').update({ color_index: colorIndex }).eq('id', teamId);
+                  supabase.from('teams').update({ color_index: colorIndex }).eq('id', teamId).then(() => {});
                   // Keep refs in sync — day view reads from these refs, not reducer state
                   const applyColor = (t: TeamSchedule) =>
                     t.id === teamId ? { ...t, colorIndex, color: TEAM_COLORS[colorIndex % TEAM_COLORS.length] } : t;
@@ -1923,7 +1923,7 @@ export default function SchedulePage() {
                 }}
                 onChangeTeamName={isStaff ? undefined : (teamId, name) => {
                   dispatch({ type: 'RENAME_TEAM', teamId, name });
-                  void supabase.from('teams').update({ name }).eq('id', teamId);
+                  supabase.from('teams').update({ name }).eq('id', teamId).then(() => {});
                   // Keep refs in sync — day view reads from these refs, not reducer state
                   const applyName = (t: TeamSchedule) => t.id === teamId ? { ...t, name } : t;
                   allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyName);

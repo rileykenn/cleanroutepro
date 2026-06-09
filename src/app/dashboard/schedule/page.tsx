@@ -103,6 +103,9 @@ export default function SchedulePage() {
   // Teams active for the CURRENT WEEK only (those with a schedules row this week).
   // loadDayForEdit uses this so day view shows the same teams as week view.
   const weekTeamsRef = useRef<TeamSchedule[]>([]);
+  // Tracks which week start is currently cached in allOrgTeamsRef so we only
+  // clear it when actually navigating to a different week.
+  const cachedWeekStartRef = useRef<string>('');
   // Increments after every loadDayForEdit/loadDayFromCache so DayEditor re-records
   // its autosave baseline and doesn't mistake the load for a user edit.
   const [dayLoadGen, setDayLoadGen] = useState(0);
@@ -424,8 +427,13 @@ export default function SchedulePage() {
   const loadWeekSchedules = useCallback(async (dates: string[], { skipDispatch = false }: { skipDispatch?: boolean } = {}) => {
     if (!orgId) return;
     try {
-      // Clear in-memory ref so the previous week's overrides don't bleed into this one
-      allOrgTeamsRef.current = [];
+      // Only clear the in-memory ref when actually moving to a different week.
+      // Clearing it on every call (even same-week reloads) destroys the race-
+      // condition protection that keeps user changes visible between DB reads.
+      if (cachedWeekStartRef.current !== dates[0]) {
+        allOrgTeamsRef.current = [];
+        cachedWeekStartRef.current = dates[0];
+      }
       const teamsList = await loadTeams(dates[0]);
 
       // No teams found — create a default one and finish
@@ -1943,12 +1951,20 @@ export default function SchedulePage() {
                 onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
                 onChangeTeamColor={isStaff ? undefined : (teamId, colorIndex) => {
                   dispatch({ type: 'SET_TEAM_COLOR', teamId, colorIndex });
-                  // Save as a per-week override — does not touch the global teams row
-                  supabase.from('weekly_team_configs').upsert(
-                    { org_id: orgId, team_id: teamId, week_start: weekDates[0], color_index: colorIndex },
-                    { onConflict: 'team_id,week_start' }
-                  ).then(() => {});
-                  // Keep refs in sync — day view reads from these refs, not reducer state
+                  // Read existing row first so we don't null out the name field,
+                  // then upsert the full merged record for this week.
+                  supabase
+                    .from('weekly_team_configs')
+                    .select('name')
+                    .eq('team_id', teamId)
+                    .eq('week_start', weekDates[0])
+                    .maybeSingle()
+                    .then(({ data }) => {
+                      supabase.from('weekly_team_configs').upsert(
+                        { org_id: orgId, team_id: teamId, week_start: weekDates[0], color_index: colorIndex, name: data?.name ?? null },
+                        { onConflict: 'team_id,week_start' }
+                      ).then(() => {});
+                    });
                   const applyColor = (t: TeamSchedule) =>
                     t.id === teamId ? { ...t, colorIndex, color: TEAM_COLORS[colorIndex % TEAM_COLORS.length] } : t;
                   allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyColor);
@@ -1956,12 +1972,19 @@ export default function SchedulePage() {
                 }}
                 onChangeTeamName={isStaff ? undefined : (teamId, name) => {
                   dispatch({ type: 'RENAME_TEAM', teamId, name });
-                  // Save as a per-week override — does not touch the global teams row
-                  supabase.from('weekly_team_configs').upsert(
-                    { org_id: orgId, team_id: teamId, week_start: weekDates[0], name },
-                    { onConflict: 'team_id,week_start' }
-                  ).then(() => {});
-                  // Keep refs in sync — day view reads from these refs, not reducer state
+                  // Read existing row first so we don't null out the color_index field.
+                  supabase
+                    .from('weekly_team_configs')
+                    .select('color_index')
+                    .eq('team_id', teamId)
+                    .eq('week_start', weekDates[0])
+                    .maybeSingle()
+                    .then(({ data }) => {
+                      supabase.from('weekly_team_configs').upsert(
+                        { org_id: orgId, team_id: teamId, week_start: weekDates[0], name, color_index: data?.color_index ?? null },
+                        { onConflict: 'team_id,week_start' }
+                      ).then(() => {});
+                    });
                   const applyName = (t: TeamSchedule) => t.id === teamId ? { ...t, name } : t;
                   allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyName);
                   weekTeamsRef.current = weekTeamsRef.current.map(applyName);

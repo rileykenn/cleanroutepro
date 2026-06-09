@@ -1959,7 +1959,7 @@ export default function SchedulePage() {
                     .eq('team_id', teamId)
                     .eq('week_start', weekDates[0])
                     .maybeSingle()
-                    .then(({ data }) => {
+                    .then(({ data }: { data: { name: string | null } | null }) => {
                       supabase.from('weekly_team_configs').upsert(
                         { org_id: orgId, team_id: teamId, week_start: weekDates[0], color_index: colorIndex, name: data?.name ?? null },
                         { onConflict: 'team_id,week_start' }
@@ -1979,7 +1979,7 @@ export default function SchedulePage() {
                     .eq('team_id', teamId)
                     .eq('week_start', weekDates[0])
                     .maybeSingle()
-                    .then(({ data }) => {
+                    .then(({ data }: { data: { color_index: number | null } | null }) => {
                       supabase.from('weekly_team_configs').upsert(
                         { org_id: orgId, team_id: teamId, week_start: weekDates[0], name, color_index: data?.color_index ?? null },
                         { onConflict: 'team_id,week_start' }

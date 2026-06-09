@@ -123,6 +123,7 @@ export interface TeamSchedule {
   dayStartTime: string;
   breaks: ScheduleBreak[];
   hourlyRate: number;
+  calculateFuel: boolean;
   fuelEfficiency: number;
   fuelPrice: number;
   perKmRate: number;
@@ -293,6 +294,7 @@ export type ScheduleAction =
   | { type: 'REORDER_CLIENTS'; teamId: string; fromIndex: number; toIndex: number }
   | { type: 'SET_START_TIME'; teamId: string; time: string }
   | { type: 'SET_HOURLY_RATE'; teamId: string; rate: number }
+  | { type: 'SET_CALCULATE_FUEL'; teamId: string; calculateFuel: boolean }
   | { type: 'SET_FUEL_SETTINGS'; teamId: string; fuelEfficiency: number; fuelPrice: number }
   | { type: 'SET_PER_KM_RATE'; teamId: string; rate: number }
   | { type: 'ADD_TEAM' }

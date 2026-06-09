@@ -168,9 +168,18 @@ export default function ClientsPage() {
               </div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">Notes</label>
                 <textarea value={form.notes} onChange={(e) => setForm({...form, notes: e.target.value})} className="input-field text-sm resize-none" rows={2} placeholder="Access codes, special instructions..." /></div>
-              <div className="flex gap-2">
-                <button onClick={editingId ? handleUpdate : handleAdd} className="btn-primary text-sm">{editingId ? 'Save Changes' : 'Add Client'}</button>
+              <div className="flex gap-2 items-center">
+                <button
+                  onClick={editingId ? handleUpdate : handleAdd}
+                  disabled={!form.name.trim() || (!editingId && !form.address.trim())}
+                  className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {editingId ? 'Save Changes' : 'Add Client'}
+                </button>
                 <button onClick={() => { setShowAdd(false); setEditingId(null); setDurationHM(minutesToHM(90)); setForm({ name: '', address: '', email: '', phone: '', default_duration_minutes: 90, default_staff_count: 1, notes: '' }); }} className="btn-ghost text-sm">Cancel</button>
+                {!editingId && (!form.name.trim() || !form.address.trim()) && (
+                  <span className="text-xs text-text-tertiary">Name and address required</span>
+                )}
               </div>
             </motion.div>
           )}

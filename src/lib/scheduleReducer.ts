@@ -14,6 +14,7 @@ function createDefaultTeam(colorIndex: number): TeamSchedule {
     dayStartTime: '08:00',
     breaks: [],
     hourlyRate: 38,
+    calculateFuel: false,
     fuelEfficiency: 10,
     fuelPrice: 1.85,
     perKmRate: 0,
@@ -105,6 +106,8 @@ export function scheduleReducer(state: AppState, action: ScheduleAction): AppSta
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: t.breaks.filter((b) => b.id !== action.breakId) } : t) };
     case 'UPDATE_BREAK':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, breaks: t.breaks.map((b) => b.id === action.breakId ? { ...b, ...action.updates } : b) } : t) };
+    case 'SET_CALCULATE_FUEL':
+      return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, calculateFuel: action.calculateFuel } : t) };
     case 'SET_FUEL_SETTINGS':
       return { ...state, teams: state.teams.map((t) => t.id === action.teamId ? { ...t, fuelEfficiency: action.fuelEfficiency, fuelPrice: action.fuelPrice } : t) };
     case 'SET_PER_KM_RATE':

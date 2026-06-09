@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Client } from '@/lib/types';
@@ -32,7 +32,10 @@ export default function ClientChecklistPanel({
   // Which checklist is currently selected
   const [activeChecklistId, setActiveChecklistId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'created'>('idle');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'created'>('idle');
+  const [triggerPreview, setTriggerPreview] = useState(0); // increment to open preview
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInitialLoadRef = useRef(true); // skip autosave on first section load
 
   // Resolve the active checklist
   const activeChecklist = useMemo(() => {
@@ -58,7 +61,42 @@ export default function ClientChecklistPanel({
     setEditorSections(migrated.length > 0 ? migrated : [{ id: crypto.randomUUID(), title: '', fields: [] }]);
     setEditorInitialized(true);
     setSaveStatus('idle');
+    isInitialLoadRef.current = true; // mark as initial load — don't autosave this change
   }, [activeChecklist]);
+
+  // ── Google-Docs style autosave — debounce 1s after any section/name change ──
+  const [editorName, setEditorName] = useState(activeChecklist?.name || '');
+  // Sync name when checklist switches
+  useEffect(() => { setEditorName(activeChecklist?.name || ''); }, [activeChecklist]);
+
+  useEffect(() => {
+    if (!editorInitialized) return;
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      return;
+    }
+    if (!activeChecklist || !savedClientId) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    setSaveStatus('saving');
+    autosaveTimerRef.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await updateChecklist(activeChecklist.id, {
+          name: editorName.trim() || 'Untitled',
+          sections: editorSections,
+          is_default: activeChecklist.is_default,
+        });
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch {
+        setSaveStatus('idle');
+      } finally {
+        setSaving(false);
+      }
+    }, 1000);
+    return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorSections, editorName]);
 
   // Access instructions (now stored in the notes column)
   const [accessInstructions, setAccessInstructions] = useState<string | null>(null);
@@ -138,6 +176,17 @@ export default function ClientChecklistPanel({
           </p>
         </div>
 
+        {/* Preview button — sits right of the client name in the header */}
+        <button
+          onClick={() => setTriggerPreview(n => n + 1)}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border-light text-xs font-semibold text-text-secondary hover:text-primary hover:border-primary hover:bg-primary/5 transition-all"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          Preview
+        </button>
+
         {/* Save status indicator */}
         <AnimatePresence>
           {saveStatus !== 'idle' && (
@@ -145,27 +194,22 @@ export default function ClientChecklistPanel({
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
-              className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 shrink-0"
+              className={`text-[10px] font-semibold px-2 py-1 rounded-lg shrink-0 flex items-center gap-1 ${
+                saveStatus === 'saving'
+                  ? 'bg-surface-elevated text-text-tertiary'
+                  : 'bg-emerald-50 text-emerald-600'
+              }`}
             >
-              {saveStatus === 'saved' ? '✓ Saved' : '✓ Created'}
+              {saveStatus === 'saving' && (
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+              )}
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? '✓ Saved' : '✓ Created'}
             </motion.span>
           )}
         </AnimatePresence>
 
-        {/* Checklist picker */}
-        {checklists.length > 0 && (
-          <select
-            value={activeChecklistId || activeChecklist?.id || ''}
-            onChange={e => handleSwitchChecklist(e.target.value)}
-            className="input-field text-xs py-1.5 max-w-[140px] shrink-0"
-          >
-            {checklists.map(cl => (
-              <option key={cl.id} value={cl.id}>
-                {cl.name}{cl.is_default ? ' (default)' : ''}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       {/* ── Access instructions accordion ── */}
@@ -207,13 +251,14 @@ export default function ClientChecklistPanel({
             key={activeChecklist.id}
             sections={editorSections}
             onChange={setEditorSections}
-            initialName={activeChecklist.name}
+            initialName={editorName}
             initialIsDefault={activeChecklist.is_default}
             mode="client-profile"
             saving={saving}
-            onSave={handleSave}
+            onSave={(name) => setEditorName(name)}
             onSaveAsNew={handleSaveAsNew}
             onCancel={onClose}
+            triggerPreview={triggerPreview}
           />
         </div>
       ) : (

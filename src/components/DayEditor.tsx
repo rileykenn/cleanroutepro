@@ -39,6 +39,8 @@ interface TeamStaffPickerCardProps {
 
 function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailableToday, sharedStaffLabels, dispatch }: TeamStaffPickerCardProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const currentStaffIds = activeTeam.staffIds || [];
@@ -56,15 +58,29 @@ function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailabl
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  // Auto-focus search when popover opens, clear on close
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchRef.current?.focus(), 50);
+    } else {
+      setSearch('');
+    }
+  }, [open]);
+
   const toggleStaff = (staffId: string) => {
     const next = currentStaffIds.includes(staffId)
       ? currentStaffIds.filter(id => id !== staffId)
       : [...currentStaffIds, staffId];
     dispatch({ type: 'SET_TEAM_STAFF', teamId: activeTeam.id, staffIds: next });
+    // If the removed staff member was the driver, clear the driver too
+    if (!next.includes(activeTeam.driverStaffId || '')) {
+      dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: null });
+    }
   };
 
   const clearAll = () => {
     dispatch({ type: 'SET_TEAM_STAFF', teamId: activeTeam.id, staffIds: [] });
+    dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: null });
   };
 
   // Include shared (non-conflicting) staff in the chips — they may be already assigned
@@ -115,6 +131,26 @@ function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailabl
         </div>
       )}
 
+      {/* Driver selector — appears once at least one staff member is on the team */}
+      {assignedStaff.length > 0 && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2" className="shrink-0">
+            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+          </svg>
+          <span className="text-[11px] font-bold text-text-secondary shrink-0">Driver</span>
+          <select
+            value={activeTeam.driverStaffId || ''}
+            onChange={e => dispatch({ type: 'SET_DRIVER', teamId: activeTeam.id, staffId: e.target.value || null })}
+            className="flex-1 text-[11px] bg-surface-elevated border border-border-light rounded-lg px-2 py-1 outline-none focus:border-primary cursor-pointer text-text-primary"
+          >
+            <option value="">— No driver —</option>
+            {assignedStaff.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Add staff button */}
       <button
         ref={btnRef}
@@ -138,88 +174,120 @@ function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailabl
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
             className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-border-light p-2 mx-3"
           >
+            {/* Search input */}
+            <div className="flex items-center gap-2 px-2 pb-1.5 border-b border-border-light mb-1">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-text-tertiary">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search staff…"
+                className="flex-1 text-xs bg-transparent outline-none text-text-primary placeholder-text-tertiary py-1"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="text-text-tertiary hover:text-text-primary transition-colors">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              )}
+            </div>
             <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1">Available Today</div>
             {availableStaff.length === 0 && busyStaff.length === 0 && unavailableToday.length === 0 ? (
               <div className="text-xs text-text-tertiary px-2 py-4 text-center">No staff found</div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto custom-scrollbar">
-                {availableStaff.map(s => {
-                  const isSelected = currentStaffIds.includes(s.id);
-                  const sharedLabel = sharedStaffLabels.get(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => { toggleStaff(s.id); }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left transition-all ${
-                        isSelected ? 'bg-primary-light/40' : 'hover:bg-surface-hover'
-                      }`}
-                      style={isSelected ? { outline: `2px solid ${activeTeam.color.primary}40`, outlineOffset: '-2px' } : {}}
-                    >
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: isSelected ? activeTeam.color.primary : '#9CA3AF' }}>
-                        {s.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <span className="font-semibold text-text-primary block truncate">{s.name}</span>
-                        {sharedLabel ? (
-                          <span className="text-[10px] text-amber-600 font-medium">{sharedLabel}</span>
-                        ) : (
-                          <span className="text-[10px] text-text-tertiary capitalize">{s.role} · ${s.hourly_rate}/hr</span>
-                        )}
-                      </div>
-                      {isSelected && (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2.5" className="shrink-0">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
+            ) : (() => {
+              const q = search.toLowerCase();
+              const filteredAvailable = availableStaff.filter(s => s.name.toLowerCase().includes(q));
+              const filteredBusy = busyStaff.filter(({ staff: s }) => s.name.toLowerCase().includes(q));
+              const filteredUnavailable = unavailableToday.filter(s => s.name.toLowerCase().includes(q));
+              const noResults = filteredAvailable.length === 0 && filteredBusy.length === 0 && filteredUnavailable.length === 0;
+              return (
+                <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                  {noResults ? (
+                    <div className="text-xs text-text-tertiary px-2 py-4 text-center">No staff match "{search}"</div>
+                  ) : (
+                    <>
+                      {filteredAvailable.map(s => {
+                        const isSelected = currentStaffIds.includes(s.id);
+                        const sharedLabel = sharedStaffLabels.get(s.id);
+                        return (
+                          <button
+                            key={s.id}
+                            onClick={() => { toggleStaff(s.id); }}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left transition-all ${
+                              isSelected ? 'bg-primary-light/40' : 'hover:bg-surface-hover'
+                            }`}
+                            style={isSelected ? { outline: `2px solid ${activeTeam.color.primary}40`, outlineOffset: '-2px' } : {}}
+                          >
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ backgroundColor: isSelected ? activeTeam.color.primary : '#9CA3AF' }}>
+                              {s.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="font-semibold text-text-primary block truncate">{s.name}</span>
+                              {sharedLabel ? (
+                                <span className="text-[10px] text-amber-600 font-medium">{sharedLabel}</span>
+                              ) : (
+                                <span className="text-[10px] text-text-tertiary capitalize">{s.role} · ${s.hourly_rate}/hr</span>
+                              )}
+                            </div>
+                            {isSelected && (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2.5" className="shrink-0">
+                                <polyline points="20 6 9 17 4 12"/>
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+
+                      {/* Overlapping conflict — greyed out */}
+                      {filteredBusy.length > 0 && (
+                        <>
+                          <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Unavailable — Schedule Conflict</div>
+                          {filteredBusy.map(({ staff: s, teamName }) => (
+                            <div
+                              key={s.id}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-45 cursor-not-allowed"
+                              title={`Already on ${teamName} today`}
+                            >
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-400">
+                                {s.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
+                                <span className="text-[10px] text-orange-400">{teamName}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </>
                       )}
-                    </button>
-                  );
-                })}
 
-                {/* Overlapping conflict — greyed out */}
-                {busyStaff.length > 0 && (
-                  <>
-                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Unavailable — Schedule Conflict</div>
-                    {busyStaff.map(({ staff: s, teamName }) => (
-                      <div
-                        key={s.id}
-                        className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-45 cursor-not-allowed"
-                        title={`Already on ${teamName} today`}
-                      >
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-400">
-                          {s.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
-                          <span className="text-[10px] text-orange-400">{teamName}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
+                      {/* Not available today */}
+                      {filteredUnavailable.length > 0 && (
+                        <>
+                          <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Not Available Today</div>
+                          {filteredUnavailable.map(s => (
+                            <div
+                              key={s.id}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-40 cursor-not-allowed"
+                              title={`${s.name} is not available on this day`}
+                            >
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-300">
+                                {s.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
+                                <span className="text-[10px] text-text-tertiary">Not available · ${s.hourly_rate}/hr</span>
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
-                {/* Not available today */}
-                {unavailableToday.length > 0 && (
-                  <>
-                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 pt-2.5 pb-1 mt-1 border-t border-border-light">Not Available Today</div>
-                    {unavailableToday.map(s => (
-                      <div
-                        key={s.id}
-                        className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-xs text-left opacity-40 cursor-not-allowed"
-                        title={`${s.name} is not available on this day`}
-                      >
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 bg-gray-300">
-                          {s.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="font-semibold text-text-tertiary block truncate">{s.name}</span>
-                          <span className="text-[10px] text-text-tertiary">Not available · ${s.hourly_rate}/hr</span>
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -227,104 +295,120 @@ function TeamStaffPickerCard({ activeTeam, availableStaff, busyStaff, unavailabl
   );
 }
 
-// ─── Team Settings Card (Collapsible) ──────────────────────────────────────────
+// ─── Calculate Fuel Card ────────────────────────────────────────────────────────
 interface TeamSettingsCardProps {
   activeTeam: TeamSchedule;
   dispatch: Dispatch<ScheduleAction>;
+  dbLoaded: boolean;
+  supabase: SupabaseClient;
 }
 
-function TeamSettingsCard({ activeTeam, dispatch }: TeamSettingsCardProps) {
-  const [open, setOpen] = useState(false);
+function TeamSettingsCard({ activeTeam, dispatch, dbLoaded, supabase }: TeamSettingsCardProps) {
+  // calcFuel is derived directly from the DB-loaded field — no local state needed
+  const calcFuel = activeTeam.calculateFuel;
+  // Remember the last non-zero values so toggling back ON restores them
+  const prevValuesRef = useRef({ fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0 });
+
+  // When calculate_fuel is ON, keep prevValuesRef updated with current values
+  useEffect(() => {
+    if (calcFuel && activeTeam.fuelEfficiency > 0) {
+      prevValuesRef.current = {
+        fuelEfficiency: activeTeam.fuelEfficiency,
+        fuelPrice: activeTeam.fuelPrice,
+        perKmRate: activeTeam.perKmRate,
+      };
+    }
+  }, [calcFuel, activeTeam.fuelEfficiency, activeTeam.fuelPrice, activeTeam.perKmRate]);
+
+  // Write fuel values + toggle state directly to DB
+  const saveFuelToDB = useCallback(async (on: boolean, eff: number, price: number, km: number) => {
+    const { error } = await supabase.from('teams').update({
+      calculate_fuel: on,
+      fuel_efficiency: eff,
+      fuel_price: price,
+      per_km_rate: km,
+    }).eq('id', activeTeam.id);
+    if (error) console.error('[saveFuelToDB] failed:', error);
+  }, [supabase, activeTeam.id]);
+
+  if (!dbLoaded) return null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
-      className="card overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-surface-hover transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={activeTeam.color.primary} strokeWidth="2">
-            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-          <span className="text-xs font-bold text-text-primary">Team Settings</span>
-        </div>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-          className="text-text-tertiary transition-transform"
-          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </button>
+      className="card px-3 py-2.5 space-y-2.5">
 
+      {/* Calculate Fuel toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary">
+            <path d="M3 22V8l9-6 9 6v14"/><path d="M9 22V12h6v10"/><path d="M21 15h-2a2 2 0 0 0-2 2v5"/>
+          </svg>
+          <span className="text-xs text-text-secondary font-medium">Calculate Fuel</span>
+        </div>
+        <button
+          onClick={() => {
+            const next = !calcFuel;
+            if (!next) {
+              // Save current values to restore later
+              prevValuesRef.current = {
+                fuelEfficiency: activeTeam.fuelEfficiency > 0 ? activeTeam.fuelEfficiency : prevValuesRef.current.fuelEfficiency,
+                fuelPrice: activeTeam.fuelPrice > 0 ? activeTeam.fuelPrice : prevValuesRef.current.fuelPrice,
+                perKmRate: activeTeam.perKmRate,
+              };
+              dispatch({ type: 'SET_CALCULATE_FUEL', teamId: activeTeam.id, calculateFuel: false });
+              dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: 0, fuelPrice: 0 });
+              dispatch({ type: 'SET_PER_KM_RATE', teamId: activeTeam.id, rate: 0 });
+              saveFuelToDB(false, 0, 0, 0);
+            } else {
+              const prev = prevValuesRef.current;
+              const eff = prev.fuelEfficiency > 0 ? prev.fuelEfficiency : 10;
+              const price = prev.fuelPrice > 0 ? prev.fuelPrice : 1.85;
+              dispatch({ type: 'SET_CALCULATE_FUEL', teamId: activeTeam.id, calculateFuel: true });
+              dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: eff, fuelPrice: price });
+              dispatch({ type: 'SET_PER_KM_RATE', teamId: activeTeam.id, rate: prev.perKmRate });
+              saveFuelToDB(true, eff, price, prev.perKmRate);
+            }
+          }}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${calcFuel ? 'bg-primary' : 'bg-surface-elevated border border-border-light'}`}
+          style={{ backgroundColor: calcFuel ? activeTeam.color.primary : undefined }}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${calcFuel ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+
+      {/* Fuel rows — animate in/out when toggled */}
       <AnimatePresence>
-        {open && (
+        {calcFuel && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden"
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden space-y-2.5 border-t border-border-light pt-2.5"
           >
-            <div className="px-3 pb-3 space-y-2.5 border-t border-border-light pt-2.5">
-              {/* Hourly Rate */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Hourly Rate ($/hr)</span>
-                <input
-                  type="number"
-                  value={activeTeam.hourlyRate}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0;
-                    dispatch({ type: 'SET_HOURLY_RATE', teamId: activeTeam.id, rate: v });
-                  }}
-                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
-                  min={0} step={1}
-                />
-              </div>
-
-              {/* Fuel Efficiency */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Fuel Efficiency (L/100km)</span>
-                <input
-                  type="number"
-                  value={activeTeam.fuelEfficiency}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0;
-                    dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: v, fuelPrice: activeTeam.fuelPrice });
-                  }}
-                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
-                  min={0} step={0.5}
-                />
-              </div>
-
-              {/* Fuel Price */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Fuel Price ($/L)</span>
-                <input
-                  type="number"
-                  value={activeTeam.fuelPrice}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0;
-                    dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: activeTeam.fuelEfficiency, fuelPrice: v });
-                  }}
-                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
-                  min={0} step={0.01}
-                />
-              </div>
-
-              {/* Per-KM Rate */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Per-KM Rate ($/km)</span>
-                <input
-                  type="number"
-                  value={activeTeam.perKmRate}
-                  onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0;
-                    dispatch({ type: 'SET_PER_KM_RATE', teamId: activeTeam.id, rate: v });
-                  }}
-                  className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
-                  min={0} step={0.01}
-                />
-              </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-secondary">Fuel Efficiency (L/100km)</span>
+              <input type="number" value={activeTeam.fuelEfficiency}
+                onChange={(e) => { const v = parseFloat(e.target.value) || 0; dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: v, fuelPrice: activeTeam.fuelPrice }); }}
+                onBlur={(e) => { const v = parseFloat(e.target.value) || 0; saveFuelToDB(true, v, activeTeam.fuelPrice, activeTeam.perKmRate); }}
+                className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                min={0} step={0.5} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-secondary">Fuel Price ($/L)</span>
+              <input type="number" value={activeTeam.fuelPrice}
+                onChange={(e) => { const v = parseFloat(e.target.value) || 0; dispatch({ type: 'SET_FUEL_SETTINGS', teamId: activeTeam.id, fuelEfficiency: activeTeam.fuelEfficiency, fuelPrice: v }); }}
+                onBlur={(e) => { const v = parseFloat(e.target.value) || 0; saveFuelToDB(true, activeTeam.fuelEfficiency, v, activeTeam.perKmRate); }}
+                className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                min={0} step={0.01} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-secondary">Per-KM Rate ($/km)</span>
+              <input type="number" value={activeTeam.perKmRate}
+                onChange={(e) => { const v = parseFloat(e.target.value) || 0; dispatch({ type: 'SET_PER_KM_RATE', teamId: activeTeam.id, rate: v }); }}
+                onBlur={(e) => { const v = parseFloat(e.target.value) || 0; saveFuelToDB(true, activeTeam.fuelEfficiency, activeTeam.fuelPrice, v); }}
+                className="w-20 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-right"
+                min={0} step={0.01} />
             </div>
           </motion.div>
         )}
@@ -332,6 +416,8 @@ function TeamSettingsCard({ activeTeam, dispatch }: TeamSettingsCardProps) {
     </motion.div>
   );
 }
+
+
 
 interface DayEditorProps {
   state: AppState;
@@ -358,6 +444,21 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
+  const checklistPanelRef = useRef<HTMLDivElement>(null);
+
+  // Close the checklist editor on any click outside its panel
+  useEffect(() => {
+    if (!activeChecklistClient) return;
+    const handler = (e: MouseEvent) => {
+      if (checklistPanelRef.current && !checklistPanelRef.current.contains(e.target as Node)) {
+        setActiveChecklistClient(null);
+        setMobileShowMap(false);
+      }
+    };
+    // Use capture so we catch clicks before any stopPropagation inside the panel
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
+  }, [activeChecklistClient]);
 
   // Saved client database — used for the swap-client feature on each card
   const { clients: savedClients } = useClients(orgId ?? null);
@@ -423,6 +524,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const prevNoTimesRef = useRef<string>('');
   const prevClientCountRef = useRef<number>(-1);
   const prevBreakCountRef = useRef<number>(-1);
+  const prevBreaksRef = useRef<string>('');
   const prevBaseRef = useRef<string>('');
   const prevStaffRef = useRef<string>('');
   // Track team-level settings (name, rates, times) separately so we only
@@ -470,19 +572,11 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         try {
         if (!orgId) break;
         for (const team of currentStateSnapshot.teams) {
-          const teamSettingsKey = JSON.stringify({
-            id: team.id, name: team.name, start: team.dayStartTime,
-            rate: team.hourlyRate, fuel: team.fuelEfficiency,
-            price: team.fuelPrice, km: team.perKmRate,
-          });
-          if (teamSettingsKey !== (prevTeamSettingsRef.current || '')) {
-            const teamUpdate: Record<string, unknown> = {
-              name: team.name, day_start_time: team.dayStartTime,
-              hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
-              fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
-            };
-            await supabase.from('teams').update(teamUpdate).eq('id', team.id);
-          }
+          await supabase.from('teams').update({
+            name: team.name, day_start_time: team.dayStartTime,
+            hourly_rate: team.hourlyRate, fuel_efficiency: team.fuelEfficiency,
+            fuel_price: team.fuelPrice, per_km_rate: team.perKmRate,
+          }).eq('id', team.id);
 
           const hasClients = team.clients.length > 0;
           const hasBaseAddress = team.baseAddress !== null;
@@ -699,6 +793,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       prevBreakCountRef.current = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
       prevBaseRef.current = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
       prevStaffRef.current = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staffIds: t.staffIds || [] })));
+      prevBreaksRef.current = JSON.stringify(state.teams.map(t => t.breaks));
       prevTeamSettingsRef.current = JSON.stringify(state.teams.map(t => ({
         id: t.id, name: t.name, start: t.dayStartTime,
         rate: t.hourlyRate, fuel: t.fuelEfficiency, price: t.fuelPrice, km: t.perKmRate,
@@ -724,6 +819,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     //            OR staff assignments/driver changed → save immediately.
     // Detail change (duration, notes etc.) → 1500ms debounce.
     const totalBreaks = state.teams.reduce((sum, t) => sum + t.breaks.length, 0);
+    const curBreaks = JSON.stringify(state.teams.map(t => t.breaks));
     const curBase = JSON.stringify(state.teams.map(t => ({ base: t.baseAddress, ret: t.returnAddress })));
     const curStaff = JSON.stringify(state.teams.map(t => ({ driver: t.driverStaffId, staffIds: t.staffIds || [] })));
     const curTeamSettings = JSON.stringify(state.teams.map(t => ({
@@ -733,10 +829,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     const isStructural =
       totalClients !== prevClientCountRef.current ||
       totalBreaks !== prevBreakCountRef.current ||
+      curBreaks !== prevBreaksRef.current ||
       curBase !== prevBaseRef.current ||
-      curStaff !== prevStaffRef.current;
+      curStaff !== prevStaffRef.current ||
+      curTeamSettings !== prevTeamSettingsRef.current; // fuel/name/rate changes save immediately
     prevClientCountRef.current = totalClients;
     prevBreakCountRef.current = totalBreaks;
+    prevBreaksRef.current = curBreaks;
     prevBaseRef.current = curBase;
     prevStaffRef.current = curStaff;
     prevTeamSettingsRef.current = curTeamSettings;
@@ -756,7 +855,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   // address via Google Places and patch the location in state + save.
   const geocodedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!dbLoaded || !window.google?.maps) return;
+    if (!dbLoaded || !window.google?.maps?.places) return;
     for (const team of state.teams) {
       for (const client of team.clients) {
         if (geocodedIdsRef.current.has(client.id)) continue;
@@ -1096,7 +1195,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             })()}
 
             {/* Team Settings (collapsible) */}
-            <TeamSettingsCard activeTeam={activeTeam} dispatch={dispatch} />
+            <TeamSettingsCard activeTeam={activeTeam} dispatch={dispatch} dbLoaded={dbLoaded} supabase={supabase} />
 
 
             {/* Optimize */}
@@ -1126,7 +1225,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                     <ClientCard client={client} index={index} totalClients={activeTeam.clients.length}
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
                       staffBusyPeriods={staffBusyPeriods} driverAssignments={crossTeamDrivers}
-                      savedClients={savedClients}
+                      savedClients={savedClients} orgId={orgId}
                       onOpenChecklist={setActiveChecklistClient} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
@@ -1341,16 +1440,19 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           <AnimatePresence mode="wait">
             {activeChecklistClient ? (
               <motion.div key="checklist" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="absolute inset-0 p-2 overflow-hidden">
-                <Suspense fallback={<div className="h-full flex items-center justify-center"><div className="shimmer w-full h-full rounded-2xl" /></div>}>
-                  <ClientChecklistPanel
-                    client={activeChecklistClient}
-                    orgId={orgId || ''}
-                    isAdmin={isAdmin}
-                    scheduleJobId={activeChecklistClient.id}
-                    onClose={() => { setActiveChecklistClient(null); setMobileShowMap(false); }}
-                  />
-                </Suspense>
+                className="absolute inset-0 pb-20 md:pb-0 p-2 overflow-hidden">
+                {/* Click-away handled by document listener on checklistPanelRef */}
+                <div ref={checklistPanelRef} className="relative h-full" onClick={(e) => e.stopPropagation()}>
+                  <Suspense fallback={<div className="h-full flex items-center justify-center"><div className="shimmer w-full h-full rounded-2xl" /></div>}>
+                    <ClientChecklistPanel
+                      client={activeChecklistClient}
+                      orgId={orgId || ''}
+                      isAdmin={isAdmin}
+                      scheduleJobId={activeChecklistClient.id}
+                      onClose={() => { setActiveChecklistClient(null); setMobileShowMap(false); }}
+                    />
+                  </Suspense>
+                </div>
               </motion.div>
             ) : (
               <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0">

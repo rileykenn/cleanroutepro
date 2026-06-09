@@ -86,10 +86,11 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
 
       {weekDates.map((date) => {
         if (allTeamsMode && allTeams && allTeamSchedules) {
-          // Merge all teams' clients into one DaySchedule with color info
+          // Merge all teams' clients into one DaySchedule with color + teamId info
           const mergedClients: DaySchedule['clients'] = [];
           let isPublished = false;
           const teamColorMap: Record<string, string> = {};
+          const clientTeamMap: Record<string, string> = {};
 
           for (const team of allTeams) {
             const teamMap = allTeamSchedules.get(team.id);
@@ -99,6 +100,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
               for (const client of teamDay.clients) {
                 mergedClients.push(client);
                 teamColorMap[client.id] = team.color.primary;
+                clientTeamMap[client.id] = team.id;
               }
             }
           }
@@ -120,6 +122,7 @@ export default function WeekView({ weekDates, daySchedules, teamColor, activeDat
               isActive={date === activeDate}
               onDayClick={() => onDayClick(date)}
               clientColorMap={teamColorMap}
+              clientTeamMap={clientTeamMap}
               staffNameMap={staffNameMap}
               warnings={dayWarnings?.get(date)}
             />

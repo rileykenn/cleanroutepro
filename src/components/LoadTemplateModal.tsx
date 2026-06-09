@@ -12,6 +12,11 @@ interface TeamTemplateData {
   teamId: string;
   dayStartTime?: string;
   baseAddress?: unknown;
+  returnAddress?: unknown;
+  hasStartBase?: boolean;
+  hasReturnBase?: boolean;
+  driverStaffId?: string | null;
+  staffIds?: string[];
   breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[];
   clients: Client[];
 }
@@ -87,7 +92,9 @@ export default function LoadTemplateModal({ orgId, onLoadWeek, onClose }: LoadTe
       if (dayTeams && dayTeams.length > 0) {
         const jobCount = dayTeams.reduce((sum, dt) => sum + (dt.clients?.length || 0), 0);
         totalJobs += jobCount;
-        dayPreviews.push({ dayLabel: DAY_LABELS[i], jobCount, teamColors: [] });
+        if (jobCount > 0) {
+          dayPreviews.push({ dayLabel: DAY_LABELS[i], jobCount, teamColors: [] });
+        }
       }
     }
     return { totalJobs, dayPreviews };

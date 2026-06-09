@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
+import { calculateScheduleTimes } from '@/lib/routeEngine';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays, generateId } from '@/lib/timeUtils';
 import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex, Location as AppLocation } from '@/lib/types';
 import { computeDayWarnings } from '@/lib/scheduleWarnings';
@@ -69,7 +70,19 @@ export default function SchedulePage() {
   const [showClearWeek, setShowClearWeek] = useState(false);
   const [activeDragClient, setActiveDragClient] = useState<SavedClient | null>(null);
   const [activeDragJob, setActiveDragJob] = useState<Client | null>(null);
-  const [loadedTemplateName, setLoadedTemplateName] = useState<string | null>(null);
+  const [loadedTemplateName, setLoadedTemplateName] = useState<{ name: string; weekStart: string } | null>(() => {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('crp_loaded_template') : null;
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  // Persist template badge across refreshes
+  useEffect(() => {
+    try {
+      if (loadedTemplateName) localStorage.setItem('crp_loaded_template', JSON.stringify(loadedTemplateName));
+      else localStorage.removeItem('crp_loaded_template');
+    } catch { /* ignore */ }
+  }, [loadedTemplateName]);
   const [templateToast, setTemplateToast] = useState<string | null>(null);
 
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
@@ -286,7 +299,27 @@ export default function SchedulePage() {
         breaks: [],
         isPublished: false,
       };
-      nextTeamMap.set(targetDate, { ...day, clients: [...day.clients, newJob as any] });
+      // Build a properly shaped Client object for the optimistic UI so the
+      // DayEditor doesn't crash on client.location.address before the DB reloads.
+      const optimisticClient: Client = {
+        id: newJob.id,
+        name: clientData.name,
+        location: {
+          address: clientData.address || '',
+          lat: clientData.lat ?? 0,
+          lng: clientData.lng ?? 0,
+          placeId: clientData.place_id || undefined,
+        },
+        jobDurationMinutes: clientData.default_duration_minutes ?? 60,
+        staffCount: clientData.default_staff_count ?? 1,
+        isLocked: false,
+        notes: '',
+        savedClientId: clientData.id,
+        clientColor: clientData.color || undefined,
+        assignedStaffIds: [],
+        checklistId: undefined,
+      };
+      nextTeamMap.set(targetDate, { ...day, clients: [...day.clients, optimisticClient] });
       next.set(state.activeTeamId, nextTeamMap);
       return next;
     });
@@ -329,9 +362,10 @@ export default function SchedulePage() {
       dayStartTime: (row.day_start_time as string) || '08:00',
       breaks: [],
       hourlyRate: Number(row.hourly_rate) || 38,
-      fuelEfficiency: Number(row.fuel_efficiency) || 10,
-      fuelPrice: Number(row.fuel_price) || 1.85,
-      perKmRate: Number(row.per_km_rate) || 0,
+      calculateFuel: Boolean(row.calculate_fuel),
+      fuelEfficiency: row.fuel_efficiency != null ? Number(row.fuel_efficiency) : 10,
+      fuelPrice: row.fuel_price != null ? Number(row.fuel_price) : 1.85,
+      perKmRate: row.per_km_rate != null ? Number(row.per_km_rate) : 0,
       staffIds: [],
       driverStaffId: null,
     }));
@@ -368,7 +402,7 @@ export default function SchedulePage() {
           const defaultTeam: TeamSchedule = {
             id: newTeam.id, name: newTeam.name, color: TEAM_COLORS[0], colorIndex: 0,
             baseAddress: null, returnAddress: null, clients: [], travelSegments: new Map(), dayStartTime: '08:00',
-            breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+            breaks: [], hourlyRate: 38, calculateFuel: false, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
             staffIds: [], driverStaffId: null,
           };
           if (!skipDispatch) dispatch({ type: 'LOAD_STATE', teams: [defaultTeam], activeTeamId: defaultTeam.id, selectedDate: state.selectedDate });
@@ -526,6 +560,62 @@ export default function SchedulePage() {
         allTeamMaps.set(team.id, teamMap);
       }
 
+      // ── Compute start/end times for every team/day that has clients ──────────
+      // calculateScheduleTimes is pure JS (no Maps API). It uses job durations
+      // and dayStartTime, treating travel time as 0 (approximation until day view
+      // calculates real drive times). This makes times appear immediately in week
+      // view after a template load or drag-drop without needing to open each day.
+      const timeUpdateRows: { id: string; start_time: string; end_time: string }[] = [];
+
+      for (const team of teamsList) {
+        const teamMap = allTeamMaps.get(team.id);
+        if (!teamMap) continue;
+
+        for (const [date, dayData] of teamMap) {
+          if (dayData.clients.length === 0) continue;
+
+          // Only recalculate if any client is missing a startTime
+          const needsCalc = dayData.clients.some(c => !c.startTime);
+          if (!needsCalc) continue;
+
+          // Build a minimal TeamSchedule for the calculation
+          const teamForCalc: TeamSchedule = {
+            ...team,
+            clients: dayData.clients,
+            breaks: dayData.breaks,
+            travelSegments: new Map(), // no travel data yet → times stack sequentially
+            dayStartTime: team.dayStartTime,
+            baseAddress: dayData.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress,
+            staffIds: dayData.staffIds || [],
+          };
+
+          const { clients: timedClients } = calculateScheduleTimes(teamForCalc);
+
+          // Patch the allTeamMaps cache with calculated times
+          teamMap.set(date, { ...dayData, clients: timedClients });
+
+          // Collect rows for background DB update
+          for (const c of timedClients) {
+            if (c.startTime && c.endTime) {
+              timeUpdateRows.push({ id: c.id, start_time: c.startTime, end_time: c.endTime });
+            }
+          }
+        }
+
+        allTeamMaps.set(team.id, teamMap);
+      }
+
+      // Fire-and-forget: persist calculated times to DB so they survive a reload
+      if (timeUpdateRows.length > 0) {
+        (async () => {
+          for (const row of timeUpdateRows) {
+            supabase.from('schedule_jobs')
+              .update({ start_time: row.start_time, end_time: row.end_time })
+              .eq('id', row.id)
+              .then(() => {});
+          }
+        })();
+      }
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
@@ -891,14 +981,80 @@ export default function SchedulePage() {
     }
   }, [loadDayFromCache, loadDayForEdit]);
 
-  const goToPrevDay = async () => {
-    if (daySaveRef.current) await daySaveRef.current();
-    switchToDay(addDays(state.focusedDate, -1));
+  const atWeekStart = state.viewMode === 'day' && state.focusedDate <= weekDates[0];
+  const atWeekEnd   = state.viewMode === 'day' && state.focusedDate >= weekDates[6];
+
+  const goToPrevDay = () => {
+    if (atWeekStart) return; // already on Monday — don't cross into last week
+    const newDate = addDays(state.focusedDate, -1);
+    navigateDayInstant(newDate);
   };
-  const goToNextDay = async () => {
-    if (daySaveRef.current) await daySaveRef.current();
-    switchToDay(addDays(state.focusedDate, 1));
+  const goToNextDay = () => {
+    if (atWeekEnd) return; // already on Sunday — don't cross into next week
+    const newDate = addDays(state.focusedDate, 1);
+    navigateDayInstant(newDate);
   };
+
+  /**
+   * Instantly switch to newDate in day view by:
+   * 1. Patching weekSchedules from reducer state (so the cache is up-to-date for this day)
+   * 2. Loading newDate from the (freshly patched) cache — no DB wait
+   * 3. Saving the current day's changes to DB in the background
+   */
+  const navigateDayInstant = useCallback((newDate: string) => {
+    const editedDate = stateRef.current.selectedDate;
+
+    // ── 1. Patch weekSchedules with the latest state for the day we're leaving ──
+    setWeekSchedules(prev => {
+      const next = new Map(prev);
+      for (const team of stateRef.current.teams) {
+        const teamMap = new Map(next.get(team.id) || new Map<string, DaySchedule>());
+        const existing = teamMap.get(editedDate);
+        teamMap.set(editedDate, {
+          date: editedDate,
+          dayOfWeek: existing?.dayOfWeek ||
+            new Date(editedDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
+          scheduleId: existing?.scheduleId || null,
+          clients: team.clients,
+          breaks: team.breaks,
+          templateCode: existing?.templateCode,
+          isPublished: existing?.isPublished || false,
+          baseAddress: team.baseAddress,
+          returnAddress: team.returnAddress,
+          driverStaffId: team.driverStaffId || null,
+          staffIds: team.staffIds || [],
+        });
+        next.set(team.id, teamMap);
+      }
+      return next;
+    });
+
+    // ── 2. Switch to the new day immediately — cache load or cross-week fetch ──
+    dispatch({ type: 'SET_FOCUSED_DATE', date: newDate });
+    // loadDayFromCache reads weekSchedules via its closure, but the setWeekSchedules
+    // above is async. We use a ref-patched fallback: build teamsForNewDay inline
+    // from the already-correct weekSchedules for newDate (which hasn't changed).
+    const hit = loadDayFromCache(newDate);
+    if (!hit) {
+      // Cross-week navigation — show blank immediately then fetch
+      const currentTeams = allOrgTeamsRef.current.length > 0
+        ? allOrgTeamsRef.current : stateRef.current.teams;
+      dispatch({
+        type: 'LOAD_STATE',
+        teams: currentTeams.map(t => ({ ...t, clients: [], travelSegments: new Map<string, TravelSegment>(), breaks: [] as typeof t.breaks })),
+        activeTeamId: activeTeamIdRef.current || currentTeams[0]?.id || '',
+        selectedDate: newDate,
+      });
+      loadDayForEdit(newDate);
+    }
+
+    // ── 3. Save current day in the background (no UI blocking) ──────────────
+    skipUnmountSaveRef.current = true;
+    (async () => {
+      if (daySaveRef.current) await daySaveRef.current();
+      skipUnmountSaveRef.current = false;
+    })();
+  }, [loadDayFromCache, loadDayForEdit, setWeekSchedules]);
 
   const dayLabel = useMemo(() => {
     const parts = state.focusedDate.split('-').map(Number);
@@ -1156,7 +1312,7 @@ export default function SchedulePage() {
         id: data.id, name: data.name, color: TEAM_COLORS[colorIndex], colorIndex,
         baseAddress: baseAddr ? { ...baseAddr } : null, returnAddress: null,
         clients: [], travelSegments: new Map(), dayStartTime: '08:00',
-        breaks: [], hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+        breaks: [], hourlyRate: 38, calculateFuel: false, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
         staffIds: [], driverStaffId: null,
       };
       allOrgTeamsRef.current = [...allOrgTeamsRef.current, teamToAdd];
@@ -1229,7 +1385,7 @@ export default function SchedulePage() {
   }, [supabase, pendingDeleteTeam, weekDates, loadWeekSchedules]);
 
   // ─── Week template loading ───
-  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; baseAddress?: unknown; returnAddress?: unknown; driverStaffId?: string | null; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>, templateName?: string, templateLabel?: string) => {
+  const handleLoadWeekTemplate = useCallback(async (weekData: Record<string, { teamName: string; teamId: string; dayStartTime?: string; baseAddress?: unknown; returnAddress?: unknown; hasStartBase?: boolean; hasReturnBase?: boolean; driverStaffId?: string | null; staffIds?: string[]; breaks?: { afterClientIndex: number; durationMinutes: number; label: string }[]; clients: Client[] }[]>, templateName?: string, templateLabel?: string) => {
     // First save any pending day edits
     if (daySaveRef.current) await daySaveRef.current();
 
@@ -1269,8 +1425,6 @@ export default function SchedulePage() {
         matched = teamByName.get(teamName)!;
       }
 
-      // We DO NOT arbitrarily grab an unrelated team here. If not matched, create a new one.
-
       if (matched) {
         claimedTeamIds.add(matched.id);
         resolvedTeams.set(teamName, matched);
@@ -1288,7 +1442,7 @@ export default function SchedulePage() {
             colorIndex: colorIdx % 10,
             baseAddress: null, returnAddress: null, clients: [],
             travelSegments: new Map(), dayStartTime: '08:00', breaks: [],
-            hourlyRate: 38, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
+            hourlyRate: 38, calculateFuel: false, fuelEfficiency: 10, fuelPrice: 1.85, perKmRate: 0,
             staffIds: [], driverStaffId: null,
           };
           claimedTeamIds.add(t.id);
@@ -1298,25 +1452,25 @@ export default function SchedulePage() {
       }
     }
 
-    // ── Step 2: Clear the existing week strictly for the claimed teams ──
-    // This prevents wiping out manual schedules for teams that aren't part of this template.
-    if (claimedTeamIds.size > 0) {
-      const { data: existingScheds } = await supabase
-        .from('schedules').select('id').eq('org_id', orgId).in('team_id', Array.from(claimedTeamIds)).in('schedule_date', weekDates);
-      if (existingScheds && existingScheds.length > 0) {
-        const schedIds = existingScheds.map((r: { id: string }) => r.id);
-        await supabase.from('schedule_jobs').delete().in('schedule_id', schedIds);
-        await supabase.from('schedules').delete().eq('org_id', orgId).in('id', schedIds);
-      }
+    // ── Step 2: Clear ALL schedule rows for this week (org-scoped) ──
+    // We wipe the entire week — same as "Clear Week" — so leftover teams from
+    // a previous schedule don't survive the load and cause phantom extra teams.
+    const { data: existingScheds } = await supabase
+      .from('schedules').select('id').eq('org_id', orgId).in('schedule_date', weekDates);
+    if (existingScheds && existingScheds.length > 0) {
+      const schedIds = existingScheds.map((r: { id: string }) => r.id);
+      await supabase.from('schedule_jobs').delete().in('schedule_id', schedIds);
+      await supabase.from('schedules').delete().eq('org_id', orgId).in('id', schedIds);
     }
 
-    // ── Step 3: Clean stale staff references ──
+    // ── Step 3: Clean stale staff references (both per-client and team-level staffIds) ──
     const { data: currentStaff } = await supabase.from('staff_members').select('id').eq('org_id', orgId);
     const validStaffIds = new Set((currentStaff || []).map((s: { id: string }) => s.id));
     let removedStaffCount = 0;
 
     for (let i = 0; i < 7; i++) {
       for (const tt of weekData[String(i)] || []) {
+        // Clean per-client assigned staff
         for (const client of tt.clients) {
           if (client.assignedStaffIds && client.assignedStaffIds.length > 0) {
             const cleaned = client.assignedStaffIds.filter((id: string) => validStaffIds.has(id));
@@ -1325,6 +1479,19 @@ export default function SchedulePage() {
               client.assignedStaffIds = cleaned;
             }
           }
+        }
+        // Clean team-level staffIds
+        if (tt.staffIds && tt.staffIds.length > 0) {
+          const cleaned = tt.staffIds.filter((id: string) => validStaffIds.has(id));
+          if (cleaned.length < tt.staffIds.length) {
+            removedStaffCount += tt.staffIds.length - cleaned.length;
+            tt.staffIds = cleaned;
+          }
+        }
+        // Clean driverStaffId
+        if (tt.driverStaffId && !validStaffIds.has(tt.driverStaffId)) {
+          removedStaffCount++;
+          tt.driverStaffId = null;
         }
       }
     }
@@ -1349,16 +1516,62 @@ export default function SchedulePage() {
         }
 
         type SavedAddress = { address: string; lat: number; lng: number; placeId?: string } | null;
-        const tBase = templateTeam.baseAddress as SavedAddress;
-        const tReturn = templateTeam.returnAddress as SavedAddress;
+        const tBase   = templateTeam.baseAddress   as SavedAddress;
+        // returnAddress can be a location object, null (not set), or the string 'none' (explicitly cleared)
+        const tReturnRaw = templateTeam.returnAddress;
+        const tReturn = (tReturnRaw === 'none' || tReturnRaw === null || tReturnRaw === undefined)
+          ? null
+          : tReturnRaw as SavedAddress;
+        const returnIsNone = tReturnRaw === 'none';
+
+        // Determine has_start_base / has_return_base.
+        // Prefer the explicit saved flags (new templates); fall back to inferring from address presence.
+        const hasStartBase  = typeof templateTeam.hasStartBase  === 'boolean'
+          ? templateTeam.hasStartBase
+          : tBase !== null;
+        const hasReturnBase = typeof templateTeam.hasReturnBase === 'boolean'
+          ? templateTeam.hasReturnBase
+          : !returnIsNone && tReturn !== null;
+
+        // Build schedule row data matching the autosaver's scheduleData shape exactly
+        const scheduleRowData: Record<string, unknown> = {
+          org_id:          orgId,
+          team_id:         matchedTeam.id,
+          schedule_date:   date,
+          has_start_base:  hasStartBase,
+          has_return_base: hasReturnBase,
+          driver_staff_id: templateTeam.driverStaffId || null,
+          staff_ids:       templateTeam.staffIds || [],
+        };
+
+        // Base address
+        if (tBase) {
+          scheduleRowData.base_address  = tBase.address;
+          scheduleRowData.base_lat      = tBase.lat;
+          scheduleRowData.base_lng      = tBase.lng;
+          scheduleRowData.base_place_id = tBase.placeId || null;
+        } else {
+          scheduleRowData.base_address  = null;
+          scheduleRowData.base_lat      = null;
+          scheduleRowData.base_lng      = null;
+          scheduleRowData.base_place_id = null;
+        }
+
+        // Return address
+        if (returnIsNone || !tReturn) {
+          scheduleRowData.return_address  = null;
+          scheduleRowData.return_lat      = null;
+          scheduleRowData.return_lng      = null;
+          scheduleRowData.return_place_id = null;
+        } else {
+          scheduleRowData.return_address  = tReturn.address;
+          scheduleRowData.return_lat      = tReturn.lat;
+          scheduleRowData.return_lng      = tReturn.lng;
+          scheduleRowData.return_place_id = tReturn.placeId || null;
+        }
 
         const { data: created } = await supabase
-          .from('schedules').insert({
-            org_id: orgId, team_id: matchedTeam.id, schedule_date: date,
-            ...(templateTeam.driverStaffId ? { driver_staff_id: templateTeam.driverStaffId } : {}),
-            ...(tBase ? { base_address: tBase.address, base_lat: tBase.lat, base_lng: tBase.lng, base_place_id: tBase.placeId || null, has_start_base: true } : {}),
-            ...(tReturn ? { return_address: tReturn.address, return_lat: tReturn.lat, return_lng: tReturn.lng, return_place_id: tReturn.placeId || null, has_return_base: true } : {}),
-          }).select('id').single();
+          .from('schedules').insert(scheduleRowData).select('id').single();
         if (!created) continue;
         const scheduleId = created.id;
 
@@ -1377,16 +1590,24 @@ export default function SchedulePage() {
             const newId = crypto.randomUUID();
             insertedClientIds.push(newId);
             clientRows.push({
-              id: newId,
-              schedule_id: scheduleId, org_id: orgId, client_id: c.savedClientId || null,
-              position: ci, name: c.name, address: c.location?.address || '',
-              lat: c.location?.lat || 0, lng: c.location?.lng || 0,
-              place_id: c.location?.placeId || null,
-              duration_minutes: c.jobDurationMinutes || 90,
-              staff_count: c.staffCount || 1,
-              is_locked: c.isLocked || false, is_break: false,
-              notes: c.notes || '', assigned_staff_ids: c.assignedStaffIds || [],
-              fixed_start_time: c.fixedStartTime || null,
+              id:                newId,
+              schedule_id:       scheduleId,
+              org_id:            orgId,
+              client_id:         c.savedClientId || null,
+              position:          ci,
+              name:              c.name,
+              address:           c.location?.address || '',
+              lat:               c.location?.lat || 0,
+              lng:               c.location?.lng || 0,
+              place_id:          c.location?.placeId || null,
+              duration_minutes:  c.jobDurationMinutes || 90,
+              staff_count:       c.staffCount || 1,
+              is_locked:         c.isLocked || false,
+              is_break:          false,
+              notes:             c.notes || '',
+              assigned_staff_ids: c.assignedStaffIds || [],
+              fixed_start_time:  c.fixedStartTime || null,
+              checklist_id:      c.checklistId || null,
             });
           }
 
@@ -1399,15 +1620,25 @@ export default function SchedulePage() {
           for (const [clientIdx, breakData] of breakByIndex) {
             const afterClientId = insertedClientIds[clientIdx] || '';
             breakRows.push({
-              id: crypto.randomUUID(),
-              schedule_id: scheduleId, org_id: orgId, client_id: null,
-              position: position++, name: breakData.label || 'Break',
-              address: '', lat: 0, lng: 0, place_id: null,
-              duration_minutes: breakData.durationMinutes,
-              staff_count: 1, is_locked: false, is_break: true,
+              id:                crypto.randomUUID(),
+              schedule_id:       scheduleId,
+              org_id:            orgId,
+              client_id:         null,
+              position:          position++,
+              name:              breakData.label || 'Break',
+              address:           '',
+              lat:               0,
+              lng:               0,
+              place_id:          null,
+              duration_minutes:  breakData.durationMinutes,
+              staff_count:       1,
+              is_locked:         false,
+              is_break:          true,
               notes: JSON.stringify({
-                afterClientId, afterPosition: clientIdx,
-                breakId: `${scheduleId}-brk-${clientIdx}`, label: breakData.label || 'Break',
+                afterClientId,
+                afterPosition: clientIdx,
+                breakId: `${scheduleId}-brk-${clientIdx}`,
+                label: breakData.label || 'Break',
               }),
               assigned_staff_ids: [],
             });
@@ -1420,7 +1651,7 @@ export default function SchedulePage() {
     }
 
     await loadWeekSchedules(weekDates);
-    setLoadedTemplateName(templateName || null);
+    setLoadedTemplateName(templateName ? { name: templateName, weekStart: weekDates[0] } : null);
     setShowLoadTemplate(false);
   }, [orgId, supabase, state.teams, weekDates, loadWeekSchedules]);
 
@@ -1439,6 +1670,7 @@ export default function SchedulePage() {
       await supabase.from('schedules').delete().eq('org_id', orgId).in('id', ids);
     }
     setShowClearWeek(false);
+    setLoadedTemplateName(null); // Dismiss the template badge — week data is gone
     await loadWeekSchedules(weekDates);
   }, [orgId, supabase, weekDates, loadWeekSchedules]);
 
@@ -1478,15 +1710,23 @@ export default function SchedulePage() {
     const baseTeams = weekTeamsRef.current.length > 0 ? weekTeamsRef.current : state.teams;
     if (baseTeams.length === 0) return result;
 
+    // Live state lookup: for the currently selected day, state.teams has the
+    // most up-to-date driver/staff data (weekSchedules cache lags until day-switch).
+    const liveTeamMap = new Map(state.teams.map(t => [t.id, t]));
+
     for (const date of weekDates) {
       const teamsForDay: TeamSchedule[] = baseTeams.map(team => {
         const teamMap = weekSchedules.get(team.id);
         const dayData = teamMap?.get(date);
+        // For the active date prefer live reducer state so driver changes reflect immediately
+        const isActiveDate = date === state.selectedDate;
+        const liveTeam = isActiveDate ? liveTeamMap.get(team.id) : undefined;
         return {
           ...team,
           clients: dayData?.clients || [],
           breaks: dayData?.breaks || [] as typeof team.breaks,
-          staffIds: dayData?.staffIds || [],
+          staffIds: liveTeam?.staffIds ?? dayData?.staffIds ?? [],
+          driverStaffId: liveTeam?.driverStaffId ?? dayData?.driverStaffId ?? null,
           travelSegments: new Map(),
         };
       });
@@ -1496,7 +1736,24 @@ export default function SchedulePage() {
       }
     }
     return result;
-  }, [weekSchedules, weekDates, allStaff, state.teams]);
+  }, [weekSchedules, weekDates, allStaff, state.teams, state.selectedDate]);
+
+
+  // Filter weekDayWarnings to the active team unless "All" is selected.
+  // Each warning has a teamIds array — keep a warning if it touches the active team,
+  // or if it has no teamIds (global warning).
+  const filteredWeekDayWarnings = useMemo(() => {
+    if (state.activeTeamId === 'all') return weekDayWarnings;
+    const filtered = new Map<string, ReturnType<typeof computeDayWarnings>>();
+    for (const [date, warnings] of weekDayWarnings) {
+      const relevant = warnings.filter(w =>
+        !w.teamIds || w.teamIds.length === 0 || w.teamIds.includes(state.activeTeamId)
+      );
+      if (relevant.length > 0) filtered.set(date, relevant);
+    }
+    return filtered;
+  }, [weekDayWarnings, state.activeTeamId]);
+
 
   // Guard: state.teams may be empty for an untouched week
   const activeTeam = useMemo(
@@ -1545,39 +1802,41 @@ export default function SchedulePage() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
               )}
-              <button onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+              <button
+                onClick={state.viewMode === 'day' ? goToPrevDay : goToPrevWeek}
+                disabled={state.viewMode === 'day' && atWeekStart}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors ${
+                  state.viewMode === 'day' && atWeekStart ? 'opacity-25 cursor-not-allowed pointer-events-none' : ''
+                }`}
+                title={state.viewMode === 'day' && atWeekStart ? 'Already at start of week' : undefined}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
               <span className="text-sm font-semibold text-text-primary text-center px-1 lg:min-w-[180px]">
                 {state.viewMode === 'day' ? dayLabel : weekLabel}
               </span>
-              {loadedTemplateName && (
-                <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-primary bg-primary/8 px-2.5 py-1 rounded-lg shrink-0">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                  {loadedTemplateName}
-                  <button onClick={() => setLoadedTemplateName(null)} className="p-0.5 rounded hover:bg-primary/15 transition-colors">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  </button>
-                </span>
-              )}
-              <button onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors">
+              <button
+                onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek}
+                disabled={state.viewMode === 'day' && atWeekEnd}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors ${
+                  state.viewMode === 'day' && atWeekEnd ? 'opacity-25 cursor-not-allowed pointer-events-none' : ''
+                }`}
+                title={state.viewMode === 'day' && atWeekEnd ? 'Already at end of week' : undefined}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
             </div>
 
             {/* Right actions */}
             <div className="flex items-center gap-1">
-              {/* View mode toggle — always visible (was hidden sm:flex) */}
-              <div className="flex items-center gap-0.5 bg-surface-elevated rounded-lg p-0.5">
-                <button
-                  onClick={handleBackToWeek}
-                  className={`text-xs px-2 py-1 rounded-md font-medium transition-colors ${state.viewMode === 'week' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-                >Week</button>
-                <button
-                  onClick={() => { dispatch({ type: 'SET_VIEW_MODE', viewMode: 'day' }); loadDayForEdit(state.focusedDate); }}
-                  className={`text-xs px-2 py-1 rounded-md font-medium transition-colors ${state.viewMode === 'day' ? 'bg-white shadow-card text-text-primary' : 'text-text-tertiary hover:text-text-secondary'}`}
-                >Day</button>
-              </div>
+
+              {/* Template badge — left of the calendar icon */}
+              {loadedTemplateName && loadedTemplateName.weekStart === weekDates[0] && state.viewMode === 'week' && (
+                <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-primary bg-primary/8 border border-primary/15 px-2.5 py-1 rounded-full">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Loaded from {loadedTemplateName.name}
+                </span>
+              )}
 
               <button onClick={() => setShowMonth(true)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors" title="Month view">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
@@ -1728,7 +1987,7 @@ export default function SchedulePage() {
                     allTeams={state.teams}
                     allTeamSchedules={weekSchedules}
                     staffNameMap={Object.fromEntries(allStaff.map(s => [s.id, s.name]))}
-                    dayWarnings={weekDayWarnings}
+                    dayWarnings={filteredWeekDayWarnings}
                   />
                 </div>
               </div>

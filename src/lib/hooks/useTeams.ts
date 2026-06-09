@@ -8,7 +8,7 @@ interface DbTeam {
   id: string; org_id: string; name: string; color_index: number;
   base_address: string | null; base_lat: number | null; base_lng: number | null; base_place_id: string | null;
   return_address: string | null; return_lat: number | null; return_lng: number | null; return_place_id: string | null; return_disabled: boolean | null;
-  day_start_time: string; hourly_rate: number; fuel_efficiency: number; fuel_price: number; per_km_rate: number; sort_order: number;
+  day_start_time: string; hourly_rate: number; calculate_fuel: boolean; fuel_efficiency: number; fuel_price: number; per_km_rate: number; sort_order: number;
 }
 
 export function useTeams(authOrgId: string | null) {
@@ -30,7 +30,8 @@ export function useTeams(authOrgId: string | null) {
     returnAddress: row.return_disabled ? 'none' : row.return_address ? { address: row.return_address, lat: row.return_lat || 0, lng: row.return_lng || 0, placeId: row.return_place_id || undefined } : null,
     clients: [], travelSegments: new Map<string, TravelSegment>(),
     dayStartTime: row.day_start_time || '08:00', breaks: [],
-    hourlyRate: Number(row.hourly_rate) || 38, fuelEfficiency: Number(row.fuel_efficiency) || 10,
+    hourlyRate: Number(row.hourly_rate) || 38, calculateFuel: Boolean(row.calculate_fuel),
+    fuelEfficiency: Number(row.fuel_efficiency) || 10,
     fuelPrice: Number(row.fuel_price) || 1.85, perKmRate: Number(row.per_km_rate) || 0,
     staffIds: [], driverStaffId: null,
   }), []);

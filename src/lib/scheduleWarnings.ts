@@ -190,6 +190,35 @@ export function computeDayWarnings(
     }
   }
 
+  // ── 3. Saved clients with no checklist assigned ────────────────────────────
+  for (const team of teams) {
+    if (team.clients.length === 0) continue;
+    const missing = team.clients.filter(c => c.savedClientId && !c.checklistId);
+    if (missing.length > 0) {
+      warnings.push({
+        id: `no-checklist-${team.id}`,
+        level: 'warning',
+        title: `${missing.length} job${missing.length > 1 ? 's' : ''} missing a checklist`,
+        detail: `${missing.map(c => c.name).join(', ')} on ${team.name} — open the job card to assign a checklist.`,
+        teamIds: [team.id],
+      });
+    }
+  }
+
+  // ── 4. Team has jobs but no driver assigned for the day ───────────────────
+  for (const team of teams) {
+    if (team.clients.length === 0) continue;
+    if (!team.driverStaffId) {
+      warnings.push({
+        id: `no-driver-${team.id}`,
+        level: 'warning',
+        title: `${team.name} has no driver assigned`,
+        detail: `Assign a driver to ${team.name} for this day using the Staff section.`,
+        teamIds: [team.id],
+      });
+    }
+  }
+
   return warnings;
 }
 

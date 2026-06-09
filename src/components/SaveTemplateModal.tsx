@@ -44,14 +44,36 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
     if (!orgId || !name.trim()) return;
     setSaving(true);
 
-    // week_data: { "0": [{teamName, teamId, dayStartTime, baseAddress, returnAddress, driverStaffId, breaks, clients}], ... }
+    /**
+     * week_data schema — mirrors the autosaver's schedules + schedule_jobs columns:
+     * {
+     *   "0": [                         ← day index (0=Mon … 6=Sun)
+     *     {
+     *       teamName, teamId,
+     *       dayStartTime,
+     *       baseAddress,               ← per-day override (or null)
+     *       returnAddress,             ← per-day override (or null / 'none')
+     *       hasStartBase,              ← was there an explicit base address?
+     *       hasReturnBase,             ← was there an explicit return address?
+     *       driverStaffId,
+     *       staffIds,                  ← full team staff roster for the day
+     *       breaks,
+     *       clients,
+     *     }
+     *   ],
+     *   ...
+     * }
+     */
     const weekData: Record<string, {
       teamName: string;
       teamId: string;
       dayStartTime: string;
       baseAddress: unknown;
       returnAddress: unknown;
+      hasStartBase: boolean;
+      hasReturnBase: boolean;
       driverStaffId: string | null;
+      staffIds: string[];
       breaks: { afterClientIndex: number; durationMinutes: number; label: string }[];
       clients: Partial<Client>[];
     }[]> = {};
@@ -63,7 +85,12 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
       for (const team of teams) {
         const dayData = weekSchedules.get(team.id)?.get(date);
         const clients = dayData?.clients || [];
-        if (clients.length === 0) continue;
+
+        // Skip this team/day if there is no actual DB schedule row.
+        // weekSchedules populates baseAddress from the team's default even for days
+        // with zero activity, so checking individual fields is unreliable.
+        // scheduleId === null means no row was ever written → nothing to save.
+        if (!dayData?.scheduleId) continue;
 
         // Map breaks: afterClientId → afterClientIndex (stable across loads)
         const breaks = (dayData?.breaks || [])
@@ -73,29 +100,36 @@ export default function SaveTemplateModal({ teams, selectedDate, weekSchedules, 
           })
           .filter((b): b is { afterClientIndex: number; durationMinutes: number; label: string } => b !== null);
 
-        // Use per-day address overrides from dayData; fall back to team-level defaults
-        const perDayBase = dayData?.baseAddress !== undefined ? dayData.baseAddress : team.baseAddress;
+        // Per-day address overrides (fall back to team-level defaults)
+        const perDayBase   = dayData?.baseAddress   !== undefined ? dayData.baseAddress   : team.baseAddress;
         const perDayReturn = dayData?.returnAddress !== undefined ? dayData.returnAddress : team.returnAddress;
-        const perDayDriver = dayData?.driverStaffId ?? null;
+
+        // has_start_base / has_return_base flags (same logic as autosaver scheduleData)
+        const hasStartBase = perDayBase !== null;
+        const hasReturnBase = perDayReturn !== null && perDayReturn !== 'none';
 
         dayTeams.push({
-          teamName: team.name,
-          teamId: team.id,
-          dayStartTime: team.dayStartTime,
-          baseAddress: perDayBase,
+          teamName:      team.name,
+          teamId:        team.id,
+          dayStartTime:  team.dayStartTime,
+          baseAddress:   perDayBase,
           returnAddress: perDayReturn,
-          driverStaffId: perDayDriver,
+          hasStartBase,
+          hasReturnBase,
+          driverStaffId: dayData?.driverStaffId ?? null,
+          staffIds:      dayData?.staffIds ?? [],
           breaks,
           clients: clients.map(c => ({
-            name: c.name,
-            location: c.location,
+            name:              c.name,
+            location:          c.location,
             jobDurationMinutes: c.jobDurationMinutes,
-            staffCount: c.staffCount,
-            isLocked: c.isLocked,
-            fixedStartTime: c.fixedStartTime,
-            savedClientId: c.savedClientId,
-            notes: c.notes,
-            assignedStaffIds: c.assignedStaffIds,
+            staffCount:        c.staffCount,
+            isLocked:          c.isLocked,
+            fixedStartTime:    c.fixedStartTime,
+            savedClientId:     c.savedClientId,
+            notes:             c.notes,
+            assignedStaffIds:  c.assignedStaffIds,
+            checklistId:       c.checklistId,
           })),
         });
       }

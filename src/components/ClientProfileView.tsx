@@ -4,20 +4,19 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { CLIENT_COLORS } from '@/lib/types';
+import PlacesAutocomplete from '@/components/PlacesAutocomplete';
+import ConfirmModal from '@/components/ConfirmModal';
+import type { Location } from '@/lib/types';
 
-// ── Duration helpers ───────────────────────────────────────────────────────────
-/** Convert minutes → "h:mm" (e.g. 90 → "1:30", 240 → "4:00") */
 function minutesToHM(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
 }
-/** Parse "h:mm" or "h:m" → total minutes. Returns null if invalid. */
 function hmToMinutes(str: string): number | null {
   const trimmed = str.trim();
   const colonIdx = trimmed.indexOf(':');
   if (colonIdx === -1) {
-    // Allow plain number as hours (e.g. "2" → 120)
     const h = parseInt(trimmed, 10);
     if (isNaN(h) || h < 0) return null;
     return h * 60;
@@ -60,7 +59,6 @@ function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) 
   };
 
   const getUrl = (path: string) => supabase.storage.from('client-media').getPublicUrl(path).data.publicUrl;
-
   const deleteMedia = async (id: string, path: string) => {
     await supabase.storage.from('client-media').remove([path]);
     await supabase.from('client_media').delete().eq('id', id);
@@ -70,36 +68,41 @@ function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-text-primary">Photos &amp; Videos</h3>
-        <button onClick={() => inputRef.current?.click()} disabled={uploading} className="btn-ghost text-xs flex items-center gap-1.5">
+        <span className="text-xs font-semibold text-text-secondary">Photos &amp; Videos</span>
+        <button onClick={() => inputRef.current?.click()} disabled={uploading}
+          className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors disabled:opacity-50 flex items-center gap-1">
           {uploading
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            ? <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Uploading…</>
+            : '+ Upload'
           }
-          Upload
         </button>
         <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleUpload}/>
       </div>
       {media.length === 0 ? (
         <button onClick={() => inputRef.current?.click()}
-          className="w-full h-24 rounded-xl border-2 border-dashed border-border-light hover:border-primary text-sm text-text-tertiary hover:text-primary transition-colors">
+          className="w-full h-14 rounded-xl border border-border-light bg-surface-elevated/60 text-xs text-text-tertiary hover:text-text-secondary hover:border-border-base transition-all flex items-center justify-center gap-1.5">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           Tap to upload photos or videos
         </button>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           {media.map(m => (
-            <div key={m.id} className="relative group aspect-square rounded-xl overflow-hidden bg-surface-elevated">
+            <div key={m.id} className="relative group aspect-square rounded-lg overflow-hidden bg-surface-elevated border border-border-light">
               {m.file_type.startsWith('video')
                 ? <video src={getUrl(m.file_path)} className="w-full h-full object-cover"/>
                 // eslint-disable-next-line @next/next/no-img-element
                 : <img src={getUrl(m.file_path)} alt={m.file_name} className="w-full h-full object-cover"/>
               }
               <button onClick={() => deleteMedia(m.id, m.file_path)}
-                className="absolute top-1 right-1 p-1 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
           ))}
+          <button onClick={() => inputRef.current?.click()}
+            className="aspect-square rounded-lg border border-border-light bg-surface-elevated hover:bg-surface-hover flex items-center justify-center text-text-tertiary hover:text-text-secondary text-lg transition-all">
+            +
+          </button>
         </div>
       )}
     </div>
@@ -108,32 +111,82 @@ function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type ClientRow = {
-  id: string;
-  name: string;
-  address: string;
-  phone: string | null;
-  email: string | null;
-  default_duration_minutes: number;
-  default_staff_count: number;
-  rate: number | null;
-  notes: string | null;
-  color: string | null;
-  created_at: string;
+  id: string; name: string; address: string;
+  phone: string | null; email: string | null;
+  default_duration_minutes: number; default_staff_count: number;
+  rate: number | null; notes: string | null; color: string | null; created_at: string;
 };
 
 interface ClientProfileViewProps {
   clientId: string;
   orgId: string;
-  /** Show the back-to-clients nav button (used in the standalone profile page) */
   showBackButton?: boolean;
   onBack?: () => void;
   onDelete?: () => void;
 }
 
-// ── Main reusable component ───────────────────────────────────────────────────
+// ── Inline editable row ───────────────────────────────────────────────────────
+function EditRow({
+  icon, label, value, placeholder, type = 'text', inputMode, step, min, display, onSave,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  placeholder: string;
+  type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  step?: string;
+  min?: string;
+  display?: React.ReactNode;
+  onSave: (val: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+
+  const commit = () => { onSave(draft); setEditing(false); };
+  const cancel = () => { setDraft(value); setEditing(false); };
+
+  return (
+    <div className="flex items-center gap-3 py-2.5 group">
+      <div className="shrink-0 w-4 flex justify-center text-text-tertiary">{icon}</div>
+      <span className="text-xs text-text-tertiary w-20 shrink-0">{label}</span>
+      {editing ? (
+        <input
+          autoFocus
+          type={type}
+          inputMode={inputMode}
+          step={step}
+          min={min}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+          onBlur={commit}
+          placeholder={placeholder}
+          className="flex-1 min-w-0 text-sm bg-surface-elevated border border-primary/50 rounded-lg px-2.5 py-1 text-text-primary outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      ) : (
+        <button
+          onClick={() => { setDraft(value); setEditing(true); }}
+          className="flex-1 min-w-0 text-left text-sm flex items-center justify-between gap-2 group/btn"
+        >
+          <span className={value ? 'text-text-primary font-medium' : 'text-text-tertiary'}>
+            {display ?? (value || placeholder)}
+          </span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            className="shrink-0 text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function ClientProfileView({ clientId, orgId, showBackButton, onBack, onDelete }: ClientProfileViewProps) {
   const supabase = useMemo(() => createSupabaseClient(), []);
-
   const [client, setClient] = useState<ClientRow | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -142,75 +195,49 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     let cancelled = false;
     setLoading(true);
     setClient(null);
-
     const fetchClient = async (attempt = 0) => {
       const { data, error } = await supabase.from('clients')
         .select('id, name, address, phone, email, default_duration_minutes, default_staff_count, rate, notes, color, created_at')
         .eq('id', clientId).single();
       if (cancelled) return;
-      if ((data === null || error) && attempt < 2) {
-        // Auth session may not be ready yet — retry once after a short delay
-        setTimeout(() => fetchClient(attempt + 1), 400);
-        return;
-      }
+      if ((data === null || error) && attempt < 2) { setTimeout(() => fetchClient(attempt + 1), 400); return; }
       setClient(data ?? null);
       setLoading(false);
     };
-
     fetchClient();
     return () => { cancelled = true; };
   }, [clientId, supabase]);
 
-  const updateClient = useCallback(async (field: string, value: string | number | null) => {
+  const updateField = useCallback(async (field: string, value: string | number | null) => {
     await supabase.from('clients').update({ [field]: value }).eq('id', clientId);
     setClient(prev => prev ? { ...prev, [field]: value } : prev);
   }, [clientId, supabase]);
 
-
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    name: '', address: '', phone: '', email: '',
-    default_duration_minutes: 90, default_staff_count: 1,
-    rate: '' as string | number,
-    notes: '' as string,
-  });
+  const [form, setForm] = useState({ name: '', address: '', notes: '' });
+  const [durationHM, setDurationHM] = useState('1:30');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // Duration h:mm input string (kept in sync with form.default_duration_minutes)
-  const [durationHM, setDurationHM] = useState(() => minutesToHM(90));
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     if (client) {
-      setForm({
-        name: client.name,
-        address: client.address,
-        phone: client.phone || '',
-        email: client.email || '',
-        default_duration_minutes: client.default_duration_minutes,
-        default_staff_count: client.default_staff_count,
-        rate: client.rate != null ? client.rate : '',
-        notes: client.notes || '',
-      });
+      setForm({ name: client.name, address: client.address, notes: client.notes || '' });
       setDurationHM(minutesToHM(client.default_duration_minutes));
     }
   }, [client]);
 
-  const saveField = useCallback(async (field: string, value: string | number) => {
-    await updateClient(field, value);
-    setEditingField(null);
-  }, [updateClient]);
-
   const handleDelete = async () => {
-    if (!confirm('Delete this client and all their data? This cannot be undone.')) return;
+    setShowDeleteModal(false);
     setDeleting(true);
-    await supabase.from('clients').delete().eq('id', clientId);
     onDelete?.();
   };
 
   if (loading) {
     return (
-      <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto">
-        {[1, 2, 3, 4].map(i => <div key={i} className="shimmer h-28 rounded-2xl"/>)}
+      <div className="p-4 max-w-lg space-y-3">
+        <div className="shimmer h-24 rounded-2xl"/>
+        <div className="shimmer h-40 rounded-2xl"/>
+        <div className="shimmer h-28 rounded-2xl"/>
       </div>
     );
   }
@@ -223,212 +250,225 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
     );
   }
 
+  const accentColor = client.color || '#6366f1';
+  const initial = (form.name || client.name || 'U').charAt(0).toUpperCase();
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className="max-w-2xl mx-auto p-4 lg:p-6 space-y-5 pb-20">
+      <div className="p-4 space-y-3 max-w-lg pb-16">
 
-        {/* Back button */}
         {showBackButton && onBack && (
-          <button onClick={onBack}
-            className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-text-primary transition-colors group">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              className="group-hover:-translate-x-0.5 transition-transform"><polyline points="15 18 9 12 15 6"/></svg>
+          <button onClick={onBack} className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary transition-colors group mb-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="group-hover:-translate-x-0.5 transition-transform"><polyline points="15 18 9 12 15 6"/></svg>
             All Clients
           </button>
         )}
 
-        {/* Header card */}
-        <div className="card p-5">
-          <div className="flex items-start gap-4">
-            {/* Colour avatar / picker */}
-            <div className="relative shrink-0">
-              <button onClick={() => setShowColorPicker(!showColorPicker)}
-                className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shadow-sm transition-all hover:scale-105"
-                style={{ backgroundColor: client.color || '#6366f1' }}>
-                {client.name.charAt(0).toUpperCase()}
-              </button>
-              <AnimatePresence>
-                {showColorPicker && (
-                  <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                    className="absolute left-0 top-full mt-2 z-40 bg-white rounded-2xl shadow-xl border border-border-light p-4 w-56">
-                    <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2">Colour Tag</p>
-                    <div className="grid grid-cols-5 gap-2">
-                      {(CLIENT_COLORS as { value: string; name: string }[]).map(c => (
-                        <button key={c.value}
-                          onClick={() => { updateClient('color', client.color === c.value ? null : c.value); setShowColorPicker(false); }}
-                          className={`w-9 h-9 rounded-xl border-2 transition-all hover:scale-110 flex items-center justify-center ${client.color === c.value ? 'border-gray-700 scale-110 shadow-sm' : 'border-transparent'}`}
-                          style={{ backgroundColor: c.value }} title={c.name}>
-                          {client.color === c.value && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
-                        </button>
-                      ))}
-                    </div>
-                    {client.color && (
-                      <button onClick={() => { updateClient('color', null); setShowColorPicker(false); }}
-                        className="w-full mt-3 pt-2 border-t border-border-light text-xs text-text-tertiary hover:text-danger transition-colors text-center">
-                        Clear colour
-                      </button>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <div className="flex-1 min-w-0">
-              {editingField === 'name' ? (
-                <div className="flex items-center gap-2">
-                  <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter') saveField('name', form.name); if (e.key === 'Escape') setEditingField(null); }}
-                    className="input-field text-lg font-bold flex-1"/>
-                  <button onClick={() => saveField('name', form.name)} className="btn-primary text-xs py-1.5 px-3">Save</button>
-                  <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1.5">Cancel</button>
-                </div>
-              ) : (
-                <button onClick={() => setEditingField('name')} className="group flex items-center gap-2 text-left w-full">
-                  <h1 className="text-xl font-bold text-text-primary">{client.name}</h1>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    className="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </button>
-              )}
-              {editingField === 'address' ? (
-                <div className="flex items-center gap-2 mt-1">
-                  <input autoFocus value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter') saveField('address', form.address); if (e.key === 'Escape') setEditingField(null); }}
-                    className="input-field text-sm flex-1" placeholder="Full address"/>
-                  <button onClick={() => saveField('address', form.address)} className="btn-primary text-xs py-1.5 px-3">Save</button>
-                  <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1.5">Cancel</button>
-                </div>
-              ) : (
-                <button onClick={() => setEditingField('address')} className="group flex items-center gap-1.5 text-left w-full mt-0.5">
-                  <p className="text-sm text-text-tertiary truncate">{client.address}</p>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    className="text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </button>
-              )}
-              <p className="text-[10px] text-text-tertiary mt-0.5 italic">Tip: Use the exact address including suburb and postcode for accurate route calculations</p>
-              <p className="text-xs text-text-tertiary mt-1">
-                Added {new Date(client.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </p>
-            </div>
-
-            <button onClick={handleDelete} disabled={deleting}
-              className="p-2 rounded-xl hover:bg-danger-light text-text-tertiary hover:text-danger transition-colors shrink-0">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Contact & Details */}
-        <div className="card p-5 space-y-4">
-          <h3 className="text-sm font-bold text-text-primary">Contact &amp; Details</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {(['phone', 'email', 'default_duration_minutes', 'rate'] as const).map(field => (
-              <div key={field}>
-                <label className="block text-xs font-medium text-text-secondary mb-1">
-                  {field === 'default_duration_minutes' ? 'Default Duration (h:mm)' : field === 'rate' ? 'Client Rate ($/hr)' : field.charAt(0).toUpperCase() + field.slice(1)}
-                </label>
-                {editingField === field ? (
-                  field === 'default_duration_minutes' ? (
-                    /* ── h:mm duration input ── */
-                    <div className="flex gap-1">
-                      <input
-                        autoFocus
-                        type="text"
-                        inputMode="numeric"
-                        value={durationHM}
-                        onChange={e => setDurationHM(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            const mins = hmToMinutes(durationHM);
-                            if (mins !== null && mins > 0) {
-                              setDurationHM(minutesToHM(mins)); // normalise display
-                              saveField('default_duration_minutes', mins);
-                            }
-                          }
-                          if (e.key === 'Escape') setEditingField(null);
-                        }}
-                        placeholder="h:mm"
-                        className="input-field text-sm flex-1 py-1.5"
-                      />
-                      <button
-                        onClick={() => {
-                          const mins = hmToMinutes(durationHM);
-                          if (mins !== null && mins > 0) {
-                            setDurationHM(minutesToHM(mins));
-                            saveField('default_duration_minutes', mins);
-                          }
-                        }}
-                        className="btn-primary text-xs py-1 px-2">✓</button>
-                      <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-1">
-                      <input autoFocus
-                        type={field === 'rate' ? 'number' : field === 'email' ? 'email' : 'text'}
-                        value={form[field]}
-                        onChange={e => setForm(f => ({ ...f, [field]: field === 'rate' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter') saveField(field, form[field] === '' ? null as unknown as number : form[field]); if (e.key === 'Escape') setEditingField(null); }}
-                        placeholder={field === 'rate' ? '0.00' : ''}
-                        step={field === 'rate' ? '0.01' : undefined}
-                        min={field === 'rate' ? '0' : undefined}
-                        className="input-field text-sm flex-1 py-1.5"/>
-                      <button onClick={() => saveField(field, form[field] === '' ? null as unknown as number : form[field])} className="btn-primary text-xs py-1 px-2">✓</button>
-                      <button onClick={() => setEditingField(null)} className="btn-ghost text-xs py-1 px-2">✕</button>
-                    </div>
-                  )
-                ) : (
-                  <button onClick={() => {
-                    if (field === 'default_duration_minutes') setDurationHM(minutesToHM(form.default_duration_minutes));
-                    setEditingField(field);
-                  }}
-                    className="group flex items-center gap-1.5 w-full text-left px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover transition-colors">
-                    <span className="text-sm text-text-primary flex-1">
-                      {field === 'rate'
-                        ? (form[field] !== '' && form[field] != null ? `$${Number(form[field]).toFixed(2)}/hr` : <span className="text-text-tertiary italic">Not set</span>)
-                        : field === 'default_duration_minutes'
-                          ? minutesToHM(form.default_duration_minutes)
-                          : (form[field] || <span className="text-text-tertiary italic">Not set</span>)
-                      }
-                    </span>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                      className="text-text-tertiary opacity-0 group-hover:opacity-100 shrink-0 transition-opacity">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
+        {/* ── Identity card (matches job card style) ── */}
+        <div className="bg-white rounded-2xl border border-border-light overflow-hidden">
+          {/* Coloured left accent bar */}
+          <div className="flex">
+            <div className="w-1 shrink-0 rounded-l-2xl" style={{ backgroundColor: accentColor }}/>
+            <div className="flex-1 p-4">
+              <div className="flex items-start gap-3">
+                {/* Avatar */}
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => setShowColorPicker(v => !v)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shadow-sm transition-transform hover:scale-105"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {initial}
                   </button>
-                )}
+                  <AnimatePresence>
+                    {showColorPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -4 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                        className="absolute left-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-border-light p-3 w-44"
+                      >
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {(CLIENT_COLORS as { value: string; name: string }[]).map(c => (
+                            <button key={c.value}
+                              onClick={() => { updateField('color', client.color === c.value ? null : c.value); setShowColorPicker(false); }}
+                              className={`w-7 h-7 rounded-lg transition-all hover:scale-110 flex items-center justify-center ${client.color === c.value ? 'ring-2 ring-offset-1 ring-gray-600 scale-110' : ''}`}
+                              style={{ backgroundColor: c.value }}>
+                              {client.color === c.value && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                            </button>
+                          ))}
+                        </div>
+                        {client.color && (
+                          <button onClick={() => { updateField('color', null); setShowColorPicker(false); }}
+                            className="mt-2 w-full text-center text-[11px] text-text-tertiary hover:text-danger transition-colors pt-2 border-t border-border-light">
+                            Remove colour
+                          </button>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Name — clearly styled as an input */}
+                <div className="flex-1 min-w-0">
+                  <input
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    onBlur={() => { if (form.name.trim()) updateField('name', form.name); }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    placeholder="Client name"
+                    className="w-full text-sm font-bold text-text-primary bg-surface-elevated border border-border-light rounded-lg px-2.5 py-1.5 outline-none placeholder:text-text-tertiary placeholder:font-normal hover:border-border-base focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all"
+                  />
+                  {form.address && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                      </svg>
+                      <p className="text-xs text-text-tertiary truncate">{form.address}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            ))}
+
+              {/* Stat pills — matches job card bottom row */}
+              <div className="flex items-center gap-2 mt-3 pl-[48px]">
+                <span className="inline-flex items-center gap-1 text-[11px] text-text-secondary bg-surface-elevated rounded-full px-2.5 py-1 border border-border-light">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  {durationHM} hrs
+                </span>
+                {client.rate != null && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-text-secondary bg-surface-elevated rounded-full px-2.5 py-1 border border-border-light">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    ${Number(client.rate).toFixed(2)}/hr
+                  </span>
+                )}
+                <span className="text-[10px] text-text-tertiary ml-auto">
+                  Added {new Date(client.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Notes / Access */}
-        <div className="card p-5 space-y-4">
-          <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        {/* ── Address card ── */}
+        <div className="bg-white rounded-2xl border border-border-light p-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
             </svg>
-            Notes / Access
-          </h3>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1">Access Instructions &amp; Notes</label>
-            <textarea value={form.notes}
-              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              onBlur={() => saveField('notes', form.notes)}
-              placeholder="How to get in, alarm code, key location, gate code, pets, special notes for staff…"
-              className="input-field text-sm resize-none w-full" rows={4}/>
-            <p className="text-[10px] text-text-tertiary mt-1">Shown to staff in the schedule job panel</p>
+            <p className="text-xs font-semibold text-text-tertiary">Address</p>
           </div>
-          <div className="border-t border-border-light pt-3">
-            <MediaSection clientId={clientId} orgId={orgId}/>
+          <PlacesAutocomplete
+            defaultValue={client.address}
+            placeholder="Search address…"
+            className="w-full text-sm"
+            onPlaceSelect={(loc: Location) => {
+              setForm(f => ({ ...f, address: loc.address }));
+              updateField('address', loc.address);
+            }}
+            onTextChange={(text: string) => setForm(f => ({ ...f, address: text }))}
+          />
+          <p className="text-[10px] text-text-tertiary mt-1.5">Used for route calculations — include suburb and postcode</p>
+        </div>
+
+        {/* ── Contact details card ── */}
+        <div className="bg-white rounded-2xl border border-border-light p-4">
+          <p className="text-xs font-semibold text-text-tertiary mb-2">Contact</p>
+          <div className="divide-y divide-border-light/70">
+            <EditRow
+              icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.96a16 16 0 0 0 6.29 6.29l.54-.54a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.73 17z"/></svg>}
+              label="Phone"
+              value={client.phone || ''}
+              placeholder="Add phone"
+              type="tel"
+              onSave={val => updateField('phone', val || null)}
+            />
+            <EditRow
+              icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
+              label="Email"
+              value={client.email || ''}
+              placeholder="Add email"
+              type="email"
+              onSave={val => updateField('email', val || null)}
+            />
+            <EditRow
+              icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+              label="Duration"
+              value={durationHM}
+              placeholder="h:mm"
+              inputMode="numeric"
+              display={<span className="font-semibold text-text-primary">{durationHM} hrs</span>}
+              onSave={val => {
+                const mins = hmToMinutes(val);
+                if (mins !== null && mins > 0) {
+                  const formatted = minutesToHM(mins);
+                  setDurationHM(formatted);
+                  updateField('default_duration_minutes', mins);
+                }
+              }}
+            />
+            <EditRow
+              icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
+              label="Rate"
+              value={client.rate != null ? String(client.rate) : ''}
+              placeholder="Add rate"
+              type="number"
+              step="0.01"
+              min="0"
+              display={client.rate != null
+                ? <span className="font-semibold text-text-primary">${Number(client.rate).toFixed(2)}<span className="font-normal text-text-tertiary text-xs">/hr</span></span>
+                : undefined
+              }
+              onSave={val => updateField('rate', val === '' ? null : Number(val))}
+            />
           </div>
         </div>
+
+        {/* ── Notes card ── */}
+        <div className="bg-white rounded-2xl border border-border-light p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-text-tertiary">Access &amp; Notes</p>
+            <span className="text-[10px] text-text-tertiary">Visible to staff</span>
+          </div>
+          <textarea
+            value={form.notes}
+            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            onBlur={() => updateField('notes', form.notes || null)}
+            placeholder="Alarm code, key location, gate code, pets, access instructions…"
+            className="w-full border border-border-light rounded-xl px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary bg-surface-elevated/40 hover:bg-white focus:bg-white focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 resize-none transition-all"
+            rows={4}
+          />
+        </div>
+
+        {/* ── Photos card ── */}
+        <div className="bg-white rounded-2xl border border-border-light p-4">
+          <MediaSection clientId={clientId} orgId={orgId}/>
+        </div>
+
+        {/* ── Danger zone ── */}
+        <div className="pt-2 pb-2 text-center">
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            disabled={deleting}
+            className="text-xs text-text-tertiary hover:text-danger transition-colors disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete this client'}
+          </button>
+        </div>
+
       </div>
+
+      {/* ── Delete confirmation modal ── */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <ConfirmModal
+            title="Delete client?"
+            message={`This will permanently delete ${client.name} and all their data including checklists and media. This cannot be undone.`}
+            confirmLabel="Delete client"
+            danger
+            onConfirm={handleDelete}
+            onCancel={() => setShowDeleteModal(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

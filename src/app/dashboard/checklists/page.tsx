@@ -3,13 +3,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { APIProvider } from '@vis.gl/react-google-maps';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useClients } from '@/lib/hooks/useClients';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import { ChecklistSection, migrateOldSection } from '@/components/checklist/types';
 import ChecklistBuilder from '@/components/checklist/ChecklistBuilder';
 import ClientProfileView from '@/components/ClientProfileView';
+import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import { useChecklistMasters } from '@/lib/hooks/useChecklistMasters';
+import type { Location } from '@/lib/types';
+
+const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 type ClientChecklist = {
   id: string;
@@ -32,7 +37,57 @@ export default function ChecklistsPage() {
     if (profile?.role === 'staff') router.replace('/dashboard/staff-view');
   }, [profile?.role, router]);
 
-  const { clients } = useClients(orgId);
+  const { clients, addClient, deleteClient } = useClients(orgId);
+
+  // ── New-client draft (local, no DB until all required fields are set) ─────
+  const [draftClient, setDraftClient] = useState<{
+    name: string;
+    address: string;
+    addressLat: number | null;
+    addressLng: number | null;
+    addressPlaceId: string | null;
+    rate: string;
+  } | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  const handleAddClient = () => {
+    // Show the draft form — don't touch the DB yet
+    setSelectedClientId(null);
+    setSelectedChecklistId(null);
+    setDraftClient({ name: '', address: '', addressLat: null, addressLng: null, addressPlaceId: null, rate: '' });
+  };
+
+  const draftReady = draftClient
+    && draftClient.name.trim() !== ''
+    && draftClient.address.trim() !== ''
+    && draftClient.rate.trim() !== '';
+
+  const handleCreateDraft = async () => {
+    if (!draftReady || !draftClient || savingDraft) return;
+    setSavingDraft(true);
+    const saved = await addClient({
+      name: draftClient.name.trim(),
+      address: draftClient.address.trim(),
+      email: '', phone: '',
+      default_duration_minutes: 90,
+      default_staff_count: 1,
+      notes: '',
+      lat: draftClient.addressLat,
+      lng: draftClient.addressLng,
+      place_id: draftClient.addressPlaceId,
+      checklist_template_id: null,
+      custom_checklist_items: null,
+      color: null,
+      rate: Number(draftClient.rate),
+    });
+    setSavingDraft(false);
+    setDraftClient(null);
+    if (saved?.id) {
+      setSelectedClientId(saved.id);
+      setExpandedClients(prev => new Set([...prev, saved.id]));
+    }
+  };
+
 
   // ── All checklists for this org ───────────────────────────────────────────
   const [allChecklists, setAllChecklists] = useState<ClientChecklist[]>([]);
@@ -175,15 +230,13 @@ export default function ChecklistsPage() {
   );
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <APIProvider apiKey={MAPS_KEY} libraries={['places']}>
+      <div className="h-full flex overflow-hidden">
 
-      {/* ══ LEFT: clients + nested checklists ══ */}
-      {/* On mobile: show only when no checklist is selected */}
-      <div className={`${
-        selectedChecklistId !== null ? 'hidden lg:flex' : 'flex'
-      } w-full lg:w-72 shrink-0 flex-col border-r border-border-light bg-surface-elevated/40`}>
-        {/* Search */}
-        <div className="shrink-0 p-3 border-b border-border-light">
+      {/* ══ LEFT: clients + nested checklists — always visible ══ */}
+      <div className="w-52 md:w-60 shrink-0 flex flex-col border-r border-border-light bg-surface-elevated/40">
+        {/* Header: Search + Add Client */}
+        <div className="shrink-0 p-3 border-b border-border-light space-y-2">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -192,6 +245,16 @@ export default function ChecklistsPage() {
               placeholder="Search clients…" className="input-field text-sm w-full py-2"
               style={{ paddingLeft: '2.5rem' }}/>
           </div>
+          {/* Add Client */}
+          <button
+            onClick={handleAddClient}
+            className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-text-tertiary hover:text-primary hover:bg-primary/5 rounded-lg py-1.5 transition-colors"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Client
+          </button>
         </div>
 
         {/* Client + checklist tree */}
@@ -280,11 +343,8 @@ export default function ChecklistsPage() {
         </div>
       </div>
 
-      {/* ══ RIGHT: checklist editor OR client profile ══ */}
-      {/* On mobile: full-screen when a selection exists */}
-      <div className={`${
-        selectedChecklistId !== null || (selectedClientId !== null) ? 'flex' : 'hidden lg:flex'
-      } flex-1 min-w-0 overflow-hidden flex-col`}>
+      {/* ══ RIGHT: checklist editor OR client profile — always visible ══ */}
+      <div className="flex flex-1 min-w-0 overflow-hidden flex-col">
         <AnimatePresence mode="wait">
           {/* ── Checklist editor ── */}
           {selectedChecklistId ? (
@@ -341,31 +401,103 @@ export default function ChecklistsPage() {
                 />
               </div>
             </motion.div>
+          ) : draftClient ? (
+            /* ── New client draft form ── */
+            <motion.div key="new-client-draft" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+              <div className="p-4 max-w-lg space-y-3 pb-16">
+
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-text-primary">New Client</h2>
+                  <button onClick={() => setDraftClient(null)}
+                    className="text-xs text-text-tertiary hover:text-text-primary transition-colors">
+                    Cancel
+                  </button>
+                </div>
+
+                {/* Name */}
+                <div className="bg-white rounded-2xl border border-border-light p-4 space-y-1">
+                  <label className="text-xs font-semibold text-text-tertiary">Client Name <span className="text-danger">*</span></label>
+                  <input
+                    autoFocus
+                    value={draftClient.name}
+                    onChange={e => setDraftClient(d => d ? { ...d, name: e.target.value } : d)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                    placeholder="Client's name"
+                    className="w-full border border-border-light rounded-xl px-3 py-2.5 text-sm font-semibold text-text-primary placeholder:text-text-tertiary placeholder:font-normal bg-surface-elevated/40 hover:bg-white focus:bg-white focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                  />
+                </div>
+
+                {/* Address */}
+                <div className="bg-white rounded-2xl border border-border-light p-4 space-y-1">
+                  <label className="text-xs font-semibold text-text-tertiary">Address <span className="text-danger">*</span></label>
+                  <PlacesAutocomplete
+                    defaultValue={draftClient.address}
+                    placeholder="Search address…"
+                    className="w-full text-sm"
+                    onPlaceSelect={(loc: Location) =>
+                      setDraftClient(d => d ? { ...d, address: loc.address, addressLat: loc.lat, addressLng: loc.lng, addressPlaceId: loc.placeId ?? null } : d)
+                    }
+                    onTextChange={(text: string) =>
+                      setDraftClient(d => d ? { ...d, address: text, addressLat: null, addressLng: null, addressPlaceId: null } : d)
+                    }
+                  />
+                  <p className="text-[10px] text-text-tertiary">Used for route calculations</p>
+                </div>
+
+                {/* Rate */}
+                <div className="bg-white rounded-2xl border border-border-light p-4 space-y-1">
+                  <label className="text-xs font-semibold text-text-tertiary">Hourly Rate ($/hr) <span className="text-danger">*</span></label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-tertiary">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={draftClient.rate}
+                      onChange={e => setDraftClient(d => d ? { ...d, rate: e.target.value } : d)}
+                      placeholder="0.00"
+                      className="w-full border border-border-light rounded-xl pl-7 pr-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary bg-surface-elevated/40 hover:bg-white focus:bg-white focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Create button */}
+                <button
+                  onClick={handleCreateDraft}
+                  disabled={!draftReady || savingDraft}
+                  className="w-full py-3 rounded-2xl text-sm font-bold transition-all
+                    disabled:bg-surface-elevated disabled:text-text-tertiary disabled:border disabled:border-border-light disabled:cursor-not-allowed
+                    enabled:bg-primary enabled:text-white enabled:hover:bg-primary-hover enabled:shadow-sm"
+                >
+                  {savingDraft ? 'Creating…' : !draftReady ? 'Fill in all required fields to continue' : 'Create Client'}
+                </button>
+
+              </div>
+            </motion.div>
+
           ) : selectedClientId && orgId ? (
             /* ── Client profile ── */
             <motion.div key={selectedClientId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {/* Mobile back button */}
-              <div className="lg:hidden shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border-light bg-white">
-                <button onClick={() => setSelectedClientId(null)}
-                  className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated transition-colors">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                </button>
-                <span className="text-sm font-semibold text-text-primary">{clients.find(c => c.id === selectedClientId)?.name}</span>
-              </div>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <ClientProfileView
                   key={selectedClientId}
                   clientId={selectedClientId}
                   orgId={orgId}
+                  onDelete={async () => {
+                    await deleteClient(selectedClientId);
+                    setSelectedClientId(null);
+                    setSelectedChecklistId(null);
+                  }}
                 />
               </div>
             </motion.div>
 
           ) : (
-            /* ── Empty (desktop only) ── */
+            /* ── Empty state ── */
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="flex-1 hidden lg:flex items-center justify-center text-center px-8">
+              className="flex-1 flex items-center justify-center text-center px-8">
               <div>
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-text-tertiary mx-auto mb-3">
                   <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
@@ -378,6 +510,7 @@ export default function ChecklistsPage() {
           )}
         </AnimatePresence>
       </div>
-    </div>
+      </div>
+    </APIProvider>
   );
 }

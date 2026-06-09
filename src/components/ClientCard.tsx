@@ -25,9 +25,10 @@ interface ClientCardProps {
   driverAssignments?: Map<string, string>;
   savedClients?: SavedClient[];
   onOpenChecklist?: (client: Client) => void;
+  orgId?: string | null;
 }
 
-export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist, orgId }: ClientCardProps) {
   const supabase = useMemo(() => createSupabaseClient(), []);
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
@@ -47,6 +48,27 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   const [availableChecklists, setAvailableChecklists] = useState<{ id: string; name: string; is_default: boolean }[]>([]);
   const [checklistsLoading, setChecklistsLoading] = useState(false);
   const checklistPickerRef = useRef<HTMLDivElement>(null);
+  const [addingNewChecklist, setAddingNewChecklist] = useState(false);
+  const [newChecklistName, setNewChecklistName] = useState('');
+  const [creatingChecklist, setCreatingChecklist] = useState(false);
+  const newChecklistInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch the assigned checklist's name so we can display it on the card
+  const [checklistName, setChecklistName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!client.checklistId) { setChecklistName(null); return; }
+    // Check if we already have it in the local list first
+    const cached = availableChecklists.find(c => c.id === client.checklistId);
+    if (cached) { setChecklistName(cached.name); return; }
+    // Otherwise fetch just this one record
+    supabase
+      .from('client_checklists')
+      .select('name')
+      .eq('id', client.checklistId)
+      .single()
+      .then(({ data }: { data: { name: string } | null }) => { if (data) setChecklistName(data.name); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client.checklistId]);
 
   // Close checklist picker on outside click
   useEffect(() => {
@@ -61,15 +83,15 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
   }, [showChecklistPicker]);
 
   const handleChecklistButtonClick = useCallback(async () => {
-    if (!client.savedClientId || !onOpenChecklist) return;
+    if (!client.savedClientId) return;
 
-    // If only one checklist or already know them, open directly
+    // If we already have the list cached, just toggle the picker
     if (availableChecklists.length === 1) {
       const cl = availableChecklists[0];
       if (client.checklistId !== cl.id) {
         dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: cl.id } });
       }
-      onOpenChecklist({ ...client, checklistId: cl.id });
+      // Do NOT open the editor — that's the green pill's job
       return;
     }
     if (availableChecklists.length > 1) {
@@ -89,24 +111,74 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
     const list = data || [];
     setAvailableChecklists(list);
 
-    if (list.length <= 1) {
-      // Zero or one checklist — open the panel immediately
-      const selectedId = list[0]?.id || client.checklistId || null;
-      if (selectedId && client.checklistId !== selectedId) {
-        dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: selectedId } });
+    if (list.length === 0) {
+      // No checklists yet — open picker so user can add one
+      setShowChecklistPicker(true);
+    } else if (list.length === 1) {
+      // One checklist — auto-assign it, then show picker so user can add another
+      const cl = list[0];
+      if (client.checklistId !== cl.id) {
+        dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: cl.id } });
       }
-      onOpenChecklist({ ...client, checklistId: selectedId ?? undefined });
+      setShowChecklistPicker(true);
     } else {
       // Multiple — show picker
       setShowChecklistPicker(true);
     }
-  }, [client, team.id, dispatch, onOpenChecklist, availableChecklists, supabase]);
+  }, [client, team.id, dispatch, availableChecklists, supabase]);
+
+  const handleCreateChecklist = useCallback(async () => {
+    const name = newChecklistName.trim();
+    if (!name || !client.savedClientId || !orgId || creatingChecklist) return;
+    setCreatingChecklist(true);
+    try {
+      // Step 1 — insert the new checklist row (org_id + sections are required by RLS/schema)
+      const { error: insertError } = await supabase
+        .from('client_checklists')
+        .insert({
+          org_id: orgId,
+          client_id: client.savedClientId,
+          name,
+          sections: [],
+          is_default: availableChecklists.length === 0,
+        });
+      if (insertError) {
+        console.error('[handleCreateChecklist] insert failed:', insertError);
+        return;
+      }
+      // Step 2 — fetch the newly created row
+      const { data, error: fetchError } = await supabase
+        .from('client_checklists')
+        .select('id, name, is_default')
+        .eq('org_id', orgId)
+        .eq('client_id', client.savedClientId)
+        .eq('name', name)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (fetchError || !data || data.length === 0) {
+        console.error('[handleCreateChecklist] fetch after insert failed:', fetchError);
+        return;
+      }
+      const created = data[0] as { id: string; name: string; is_default: boolean };
+      setAvailableChecklists(prev => [...prev, created]);
+      dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId: created.id } });
+      setNewChecklistName('');
+      setAddingNewChecklist(false);
+      setShowChecklistPicker(false);
+    } finally {
+      setCreatingChecklist(false);
+    }
+  }, [newChecklistName, creatingChecklist, orgId, client, team.id, dispatch, availableChecklists, supabase]);
+
+  // Auto-focus the new-checklist input when it appears
+  useEffect(() => {
+    if (addingNewChecklist && newChecklistInputRef.current) newChecklistInputRef.current.focus();
+  }, [addingNewChecklist]);
 
   const handleSelectChecklist = useCallback((checklistId: string) => {
     dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { checklistId } });
     setShowChecklistPicker(false);
-    if (onOpenChecklist) onOpenChecklist({ ...client, checklistId });
-  }, [client, team.id, dispatch, onOpenChecklist]);
+  }, [client, team.id, dispatch]);
 
   // Close staff picker on outside click
   useEffect(() => {
@@ -250,13 +322,15 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
       className={`card p-4 group ${client.isLocked ? 'ring-2 ring-amber-300' : ''}`}
       style={{
-        borderLeft: `3px solid ${cardColor}`,
-        backgroundColor: client.clientColor ? `${client.clientColor}08` : undefined,
+        borderLeft: `4px solid ${cardColor}`,
+        background: client.clientColor
+          ? `linear-gradient(135deg, ${client.clientColor}10 0%, transparent 60%)`
+          : `linear-gradient(135deg, ${cardColor}08 0%, transparent 60%)`,
       }}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Reorder arrows — stacked vertically to keep the right toolbar slim */}
+          {/* Reorder arrows */}
           <div className="flex flex-col gap-0.5 shrink-0">
             <button
               onClick={() => dispatch({ type: 'REORDER_CLIENTS', teamId: team.id, fromIndex: index, toIndex: index - 1 })}
@@ -276,12 +350,28 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
             </button>
           </div>
           {/* Index badge */}
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-white shrink-0 relative" style={{ backgroundColor: cardColor }}>
+          <div
+            className="flex items-center justify-center w-8 h-8 rounded-xl text-sm font-bold text-white shrink-0 relative shadow-sm"
+            style={{ backgroundColor: cardColor }}
+          >
             {index + 1}
-            {client.isLocked && <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px]">🔒</div>}
+            {client.isLocked && (
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center text-[8px] shadow">🔒</div>
+            )}
           </div>
-          <input type="text" value={client.name} onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { name: e.target.value } })}
-            className="font-semibold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors" placeholder="Client name" />
+          {/* Client name */}
+          {client.savedClientId ? (
+            <span className="font-bold text-sm flex-1 min-w-0 truncate text-text-primary px-1">
+              {client.name}
+            </span>
+          ) : (
+            <input
+              type="text" value={client.name}
+              onChange={(e) => dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { name: e.target.value } })}
+              className="font-bold text-sm bg-transparent border-none outline-none flex-1 min-w-0 text-text-primary hover:bg-surface-elevated focus:bg-surface-elevated px-2 py-1 -ml-2 rounded-md transition-colors"
+              placeholder="Client name"
+            />
+          )}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           {/* Swap client button */}
@@ -314,9 +404,9 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                 className={`relative p-1.5 rounded-lg transition-colors ${
                   client.checklistId
                     ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                    : 'hover:bg-surface-elevated text-text-tertiary hover:text-primary'
+                    : 'hover:bg-surface-elevated text-text-tertiary hover:text-amber-500'
                 }`}
-                title={client.checklistId ? 'Change checklist for this job' : 'Select checklist for this job'}
+                title={client.checklistId ? 'Change checklist for this job' : 'Assign a checklist to this job'}
               >
                 {checklistsLoading ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
@@ -329,20 +419,23 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                     <path d="M9 12h6M9 16h4"/>
                   </svg>
                 )}
-                {client.checklistId && (
+                {/* Amber dot = no checklist; green dot = checklist set */}
+                {client.checklistId ? (
                   <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
+                ) : (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-400 border-2 border-white rounded-full" />
                 )}
               </button>
 
-              {/* Multi-checklist picker dropdown */}
+              {/* Checklist picker dropdown — shown whenever showChecklistPicker is true */}
               <AnimatePresence>
-                {showChecklistPicker && availableChecklists.length > 1 && (
+                {showChecklistPicker && (
                   <motion.div
                     initial={{ opacity: 0, y: -4, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 bottom-full mb-1.5 z-40 w-56 bg-white rounded-xl shadow-lg border border-border-light p-2"
+                    className="absolute right-0 bottom-full mb-1.5 z-40 w-64 bg-white rounded-xl shadow-lg border border-border-light p-2" onMouseDown={e => e.stopPropagation()}
                   >
                     <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider px-2 py-1 mb-1">
                       Select checklist for this job
@@ -372,6 +465,62 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
                         )}
                       </button>
                     ))}
+
+                    {/* Divider */}
+                    <div className="my-1.5 border-t border-border-light" />
+
+                    {/* Add new checklist */}
+                    {addingNewChecklist ? (
+                      <div className="flex items-center gap-1.5 px-1">
+                        <input
+                          ref={newChecklistInputRef}
+                          type="text"
+                          value={newChecklistName}
+                          onChange={e => setNewChecklistName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleCreateChecklist();
+                            if (e.key === 'Escape') { setAddingNewChecklist(false); setNewChecklistName(''); }
+                          }}
+                          placeholder="Checklist name…"
+                          className="flex-1 text-xs bg-surface-elevated border border-border-light rounded-lg px-2.5 py-1.5 outline-none focus:border-primary text-text-primary placeholder:text-text-tertiary"
+                        />
+                        <button
+                          onClick={handleCreateChecklist}
+                          disabled={!newChecklistName.trim() || creatingChecklist}
+                          className="p-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40 transition-colors shrink-0"
+                          title="Create checklist"
+                        >
+                          {creatingChecklist ? (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                            </svg>
+                          ) : (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => { setAddingNewChecklist(false); setNewChecklistName(''); }}
+                          className="p-1.5 rounded-lg hover:bg-surface-hover text-text-tertiary transition-colors shrink-0"
+                          title="Cancel"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddingNewChecklist(true)}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-text-tertiary hover:text-primary hover:bg-primary/5 transition-colors text-left"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span className="font-medium">Add new checklist for this client</span>
+                      </button>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -471,15 +620,14 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
       </AnimatePresence>
 
       {/* Address */}
-      <div className="mb-3">
+      <div className="mb-2.5">
         {client.savedClientId ? (
           // Saved client — address is locked to what's in the database
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-elevated border border-border-light">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-elevated border border-border-light">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0">
               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
             </svg>
-            <span className="text-sm text-text-secondary flex-1 truncate">{client.location.address}</span>
-            <span className="text-[10px] text-text-tertiary shrink-0 italic">Edit in Clients tab</span>
+            <span className="text-xs text-text-secondary flex-1 truncate">{client.location.address}</span>
           </div>
         ) : (
           // Manual / unsaved client — allow address editing
@@ -506,49 +654,81 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
         )}
       </div>
 
+      {/* Checklist status row — only for saved clients */}
+      {client.savedClientId && (
+        <div className="mb-2.5">
+          {client.checklistId ? (
+            // Checklist assigned — green confirmation pill
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors"
+              onClick={() => onOpenChecklist && onOpenChecklist(client)}
+              title="View checklist"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <path d="M9 12l2 2 4-4"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-emerald-700">{checklistName ?? 'Checklist assigned'}</span>
+            </div>
+          ) : (
+            // No checklist — amber warning pill, display only (use the icon to assign)
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span className="text-[11px] font-semibold text-amber-700">No checklist assigned</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Duration + Staff Count + Times */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <input type="number" value={durationHours} onChange={(e) => { const h = parseFloat(e.target.value) || 0; dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { jobDurationMinutes: Math.round(h * 60) } }); }}
-              className="w-16 text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary text-center" min={0.25} step={0.25} />
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 bg-surface-elevated rounded-xl px-2.5 py-1.5 border border-border-light">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <input
+              type="number" value={durationHours}
+              onChange={(e) => { const h = parseFloat(e.target.value) || 0; dispatch({ type: 'UPDATE_CLIENT', teamId: team.id, clientId: client.id, updates: { jobDurationMinutes: Math.round(h * 60) } }); }}
+              className="w-12 text-sm font-bold bg-transparent border-none outline-none text-center text-text-primary"
+              min={0.25} step={0.25}
+            />
             <span className="text-xs text-text-tertiary">hrs</span>
           </div>
           {/* Staff count indicator */}
           {effectiveStaffCount > 1 && (
-            <div className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg" style={{ backgroundColor: `${cardColor}10`, color: cardColor }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>{effectiveStaffCount}</span>
-              <span className="text-text-tertiary font-normal">({(client.jobDurationMinutes / effectiveStaffCount / 60).toFixed(1)}h eff.)</span>
+            <div className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg" style={{ backgroundColor: `${cardColor}12`, color: cardColor }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>{effectiveStaffCount}×</span>
             </div>
           )}
           {/* Client rate badge */}
           {client.rate != null && client.rate > 0 && (
-            <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100">
+            <div className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl border" style={{ backgroundColor: `${cardColor}10`, color: cardColor, borderColor: `${cardColor}30` }}>
               <span>${client.rate}/hr</span>
             </div>
           )}
         </div>
         {client.startTime && client.endTime && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5 text-sm">
-            {client.fixedStartTime && <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-primary shrink-0"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>}
-            <span className="font-medium" style={{ color: cardColor }}>{formatTimeDisplay(client.startTime)}</span>
-            <span className="text-text-tertiary">–</span>
-            <span className="font-medium" style={{ color: cardColor }}>{formatTimeDisplay(client.endTime)}</span>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1.5">
+            {client.fixedStartTime && (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="shrink-0" style={{ color: cardColor }}>
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              </svg>
+            )}
+            <span className="text-sm font-bold" style={{ color: cardColor }}>{formatTimeDisplay(client.startTime)}</span>
+            <span className="text-text-tertiary text-xs">–</span>
+            <span className="text-sm font-bold" style={{ color: cardColor }}>{formatTimeDisplay(client.endTime)}</span>
           </motion.div>
         )}
       </div>
 
-      {/* Revenue from client rate */}
-      {client.rate != null && client.rate > 0 && (
-        <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-emerald-600 pl-6">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-          </svg>
-          <span>{(client.jobDurationMinutes / 60).toFixed(1)}hrs × ${client.rate}/hr = <strong>${(client.jobDurationMinutes / 60 * client.rate).toFixed(2)}</strong></span>
-        </div>
-      )}
+
 
 
     </motion.div>

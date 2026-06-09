@@ -15,6 +15,8 @@ interface WeekDayColumnProps {
   onDayClick: () => void;
   /** Per-client color override (used in All Teams mode) */
   clientColorMap?: Record<string, string>;
+  /** Per-client teamId (used in All Teams mode so drag knows which team a job belongs to) */
+  clientTeamMap?: Record<string, string>;
   /** Staff ID → name lookup */
   staffNameMap?: Record<string, string>;
   /** Warnings for this day */
@@ -105,6 +107,7 @@ function DraggableJobCard({
   date,
   index,
   staffNameMap,
+  teamId,
 }: {
   client: Client;
   borderColor: string;
@@ -112,10 +115,11 @@ function DraggableJobCard({
   date: string;
   index: number;
   staffNameMap?: Record<string, string>;
+  teamId?: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `job-${client.id}`,
-    data: { type: 'job', job: client, scheduleId, date },
+    id: `job-${date}-${client.id}`,
+    data: { type: 'job', job: client, scheduleId, date, teamId },
   });
 
   return (
@@ -170,7 +174,7 @@ function DraggableJobCard({
 }
 
 // ─── Day column ───────────────────────────────────────────────────────────────
-export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, clientColorMap, staffNameMap, warnings = [] }: WeekDayColumnProps) {
+export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayClick, clientColorMap, clientTeamMap, staffNameMap, warnings = [] }: WeekDayColumnProps) {
   const today = isToday(daySchedule.date);
   const clients = daySchedule.clients;
   const hasJobs = clients.length > 0;
@@ -229,6 +233,7 @@ export default function WeekDayColumn({ daySchedule, teamColor, isActive, onDayC
                 date={daySchedule.date}
                 index={i}
                 staffNameMap={staffNameMap}
+                teamId={clientTeamMap?.[client.id]}
               />
             );
           })

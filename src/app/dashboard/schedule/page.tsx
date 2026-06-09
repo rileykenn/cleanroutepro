@@ -383,8 +383,25 @@ export default function SchedulePage() {
       usedIndices.add(team.colorIndex);
     }
 
+    // ── Overlay in-memory name/color so async DB-write race conditions can't
+    // revert changes the user just made. allOrgTeamsRef is always updated
+    // synchronously when the user renames or recolours a team, so it is the
+    // authoritative source of truth for those fields between page reloads.
+    if (allOrgTeamsRef.current.length > 0) {
+      const memMap = new Map(allOrgTeamsRef.current.map(t => [t.id, t]));
+      for (const team of teams) {
+        const mem = memMap.get(team.id);
+        if (mem) {
+          team.name = mem.name;
+          team.color = mem.color;
+          team.colorIndex = mem.colorIndex;
+        }
+      }
+    }
+
     return teams;
   }, [orgId, supabase]);
+
 
   // ─── Load week schedules for overview ───
   // skipDispatch=true: update cache/refs but don't re-render teams in state.

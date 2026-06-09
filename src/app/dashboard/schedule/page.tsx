@@ -370,19 +370,6 @@ export default function SchedulePage() {
       driverStaffId: null,
     }));
 
-    // Auto-fix duplicate color indices
-    const usedIndices = new Set<number>();
-    for (const team of teams) {
-      if (usedIndices.has(team.colorIndex)) {
-        const newIdx = getNextColorIndex(Array.from(usedIndices));
-        team.colorIndex = newIdx;
-        team.color = TEAM_COLORS[newIdx % TEAM_COLORS.length];
-        // Persist fix to DB
-        supabase.from('teams').update({ color_index: newIdx }).eq('id', team.id).then(() => {});
-      }
-      usedIndices.add(team.colorIndex);
-    }
-
     // ── Overlay in-memory name/color so async DB-write race conditions can't
     // revert changes the user just made. allOrgTeamsRef is always updated
     // synchronously when the user renames or recolours a team, so it is the

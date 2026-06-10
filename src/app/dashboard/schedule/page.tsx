@@ -1963,7 +1963,7 @@ export default function SchedulePage() {
                       supabase.from('weekly_team_configs').upsert(
                         { org_id: orgId, team_id: teamId, week_start: weekDates[0], color_index: colorIndex, name: data?.name ?? null },
                         { onConflict: 'team_id,week_start' }
-                      ).then(({ error }) => {
+                      ).then(({ error }: { error: unknown }) => {
                         if (error) console.error('UPSERT COLOR ERROR:', error);
                       });
                     });
@@ -1985,7 +1985,7 @@ export default function SchedulePage() {
                       supabase.from('weekly_team_configs').upsert(
                         { org_id: orgId, team_id: teamId, week_start: weekDates[0], name, color_index: data?.color_index ?? null },
                         { onConflict: 'team_id,week_start' }
-                      ).then(({ error }) => {
+                      ).then(({ error }: { error: unknown }) => {
                         if (error) console.error('UPSERT NAME ERROR:', error);
                       });
                     });

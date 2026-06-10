@@ -376,19 +376,30 @@ export default function SchedulePage() {
       driverStaffId: null,
     }));
 
-    // ── Apply per-week name/color overrides ──
-    // These take priority over the global teams defaults so each week
-    // can have its own team labels and colours.
+    // ── Apply per-week name/color overrides with carry-forward ──
+    // Fetch all configs up to this week, ordered newest first. The most recent
+    // config for a team becomes its effective config for this week.
     if (weekStart) {
       const { data: weekConfigs } = await supabase
         .from('weekly_team_configs')
         .select('team_id, name, color_index')
         .eq('org_id', orgId)
-        .eq('week_start', weekStart);
+        .lte('week_start', weekStart)
+        .order('week_start', { ascending: false });
+        
       if (weekConfigs && weekConfigs.length > 0) {
-        const cfgMap = new Map<string, Record<string, unknown>>(weekConfigs.map((c: Record<string, unknown>) => [c.team_id as string, c]));
+        // Since we ordered by week_start DESC, the first time we see a team_id
+        // is its most recent configuration.
+        const effectiveConfig = new Map<string, Record<string, unknown>>();
+        for (const cfg of weekConfigs) {
+          const tId = cfg.team_id as string;
+          if (!effectiveConfig.has(tId)) {
+            effectiveConfig.set(tId, cfg as Record<string, unknown>);
+          }
+        }
+        
         for (const team of teams) {
-          const cfg = cfgMap.get(team.id);
+          const cfg = effectiveConfig.get(team.id);
           if (cfg) {
             if (cfg.name != null) team.name = cfg.name as string;
             if (cfg.color_index != null) {

@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
             staff_member_id: staffMemberId,
             role: 'staff',
           },
-          redirectTo: `${request.nextUrl.origin}/auth/confirm`,
+          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/confirm`,
         });
       } catch (emailErr) {
         // Non-fatal — the DB invite is already created, they can still log in manually
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         staff_member_id: staffMemberId,
         role: 'staff',
       },
-      redirectTo: `${request.nextUrl.origin}/auth/confirm`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/confirm`,
     });
 
     if (error) {

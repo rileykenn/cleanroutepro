@@ -174,7 +174,7 @@ export default function PayrollPage() {
 
     // Get all schedules in the week range for this org
     const { data: schedules } = await supabase
-      .from('schedules').select('id, schedule_date')
+      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id')
       .eq('org_id', profile.org_id)
       .gte('schedule_date', weekStartStr)
       .lte('schedule_date', weekEnd);
@@ -183,15 +183,24 @@ export default function PayrollPage() {
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
+    const staffScheduleIds = new Set(schedules
+      .filter((s: any) => (s.staff_ids || []).includes(selectedStaffId) || s.driver_staff_id === selectedStaffId)
+      .map((s: any) => s.id)
+    );
 
-    // Get jobs assigned to this staff member
-    const { data: jobsData } = await supabase
+    // Get all jobs for the week's schedules
+    const { data: allJobsData } = await supabase
       .from('schedule_jobs').select('*')
-      .in('schedule_id', scheduleIds)
-      .contains('assigned_staff_ids', [selectedStaffId]);
+      .in('schedule_id', scheduleIds);
 
-    if (jobsData) {
-      setJobs(jobsData.map((j: Record<string, unknown>) => ({
+    if (allJobsData) {
+      const myJobs = allJobsData.filter((j: any) => {
+        const isDayStaff = staffScheduleIds.has(j.schedule_id);
+        const assigned = j.assigned_staff_ids || [];
+        return assigned.includes(selectedStaffId) || isDayStaff;
+      });
+
+      setJobs(myJobs.map((j: any) => ({
         ...j,
         schedule_date: scheduleDateMap.get(j.schedule_id as string) || '',
       })) as ScheduleJob[]);

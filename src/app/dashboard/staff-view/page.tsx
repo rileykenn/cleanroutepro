@@ -380,8 +380,10 @@ export default function StaffPortalPage() {
       .eq('org_id', profile.org_id).order('sort_order');
 
     const { data: schedules } = await supabase
-      .from('schedules').select('id, schedule_date, team_id, is_published, driver_staff_id')
+      .from('schedules').select('id, schedule_date, team_id, is_published, driver_staff_id, staff_ids')
       .eq('org_id', profile.org_id).in('schedule_date', dateStrings);
+
+
 
     const scheduleIds = (schedules || []).map((s: { id: string }) => s.id);
     type RawJob = JobInfo & { schedule_id: string };
@@ -403,7 +405,7 @@ export default function StaffPortalPage() {
     }
 
     const days: DayData[] = weekDates.map(wd => {
-      type RawSched = { id: string; schedule_date: string; team_id: string; is_published: boolean; driver_staff_id: string | null };
+      type RawSched = { id: string; schedule_date: string; team_id: string; is_published: boolean; driver_staff_id: string | null; staff_ids: string[] | null };
       const daySchedules = (schedules || []).filter((s: RawSched) => s.schedule_date === wd.date && s.is_published) as RawSched[];
       const dayJobs: JobInfo[] = [];
       let teamName = '';
@@ -415,9 +417,12 @@ export default function StaffPortalPage() {
       for (const sched of daySchedules) {
         type RawTeam = { id: string; name: string; color_index: number; day_start_time: string };
         const team = (teams || []).find((t: RawTeam) => t.id === sched.team_id) as RawTeam | undefined;
+        const isDayStaff = (sched.staff_ids || []).includes(staffMemberId!) || sched.driver_staff_id === staffMemberId!;
         const myJobs = allJobs
-          .filter(j => j.schedule_id === sched.id && (j.assigned_staff_ids || []).includes(staffMemberId!))
+          .filter(j => j.schedule_id === sched.id && ((j.assigned_staff_ids || []).includes(staffMemberId!) || isDayStaff))
           .map(j => ({ ...j, checklist_completed: completionMap.has(j.id) }));
+
+
 
         dayJobs.push(...myJobs);
 

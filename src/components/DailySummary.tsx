@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDuration, formatDistance, formatTimeDisplay } from '@/lib/timeUtils';
 import { DaySummary, ScheduleAction, TeamSchedule } from '@/lib/types';
-import { exportScheduleCSV } from '@/lib/routeEngine';
+import { exportScheduleCSV, exportStaffScheduleCSV } from '@/lib/routeEngine';
 
 interface StaffWithRate {
   id: string;
@@ -22,6 +22,20 @@ interface DailySummaryProps {
 
 export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates }: DailySummaryProps) {
   const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
+  const [csvMenuOpen, setCsvMenuOpen] = useState(false);
+  const csvMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!csvMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (csvMenuRef.current && !csvMenuRef.current.contains(e.target as Node)) {
+        setCsvMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [csvMenuOpen]);
+
   const handleExport = () => {
     const csv = exportScheduleCSV(team, summary, staffNames);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -29,6 +43,20 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
     const link = document.createElement('a');
     link.setAttribute('href', url);
     link.setAttribute('download', `${team.name.replace(/\s+/g, '-')}-schedule.csv`);
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleStaffExport = () => {
+    const csv = exportStaffScheduleCSV(team, summary);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${team.name.replace(/\s+/g, '-')}-staff-schedule.csv`);
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
@@ -81,18 +109,42 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
           </svg>
           Daily Summary
         </h3>
-        <button
-          onClick={handleExport}
-          className="btn-ghost text-xs"
-          title="Export as CSV"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Export CSV
-        </button>
+        {/* CSV Export Dropdown */}
+        <div className="relative" ref={csvMenuRef}>
+          <button
+            onClick={() => setCsvMenuOpen(v => !v)}
+            className="btn-ghost text-xs flex items-center gap-1"
+            title="Export as CSV"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {csvMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-border-light shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1 z-50">
+              <button
+                onClick={() => { handleExport(); setCsvMenuOpen(false); }}
+                className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
+              >
+                📊 Admin CSV
+                <span className="text-[10px] text-text-tertiary ml-auto">Full data</span>
+              </button>
+              <button
+                onClick={() => { handleStaffExport(); setCsvMenuOpen(false); }}
+                className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
+              >
+                📋 Staff CSV
+                <span className="text-[10px] text-text-tertiary ml-auto">Schedule only</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">

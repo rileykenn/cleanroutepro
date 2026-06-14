@@ -287,9 +287,10 @@ function JobCard({
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function StaffPortalPage() {
+export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: { overrideStaffId?: string; overrideStaffName?: string } = {}) {
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
+  const isPreview = !!overrideStaffId;
 
   const [activeTab, setActiveTab] = useState<Tab>('today');
   const [weekOffset, setWeekOffset] = useState(0);
@@ -345,6 +346,10 @@ export default function StaffPortalPage() {
 
   // ── Load staff roster ─────────────────────────────────────────────────────
   useEffect(() => {
+    if (overrideStaffId) {
+      setStaffMemberId(overrideStaffId);
+      return;
+    }
     if (!profile?.org_id || !profile?.id) return;
     (async () => {
       const { data } = await supabase
@@ -522,6 +527,36 @@ export default function StaffPortalPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
 
+      {/* ── Preview mode: inline top tab strip ─────────────────────────── */}
+      {isPreview && (
+        <div className="shrink-0 bg-white border-b border-border-light">
+          <div className="flex items-center gap-1 px-4 py-2">
+            {TAB_CONFIG.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id !== 'week') setSelectedDay(null);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive
+                      ? 'bg-primary-light text-primary'
+                      : 'text-text-tertiary hover:bg-surface-hover hover:text-text-secondary'
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive ? 2.5 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+                    <path d={tab.iconPath} />
+                  </svg>
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Scrollable content area ─────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
         <AnimatePresence mode="wait">
@@ -536,11 +571,13 @@ export default function StaffPortalPage() {
               transition={{ duration: 0.2 }}
             >
               {/* Header */}
-              <div className="px-4 pt-6 pb-4">
+              <div className={isPreview ? 'px-4 pt-4 pb-3' : 'px-4 pt-6 pb-4'}>
                 <p className="text-xs font-semibold text-text-tertiary uppercase tracking-widest">
                   {new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
-                <h1 className="text-3xl font-extrabold text-text-primary mt-1 tracking-tight">Today</h1>
+                {!isPreview && (
+                  <h1 className="text-3xl font-extrabold text-text-primary mt-1 tracking-tight">Today</h1>
+                )}
               </div>
 
               {loading ? (
@@ -895,9 +932,11 @@ export default function StaffPortalPage() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="px-4 pt-6 pb-4">
-                <h1 className="text-3xl font-extrabold text-text-primary tracking-tight">Completed</h1>
-                <p className="text-sm text-text-secondary mt-1">Your submitted checklists</p>
+              <div className={isPreview ? 'px-4 pt-4 pb-3' : 'px-4 pt-6 pb-4'}>
+                {!isPreview && (
+                  <h1 className="text-3xl font-extrabold text-text-primary tracking-tight">Completed</h1>
+                )}
+                <p className="text-sm text-text-secondary mt-1">{isPreview ? 'Submitted checklists' : 'Your submitted checklists'}</p>
               </div>
 
               {completedLoading ? (
@@ -971,52 +1010,54 @@ export default function StaffPortalPage() {
         </AnimatePresence>
       </div>
 
-      {/* ── Bottom Tab Bar ────────────────────────────────────────────────── */}
-      <div
-        className="shrink-0 bg-white border-t border-border-light"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-      >
-        <div className="flex">
-          {TAB_CONFIG.map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id !== 'week') setSelectedDay(null);
-                }}
-                className={`relative flex-1 flex flex-col items-center gap-1 py-3 transition-colors active:scale-95 ${
-                  isActive ? 'text-primary' : 'text-text-tertiary'
-                }`}
-              >
-                {/* Active indicator */}
-                {isActive && (
-                  <motion.div
-                    layoutId="tab-bar-indicator"
-                    className="absolute top-0 left-[20%] right-[20%] h-[3px] rounded-full bg-primary"
-                  />
-                )}
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={isActive ? 2.5 : 1.8}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+      {/* ── Bottom Tab Bar (hidden in preview mode — uses top strip instead) ── */}
+      {!isPreview && (
+        <div
+          className="shrink-0 bg-white border-t border-border-light"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
+          <div className="flex">
+            {TAB_CONFIG.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    if (tab.id !== 'week') setSelectedDay(null);
+                  }}
+                  className={`relative flex-1 flex flex-col items-center gap-1 py-3 transition-colors active:scale-95 ${
+                    isActive ? 'text-primary' : 'text-text-tertiary'
+                  }`}
                 >
-                  <path d={tab.iconPath} />
-                </svg>
-                <span className={`text-[10px] font-bold tracking-wide ${isActive ? 'text-primary' : 'text-text-tertiary'}`}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
+                  {/* Active indicator */}
+                  {isActive && (
+                    <motion.div
+                      layoutId="tab-bar-indicator"
+                      className="absolute top-0 left-[20%] right-[20%] h-[3px] rounded-full bg-primary"
+                    />
+                  )}
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={isActive ? 2.5 : 1.8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d={tab.iconPath} />
+                  </svg>
+                  <span className={`text-[10px] font-bold tracking-wide ${isActive ? 'text-primary' : 'text-text-tertiary'}`}>
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Overlays ──────────────────────────────────────────────────────── */}
       {infoClientId && (

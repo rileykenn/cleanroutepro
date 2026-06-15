@@ -165,14 +165,24 @@ function JobCard({
   const accentColor = isDone ? '#059669' : teamColor;
 
   if (job.is_break) {
+    // Calculate break end time from start + duration
+    const breakEndTime = (() => {
+      if (!job.start_time) return null;
+      const [h, m] = job.start_time.split(':').map(Number);
+      const total = h * 60 + m + job.duration_minutes;
+      return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`;
+    })();
+
     return (
       <div className="flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-amber-50 border border-amber-100">
         <span className="text-xl">☕</span>
-        <div>
+        <div className="flex-1">
           <p className="text-sm font-bold text-amber-800">{job.break_label || 'Break'}</p>
-          <p className="text-xs text-amber-600">
-            {formatDuration(job.duration_minutes)}
-            {job.start_time ? ` · ${formatTime(job.start_time)}` : ''}
+          <p className="text-xs text-amber-600 font-medium">
+            {job.start_time
+              ? `${formatTime(job.start_time)} – ${formatTime(breakEndTime)} · ${formatDuration(job.duration_minutes)}`
+              : formatDuration(job.duration_minutes)
+            }
           </p>
         </div>
       </div>
@@ -447,11 +457,43 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
       }
 
       dayJobs.sort((a, b) => a.position - b.position);
-      const clientJobs = dayJobs.filter(j => !j.is_break && j.client_id);
+
+      // Breaks are stored in DB with position = clients.length + i (always at end).
+      // Their actual insertion point is encoded in the `notes` JSON field as
+      // { afterClientId, afterPosition }. Re-insert breaks at the correct spot
+      // and calculate their start_time from the preceding job's end_time.
+      const clientJobsOrdered = dayJobs.filter(j => !j.is_break);
+      const breakJobs = dayJobs.filter(j => j.is_break);
+      const orderedJobs: JobInfo[] = [...clientJobsOrdered];
+
+      for (const brk of breakJobs) {
+        let insertIdx = orderedJobs.length; // default: end
+        try {
+          const meta = brk.notes ? JSON.parse(brk.notes) : null;
+          if (meta?.afterClientId) {
+            const afterIdx = orderedJobs.findIndex(j => j.id === meta.afterClientId);
+            if (afterIdx !== -1) insertIdx = afterIdx + 1;
+          } else if (typeof meta?.afterPosition === 'number') {
+            insertIdx = Math.min(meta.afterPosition + 1, orderedJobs.length);
+          }
+        } catch { /* notes isn't JSON — insert at end */ }
+
+        // Calculate break start_time from the preceding job's end_time
+        if (insertIdx > 0) {
+          const prevJob = orderedJobs[insertIdx - 1];
+          if (prevJob?.end_time) {
+            brk.start_time = prevJob.end_time;
+          }
+        }
+
+        orderedJobs.splice(insertIdx, 0, brk);
+      }
+
+      const clientJobs = orderedJobs.filter(j => !j.is_break && j.client_id);
 
       return {
         ...wd,
-        jobs: dayJobs,
+        jobs: orderedJobs,
         published: daySchedules.length > 0,
         teamName,
         teamColor,

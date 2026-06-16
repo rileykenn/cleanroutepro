@@ -27,7 +27,7 @@ interface OrgAccount {
   userId: string;
   fullName: string;
   email: string;
-  orgRole: 'admin' | 'staff';
+  orgRole: 'admin' | 'supervisor' | 'staff';
   memberStatus: string;
   staffMemberId: string | null;
   staffName: string | null;
@@ -311,7 +311,7 @@ export default function StaffPage() {
         userId: m.user_id,
         fullName,
         email,
-        orgRole: (m.role === 'admin' ? 'admin' : 'staff') as 'admin' | 'staff',
+        orgRole: m.role as 'admin' | 'supervisor' | 'staff',
         memberStatus: m.status,
         staffMemberId: m.staff_member_id,
         staffName: sm?.name || null,
@@ -320,9 +320,11 @@ export default function StaffPage() {
       };
     });
 
-    // Sort: admins first, then alphabetically
     accounts.sort((a, b) => {
-      if (a.orgRole !== b.orgRole) return a.orgRole === 'admin' ? -1 : 1;
+      const roleOrder = { admin: 0, supervisor: 1, staff: 2 };
+      const ra = roleOrder[a.orgRole] ?? 2;
+      const rb = roleOrder[b.orgRole] ?? 2;
+      if (ra !== rb) return ra - rb;
       return a.fullName.localeCompare(b.fullName);
     });
 
@@ -842,6 +844,9 @@ export default function StaffPage() {
                                   {a.orgRole === 'admin' && (
                                     <span className="text-[10px] font-semibold bg-primary-light text-primary px-2 py-0.5 rounded-full border border-primary-border">Admin</span>
                                   )}
+                                  {a.orgRole === 'supervisor' && (
+                                    <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">Supervisor</span>
+                                  )}
                                   {a.isOrphaned && (
                                     <span className="text-[10px] font-semibold bg-red-50 text-red-600 px-2 py-0.5 rounded-full border border-red-200" title="Staff record was deleted but portal access was never revoked">
                                       ⚠ Orphaned
@@ -862,7 +867,28 @@ export default function StaffPage() {
                               </div>
                               {/* Don't show revoke for yourself */}
                               {!isMe && (
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {/* Role selector */}
+                                  <select
+                                    value={a.orgRole}
+                                    onChange={async (e) => {
+                                      const newRole = e.target.value as 'admin' | 'supervisor' | 'staff';
+                                      setActionLoading(true);
+                                      // Update org_members role
+                                      await supabase.from('org_members').update({ role: newRole }).eq('id', a.membershipId);
+                                      // Update profiles role
+                                      await supabase.from('profiles').update({ role: newRole }).eq('id', a.userId);
+                                      // Refresh accounts list
+                                      setOrgAccounts(prev => prev.map(acc => acc.membershipId === a.membershipId ? { ...acc, orgRole: newRole } : acc));
+                                      setActionLoading(false);
+                                    }}
+                                    disabled={actionLoading}
+                                    className="text-xs font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary cursor-pointer disabled:opacity-50"
+                                  >
+                                    <option value="admin">Admin</option>
+                                    <option value="supervisor">Supervisor</option>
+                                    <option value="staff">Staff</option>
+                                  </select>
                                   <button
                                     onClick={() => setConfirmOrgRevoke(a)}
                                     disabled={actionLoading}
@@ -873,8 +899,7 @@ export default function StaffPage() {
                                     </svg>
                                     Revoke
                                   </button>
-                                  {/* Only show delete for non-admin staff (admin deletions are more complex) */}
-                                  {a.orgRole === 'staff' && a.staffMemberId && (
+                                  {a.orgRole !== 'admin' && a.staffMemberId && (
                                     <button
                                       onClick={() => {
                                         const sm = staff.find(s => s.id === a.staffMemberId);
@@ -1143,9 +1168,7 @@ export default function StaffPage() {
                   <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="input-field text-sm">
                     <option value="cleaner">Cleaner</option>
                     <option value="supervisor">Supervisor</option>
-                    <option value="driver">Driver</option>
-                    <option value="trainee">Trainee</option>
-                    <option value="other">Other</option>
+                    <option value="team_leader">Team Leader</option>
                   </select>
                 </div>
                 <div>

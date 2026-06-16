@@ -209,6 +209,7 @@ export default function StaffPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmOrgRevoke, setConfirmOrgRevoke] = useState<OrgAccount | null>(null);
+  const [roleMenuOpenId, setRoleMenuOpenId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -879,37 +880,73 @@ export default function StaffPage() {
                               {/* Don't show revoke for yourself */}
                               {!isMe && !a.isOwner && (
                                 <div className="flex items-center gap-2 shrink-0">
-                                  {/* Role selector */}
-                                  <select
-                                    value={a.orgRole}
-                                    onChange={async (e) => {
-                                      const newRole = e.target.value as 'admin' | 'supervisor' | 'staff';
-                                      setActionLoading(true);
-                                      try {
-                                        const res = await fetch('/api/staff/change-role', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ membershipId: a.membershipId, newRole }),
-                                        });
-                                        if (res.ok) {
-                                          setOrgAccounts(prev => prev.map(acc => acc.membershipId === a.membershipId ? { ...acc, orgRole: newRole } : acc));
-                                        } else {
-                                          const data = await res.json();
-                                          alert(`Failed to update role: ${data.error || 'Unknown error'}`);
-                                        }
-                                      } catch (err) {
-                                        console.error('[Role] Error:', err);
-                                        alert('Failed to update role.');
-                                      }
-                                      setActionLoading(false);
-                                    }}
-                                    disabled={actionLoading}
-                                    className="text-xs font-medium bg-surface-elevated border border-border-light rounded-lg px-2 py-1.5 outline-none focus:border-primary cursor-pointer disabled:opacity-50"
-                                  >
-                                    <option value="admin">Admin</option>
-                                    <option value="supervisor">Supervisor</option>
-                                    <option value="staff">Staff</option>
-                                  </select>
+                                  {/* Role selector with tooltip */}
+                                  <div className="relative">
+                                    <button
+                                      onClick={() => setRoleMenuOpenId(roleMenuOpenId === a.membershipId ? null : a.membershipId)}
+                                      disabled={actionLoading}
+                                      className="text-xs font-medium bg-surface-elevated border border-border-light rounded-lg px-2.5 py-1.5 outline-none hover:border-primary/40 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+                                    >
+                                      {a.orgRole === 'admin' ? 'Admin' : a.orgRole === 'supervisor' ? 'Supervisor' : 'Staff'}
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </button>
+                                    {roleMenuOpenId === a.membershipId && (
+                                      <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setRoleMenuOpenId(null)} />
+                                        <div className="absolute right-0 top-full mt-1 w-72 bg-white rounded-xl border border-border-light shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1 z-50">
+                                          {[
+                                            { value: 'admin' as const, label: 'Admin', desc: 'Full access to everything', color: 'text-indigo-600', items: ['Schedule (edit & publish)', 'Staff management', 'Payroll & revenue', 'Templates', 'Settings', 'All pages'] },
+                                            { value: 'supervisor' as const, label: 'Supervisor', desc: 'View & train, no financials', color: 'text-amber-600', items: ['Schedule (view only)', 'Checklists (full access)', 'Staff dashboard preview', 'Completed jobs', 'Clients'] },
+                                            { value: 'staff' as const, label: 'Staff', desc: 'Own schedule only', color: 'text-emerald-600', items: ['My Schedule', 'Own daily jobs & tasks'] },
+                                          ].map(role => (
+                                            <button
+                                              key={role.value}
+                                              onClick={async () => {
+                                                setRoleMenuOpenId(null);
+                                                if (role.value === a.orgRole) return;
+                                                setActionLoading(true);
+                                                try {
+                                                  const res = await fetch('/api/staff/change-role', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ membershipId: a.membershipId, newRole: role.value }),
+                                                  });
+                                                  if (res.ok) {
+                                                    setOrgAccounts(prev => prev.map(acc => acc.membershipId === a.membershipId ? { ...acc, orgRole: role.value } : acc));
+                                                  } else {
+                                                    const data = await res.json();
+                                                    alert(`Failed to update role: ${data.error || 'Unknown error'}`);
+                                                  }
+                                                } catch (err) {
+                                                  console.error('[Role] Error:', err);
+                                                  alert('Failed to update role.');
+                                                }
+                                                setActionLoading(false);
+                                              }}
+                                              className={`w-full text-left px-3 py-2.5 hover:bg-surface-hover transition-colors group ${
+                                                role.value === a.orgRole ? 'bg-surface-elevated' : ''
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2">
+                                                <span className={`text-xs font-bold ${role.color}`}>{role.label}</span>
+                                                {role.value === a.orgRole && (
+                                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-primary"><polyline points="20 6 9 17 4 12"/></svg>
+                                                )}
+                                                <span className="text-[10px] text-text-tertiary ml-auto">{role.desc}</span>
+                                              </div>
+                                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                                {role.items.map(item => (
+                                                  <span key={item} className="text-[9px] font-medium text-text-secondary bg-surface-elevated px-1.5 py-0.5 rounded border border-border-light">
+                                                    {item}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                   <button
                                     onClick={() => setConfirmOrgRevoke(a)}
                                     disabled={actionLoading}

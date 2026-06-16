@@ -874,12 +874,22 @@ export default function StaffPage() {
                                     onChange={async (e) => {
                                       const newRole = e.target.value as 'admin' | 'supervisor' | 'staff';
                                       setActionLoading(true);
-                                      // Update org_members role
-                                      await supabase.from('org_members').update({ role: newRole }).eq('id', a.membershipId);
-                                      // Update profiles role
-                                      await supabase.from('profiles').update({ role: newRole }).eq('id', a.userId);
-                                      // Refresh accounts list
-                                      setOrgAccounts(prev => prev.map(acc => acc.membershipId === a.membershipId ? { ...acc, orgRole: newRole } : acc));
+                                      try {
+                                        const res = await fetch('/api/staff/change-role', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ membershipId: a.membershipId, newRole }),
+                                        });
+                                        if (res.ok) {
+                                          setOrgAccounts(prev => prev.map(acc => acc.membershipId === a.membershipId ? { ...acc, orgRole: newRole } : acc));
+                                        } else {
+                                          const data = await res.json();
+                                          alert(`Failed to update role: ${data.error || 'Unknown error'}`);
+                                        }
+                                      } catch (err) {
+                                        console.error('[Role] Error:', err);
+                                        alert('Failed to update role.');
+                                      }
                                       setActionLoading(false);
                                     }}
                                     disabled={actionLoading}
@@ -1162,14 +1172,6 @@ export default function StaffPage() {
                     onChange={e => setForm({ ...form, name: e.target.value })}
                     className="input-field text-sm" placeholder="Full name" autoFocus
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">Role</label>
-                  <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="input-field text-sm">
-                    <option value="cleaner">Cleaner</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="team_leader">Team Leader</option>
-                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">Email</label>

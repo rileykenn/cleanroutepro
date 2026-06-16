@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
@@ -140,7 +141,15 @@ function exportCsv(
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PayrollPage() {
   const { profile } = useAuth();
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  // Admin-only page
+  useEffect(() => {
+    if (profile && profile.role !== 'admin') {
+      router.replace(profile.role === 'staff' ? '/dashboard/staff-view' : '/dashboard/schedule');
+    }
+  }, [profile?.role, router]);
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');

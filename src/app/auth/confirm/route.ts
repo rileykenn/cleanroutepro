@@ -84,6 +84,8 @@ export async function GET(request: NextRequest) {
         redirectTo.pathname = '/dashboard';
       } else if (profile?.role === 'staff') {
         redirectTo.pathname = '/dashboard/staff-view';
+      } else {
+        redirectTo.pathname = '/dashboard/schedule';
       }
       return NextResponse.redirect(redirectTo);
     }

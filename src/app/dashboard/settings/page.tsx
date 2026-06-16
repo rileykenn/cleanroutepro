@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
@@ -8,7 +9,15 @@ import { getAppTimezone, setAppTimezone, TIMEZONE_OPTIONS } from '@/lib/timezone
 
 export default function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  // Admin-only page
+  useEffect(() => {
+    if (profile && profile.role !== 'admin') {
+      router.replace('/dashboard/schedule');
+    }
+  }, [profile?.role, router]);
   const [orgName, setOrgName] = useState(profile?.org_name || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);

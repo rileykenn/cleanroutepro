@@ -123,6 +123,8 @@ export default function SchedulePage() {
   const supabase = useMemo(() => createClient(), []);
   const orgId = profile?.org_id || null;
   const isStaff = profile?.role === 'staff';
+  const isSupervisor = profile?.role === 'supervisor';
+  const isRestricted = isStaff || isSupervisor; // Can view but not edit
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
@@ -1883,7 +1885,7 @@ export default function SchedulePage() {
                 </span>
               )}
 
-              {state.viewMode === 'week' && !isStaff && (
+              {state.viewMode === 'week' && !isRestricted && (
                 <button
                   onClick={() => setShowWeeklySummary(v => !v)}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
@@ -1903,7 +1905,7 @@ export default function SchedulePage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
               </button>
 
-              {state.viewMode === 'week' && !isStaff && (
+              {state.viewMode === 'week' && !isRestricted && (
                 <>
                   <button onClick={() => setShowSaveTemplate(true)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-hover text-text-secondary transition-colors" title="Save week as template">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -1917,7 +1919,7 @@ export default function SchedulePage() {
                 </>
               )}
 
-              {state.viewMode === 'week' && !isStaff && (
+              {state.viewMode === 'week' && !isRestricted && (
                 <div className="flex items-center gap-1">
                   {weekIsPublished ? (
                     <button
@@ -1967,9 +1969,9 @@ export default function SchedulePage() {
                 state={state}
                 dispatch={dispatch}
                 onSelectTeam={(teamId) => dispatch({ type: 'SET_ACTIVE_TEAM', teamId })}
-                onAddTeam={isStaff ? undefined : handleAddTeam}
-                onRemoveTeam={isStaff ? undefined : handleRemoveTeam}
-                onChangeTeamColor={isStaff ? undefined : (teamId, colorIndex) => {
+                onAddTeam={isRestricted ? undefined : handleAddTeam}
+                onRemoveTeam={isRestricted ? undefined : handleRemoveTeam}
+                onChangeTeamColor={isRestricted ? undefined : (teamId, colorIndex) => {
                   dispatch({ type: 'SET_TEAM_COLOR', teamId, colorIndex });
                   // Read existing row first so we don't null out the name field,
                   // then upsert the full merged record for this week.
@@ -1992,7 +1994,7 @@ export default function SchedulePage() {
                   allOrgTeamsRef.current = allOrgTeamsRef.current.map(applyColor);
                   weekTeamsRef.current = weekTeamsRef.current.map(applyColor);
                 }}
-                onChangeTeamName={isStaff ? undefined : (teamId, name) => {
+                onChangeTeamName={isRestricted ? undefined : (teamId, name) => {
                   dispatch({ type: 'RENAME_TEAM', teamId, name });
                   // Read existing row first so we don't null out the color_index field.
                   supabase
@@ -2028,6 +2030,7 @@ export default function SchedulePage() {
               weekLabel={weekLabel}
               allStaff={allStaff}
               onClose={() => setShowWeeklySummary(false)}
+              hideFinancials={isSupervisor}
             />
           )}
         </AnimatePresence>
@@ -2058,7 +2061,7 @@ export default function SchedulePage() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   Start Planning This Week
                 </button>
-                {!isStaff && (
+                {!isRestricted && (
                   <button onClick={() => setShowLoadTemplate(true)} className="btn-ghost text-sm px-4 py-2 flex items-center gap-2">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     Load Template
@@ -2147,6 +2150,8 @@ export default function SchedulePage() {
               supabase={supabase}
               saveRef={daySaveRef}
               allStaff={allStaff}
+              isAdmin={!isRestricted}
+              hideFinancials={isSupervisor}
               loadGeneration={dayLoadGen}
               skipUnmountSaveRef={skipUnmountSaveRef}
             />

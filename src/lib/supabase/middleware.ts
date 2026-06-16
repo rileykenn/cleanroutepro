@@ -71,18 +71,28 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
-    // Staff — block admin-only pages
-    const adminOnlyPaths = ['/dashboard/schedule', '/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/clients', '/dashboard/checklists', '/dashboard/onboarding'];
+    // Paths that only admins can access (not staff or supervisors)
+    const adminOnlyPaths = ['/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/onboarding'];
     const isAdminOnly = adminOnlyPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
-    if (profile.role === 'staff' && isAdminOnly) {
+    if (profile.role !== 'admin' && isAdminOnly) {
+      const url = request.nextUrl.clone();
+      url.pathname = profile.role === 'staff' ? '/dashboard/staff-view' : '/dashboard/schedule';
+      return NextResponse.redirect(url);
+    }
+
+    // Staff — block all dashboard pages except staff-view
+    const staffBlockedPaths = ['/dashboard/schedule', '/dashboard/completed', '/dashboard/checklists', '/dashboard/clients', '/dashboard/staff-preview'];
+    const isStaffBlocked = staffBlockedPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
+
+    if (profile.role === 'staff' && isStaffBlocked) {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard/staff-view';
       return NextResponse.redirect(url);
     }
 
-    // Admin on /dashboard should go to schedule
-    if (profile.role === 'admin' && request.nextUrl.pathname === '/dashboard') {
+    // Admin/supervisor on /dashboard should go to schedule
+    if (profile.role !== 'staff' && request.nextUrl.pathname === '/dashboard') {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard/schedule';
       return NextResponse.redirect(url);

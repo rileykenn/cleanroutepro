@@ -438,9 +438,10 @@ interface DayEditorProps {
   /** Ref set to true by the parent just before an explicit flush + view-mode switch.
    *  When true the unmount-cleanup save is skipped to prevent a double-save race. */
   skipUnmountSaveRef?: MutableRefObject<boolean>;
+  hideFinancials?: boolean;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -1367,6 +1368,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   dispatch={dispatch}
                   staffNames={jobStaffRates.map(s => s.name)}
                   staffRates={jobStaffRates}
+                  hideFinancials={hideFinancials}
                 />
               </div>
             )}

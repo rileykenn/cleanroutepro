@@ -18,9 +18,10 @@ interface DailySummaryProps {
   dispatch: React.Dispatch<ScheduleAction>;
   staffNames?: string[];
   staffRates?: StaffWithRate[];
+  hideFinancials?: boolean;
 }
 
-export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates }: DailySummaryProps) {
+export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates, hideFinancials }: DailySummaryProps) {
   const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
   const [csvMenuOpen, setCsvMenuOpen] = useState(false);
   const csvMenuRef = useRef<HTMLDivElement>(null);
@@ -109,10 +110,10 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
           </svg>
           Daily Summary
         </h3>
-        {/* CSV Export Dropdown */}
-        <div className="relative" ref={csvMenuRef}>
+        {/* CSV Export */}
+        {hideFinancials ? (
           <button
-            onClick={() => setCsvMenuOpen(v => !v)}
+            onClick={handleStaffExport}
             className="btn-ghost text-xs flex items-center gap-1"
             title="Export as CSV"
           >
@@ -121,30 +122,45 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Export
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            Export CSV
           </button>
-          {csvMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-border-light shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1 z-50">
-              <button
-                onClick={() => { handleExport(); setCsvMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
-              >
-                📊 Admin CSV
-                <span className="text-[10px] text-text-tertiary ml-auto">Full data</span>
-              </button>
-              <button
-                onClick={() => { handleStaffExport(); setCsvMenuOpen(false); }}
-                className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
-              >
-                📋 Staff CSV
-                <span className="text-[10px] text-text-tertiary ml-auto">Schedule only</span>
-              </button>
-            </div>
-          )}
-        </div>
+        ) : (
+          <div className="relative" ref={csvMenuRef}>
+            <button
+              onClick={() => setCsvMenuOpen(v => !v)}
+              className="btn-ghost text-xs flex items-center gap-1"
+              title="Export as CSV"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Export
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {csvMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-border-light shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1 z-50">
+                <button
+                  onClick={() => { handleExport(); setCsvMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
+                >
+                  📊 Admin CSV
+                  <span className="text-[10px] text-text-tertiary ml-auto">Full data</span>
+                </button>
+                <button
+                  onClick={() => { handleStaffExport(); setCsvMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
+                >
+                  📋 Staff CSV
+                  <span className="text-[10px] text-text-tertiary ml-auto">Schedule only</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -220,7 +236,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
         </div>
 
         {/* Fuel Cost */}
-        {summary.fuelCost > 0 && (
+        {!hideFinancials && summary.fuelCost > 0 && (
           <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
             <div className="text-xs font-medium text-text-secondary">Fuel Cost</div>
             <span className="text-base font-bold text-text-primary">${summary.fuelCost.toFixed(2)}</span>
@@ -228,7 +244,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
         )}
 
         {/* Per-KM Allowance */}
-        {summary.perKmCost > 0 && (
+        {!hideFinancials && summary.perKmCost > 0 && (
           <div className="flex items-center justify-between bg-surface-elevated rounded-xl p-3">
             <div className="text-xs font-medium text-text-secondary">KM Allowance (${team.perKmRate.toFixed(2)}/km)</div>
             <span className="text-base font-bold text-text-primary">${summary.perKmCost.toFixed(2)}</span>
@@ -236,7 +252,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
         )}
 
         {/* Staff with rates */}
-        {staffWages.length > 0 && (
+        {!hideFinancials && staffWages.length > 0 && (
           <div className="rounded-xl p-3 bg-surface-elevated border border-border-light">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-medium text-text-secondary">Staff</div>
@@ -265,16 +281,18 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
         </div>
 
         {/* Wage Total */}
-        <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
-          <div className="text-xs font-bold" style={{ color: team.color.text }}>
-            Wages {staffWages.length > 1 && <span className="font-normal text-[10px]">({staffWages.length} staff)</span>}
+        {!hideFinancials && (
+          <div className="flex items-center justify-between rounded-xl p-3" style={{ backgroundColor: team.color.light }}>
+            <div className="text-xs font-bold" style={{ color: team.color.text }}>
+              Wages {staffWages.length > 1 && <span className="font-normal text-[10px]">({staffWages.length} staff)</span>}
+            </div>
+            <span className="text-lg font-bold" style={{ color: team.color.text }}>${totalWages.toFixed(2)}</span>
           </div>
-          <span className="text-lg font-bold" style={{ color: team.color.text }}>${totalWages.toFixed(2)}</span>
-        </div>
+        )}
 
 
         {/* Divider before financials */}
-        {team.clients.some(c => c.rate) && (
+        {!hideFinancials && team.clients.some(c => c.rate) && (
           <>
             <div className="border-t border-border-light" />
 

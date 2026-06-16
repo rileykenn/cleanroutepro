@@ -13,6 +13,7 @@ interface WeeklySummaryPanelProps {
   weekLabel: string;
   allStaff: StaffMember[];
   onClose: () => void;
+  hideFinancials?: boolean;
 }
 
 interface TeamWeekTotals {
@@ -33,6 +34,7 @@ export default function WeeklySummaryPanel({
   weekDates,
   weekLabel,
   onClose,
+  hideFinancials = false,
 }: WeeklySummaryPanelProps) {
   const { teamTotals, grandTotals } = useMemo(() => {
     const teamTotals: TeamWeekTotals[] = [];
@@ -170,10 +172,14 @@ export default function WeeklySummaryPanel({
                     <th className="text-right py-2 px-2 font-semibold text-text-secondary">Job Hours</th>
                     <th className="text-right py-2 px-2 font-semibold text-text-secondary">Travel</th>
                     <th className="text-right py-2 px-2 font-semibold text-text-secondary">Distance</th>
-                    <th className="text-right py-2 px-2 font-semibold text-text-secondary">Wages</th>
-                    <th className="text-right py-2 px-2 font-semibold text-text-secondary">Fuel</th>
-                    <th className="text-right py-2 px-2 font-semibold text-text-secondary">Revenue</th>
-                    <th className="text-right py-2 px-2 font-semibold text-text-secondary">Profit</th>
+                    {!hideFinancials && (
+                      <>
+                        <th className="text-right py-2 px-2 font-semibold text-text-secondary">Wages</th>
+                        <th className="text-right py-2 px-2 font-semibold text-text-secondary">Fuel</th>
+                        <th className="text-right py-2 px-2 font-semibold text-text-secondary">Revenue</th>
+                        <th className="text-right py-2 px-2 font-semibold text-text-secondary">Profit</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -192,12 +198,16 @@ export default function WeeklySummaryPanel({
                         <td className="text-right py-2.5 px-2 text-text-primary">{formatDuration(t.totalJobMinutes)}</td>
                         <td className="text-right py-2.5 px-2 text-text-secondary">{formatDuration(t.totalTravelMinutes)}</td>
                         <td className="text-right py-2.5 px-2 text-text-secondary">{formatDistance(t.totalDistanceKm)}</td>
-                        <td className="text-right py-2.5 px-2 text-text-primary">${t.wageAmount.toFixed(2)}</td>
-                        <td className="text-right py-2.5 px-2 text-text-secondary">${(t.fuelCost + t.perKmCost).toFixed(2)}</td>
-                        <td className="text-right py-2.5 px-2 font-medium text-emerald-600">${t.totalRevenue.toFixed(2)}</td>
-                        <td className={`text-right py-2.5 px-2 font-medium ${profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {profit >= 0 ? '' : '-'}${Math.abs(profit).toFixed(2)}
-                        </td>
+                        {!hideFinancials && (
+                          <>
+                            <td className="text-right py-2.5 px-2 text-text-primary">${t.wageAmount.toFixed(2)}</td>
+                            <td className="text-right py-2.5 px-2 text-text-secondary">${(t.fuelCost + t.perKmCost).toFixed(2)}</td>
+                            <td className="text-right py-2.5 px-2 font-medium text-emerald-600">${t.totalRevenue.toFixed(2)}</td>
+                            <td className={`text-right py-2.5 px-2 font-medium ${profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {profit >= 0 ? '' : '-'}${Math.abs(profit).toFixed(2)}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     );
                   })}
@@ -208,19 +218,23 @@ export default function WeeklySummaryPanel({
                     <td className="text-right py-2.5 px-2 font-bold text-text-primary">{formatDuration(grandTotals.totalJobMinutes)}</td>
                     <td className="text-right py-2.5 px-2 font-bold text-text-secondary">{formatDuration(grandTotals.totalTravelMinutes)}</td>
                     <td className="text-right py-2.5 px-2 font-bold text-text-secondary">{formatDistance(grandTotals.totalDistanceKm)}</td>
-                    <td className="text-right py-2.5 px-2 font-bold text-text-primary">${grandTotals.wageAmount.toFixed(2)}</td>
-                    <td className="text-right py-2.5 px-2 font-bold text-text-secondary">${(grandTotals.fuelCost + grandTotals.perKmCost).toFixed(2)}</td>
-                    <td className="text-right py-2.5 px-2 font-bold text-emerald-600">${grandTotals.totalRevenue.toFixed(2)}</td>
-                    <td className={`text-right py-2.5 px-2 font-bold ${grandTotals.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {grandTotals.profit >= 0 ? '' : '-'}${Math.abs(grandTotals.profit).toFixed(2)}
-                    </td>
+                    {!hideFinancials && (
+                      <>
+                        <td className="text-right py-2.5 px-2 font-bold text-text-primary">${grandTotals.wageAmount.toFixed(2)}</td>
+                        <td className="text-right py-2.5 px-2 font-bold text-text-secondary">${(grandTotals.fuelCost + grandTotals.perKmCost).toFixed(2)}</td>
+                        <td className="text-right py-2.5 px-2 font-bold text-emerald-600">${grandTotals.totalRevenue.toFixed(2)}</td>
+                        <td className={`text-right py-2.5 px-2 font-bold ${grandTotals.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {grandTotals.profit >= 0 ? '' : '-'}${Math.abs(grandTotals.profit).toFixed(2)}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 </tbody>
               </table>
             </div>
 
             {/* Summary cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+            <div className={`grid gap-2 mt-4 ${hideFinancials ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
               <div className="bg-surface-elevated rounded-xl p-3">
                 <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">Jobs</div>
                 <div className="text-lg font-bold text-text-primary mt-1">{grandTotals.clientCount}</div>
@@ -229,16 +243,20 @@ export default function WeeklySummaryPanel({
                 <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">Job Hours</div>
                 <div className="text-lg font-bold text-text-primary mt-1">{formatDuration(grandTotals.totalJobMinutes)}</div>
               </div>
-              <div className="bg-surface-elevated rounded-xl p-3">
-                <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">Total Wages</div>
-                <div className="text-lg font-bold text-text-primary mt-1">${grandTotals.wageAmount.toFixed(2)}</div>
-              </div>
-              <div className={`rounded-xl p-3 ${grandTotals.profit >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}`}>
-                <div className={`text-[10px] font-medium uppercase tracking-wide ${grandTotals.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Profit</div>
-                <div className={`text-lg font-bold mt-1 ${grandTotals.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                  {grandTotals.profit >= 0 ? '' : '-'}${Math.abs(grandTotals.profit).toFixed(2)}
-                </div>
-              </div>
+              {!hideFinancials && (
+                <>
+                  <div className="bg-surface-elevated rounded-xl p-3">
+                    <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">Total Wages</div>
+                    <div className="text-lg font-bold text-text-primary mt-1">${grandTotals.wageAmount.toFixed(2)}</div>
+                  </div>
+                  <div className={`rounded-xl p-3 ${grandTotals.profit >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+                    <div className={`text-[10px] font-medium uppercase tracking-wide ${grandTotals.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Profit</div>
+                    <div className={`text-lg font-bold mt-1 ${grandTotals.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {grandTotals.profit >= 0 ? '' : '-'}${Math.abs(grandTotals.profit).toFixed(2)}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

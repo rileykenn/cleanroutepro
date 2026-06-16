@@ -62,7 +62,7 @@ function DeleteZone() {
   );
 }
 
-export default function SchedulePage() {
+export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' | 'supervisor' | 'staff' } = {}) {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -122,8 +122,9 @@ export default function SchedulePage() {
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const orgId = profile?.org_id || null;
-  const isStaff = profile?.role === 'staff';
-  const isSupervisor = profile?.role === 'supervisor';
+  const effectiveRole = overrideRole || profile?.role;
+  const isStaff = effectiveRole === 'staff';
+  const isSupervisor = effectiveRole === 'supervisor';
   const isRestricted = isStaff || isSupervisor; // Can view but not edit
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);

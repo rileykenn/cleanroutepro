@@ -34,6 +34,8 @@ interface OrgAccount {
   staffRole: string | null;
   /** True when the linked staff_members row was deleted but org_members wasn’t cleaned up */
   isOrphaned: boolean;
+  /** True for the original org creator */
+  isOwner: boolean;
 }
 
 type ConfirmAction =
@@ -267,7 +269,7 @@ export default function StaffPage() {
     // All accepted + pending members of this org
     const { data: memberships } = await supabase
       .from('org_members')
-      .select('id, user_id, role, status, staff_member_id')
+      .select('id, user_id, role, status, staff_member_id, created_at')
       .eq('org_id', profile.org_id)
       .in('status', ['accepted', 'pending']);
 
@@ -277,8 +279,13 @@ export default function StaffPage() {
       return;
     }
 
-    type RawMembership = { id: string; user_id: string; role: string; status: string; staff_member_id: string | null };
+    type RawMembership = { id: string; user_id: string; role: string; status: string; staff_member_id: string | null; created_at: string };
     const rows = memberships as RawMembership[];
+
+    // Find the original org creator — earliest admin member
+    const ownerUserId = rows
+      .filter(m => m.role === 'admin')
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))[0]?.user_id || null;
     const userIds = rows.map(m => m.user_id);
     const staffIds = rows.map(m => m.staff_member_id).filter(Boolean) as string[];
 
@@ -316,7 +323,8 @@ export default function StaffPage() {
         staffMemberId: m.staff_member_id,
         staffName: sm?.name || null,
         staffRole: sm?.role || null,
-        isOrphaned: !sm && !prof?.full_name, // staff_members row was deleted
+        isOrphaned: !sm && !prof?.full_name,
+        isOwner: m.user_id === ownerUserId,
       };
     });
 
@@ -841,7 +849,10 @@ export default function StaffPage() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <p className="text-sm font-bold text-text-primary">{a.fullName}</p>
-                                  {a.orgRole === 'admin' && (
+                                  {a.isOwner && (
+                                    <span className="text-[10px] font-semibold bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full border border-violet-200">Owner</span>
+                                  )}
+                                  {a.orgRole === 'admin' && !a.isOwner && (
                                     <span className="text-[10px] font-semibold bg-primary-light text-primary px-2 py-0.5 rounded-full border border-primary-border">Admin</span>
                                   )}
                                   {a.orgRole === 'supervisor' && (
@@ -866,7 +877,7 @@ export default function StaffPage() {
                                 </p>
                               </div>
                               {/* Don't show revoke for yourself */}
-                              {!isMe && (
+                              {!isMe && !a.isOwner && (
                                 <div className="flex items-center gap-2 shrink-0">
                                   {/* Role selector */}
                                   <select

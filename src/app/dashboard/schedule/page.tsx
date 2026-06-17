@@ -62,7 +62,7 @@ function DeleteZone() {
   );
 }
 
-export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' | 'supervisor' | 'staff' } = {}) {
+export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' | 'admin_staff' | 'supervisor' | 'staff' } = {}) {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -124,8 +124,10 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
   const orgId = profile?.org_id || null;
   const effectiveRole = overrideRole || profile?.role;
   const isStaff = effectiveRole === 'staff';
+  const isAdminStaff = effectiveRole === 'admin_staff';
   const isSupervisor = effectiveRole === 'supervisor';
-  const isRestricted = isStaff || isSupervisor; // Can view but not edit
+  const isRestricted = isStaff || isAdminStaff || isSupervisor; // Can view but not edit
+  const hideFinancials = isAdminStaff || isSupervisor || isStaff;
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
@@ -2031,7 +2033,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
               weekLabel={weekLabel}
               allStaff={allStaff}
               onClose={() => setShowWeeklySummary(false)}
-              hideFinancials={isSupervisor}
+              hideFinancials={hideFinancials}
             />
           )}
         </AnimatePresence>
@@ -2152,7 +2154,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
               saveRef={daySaveRef}
               allStaff={allStaff}
               isAdmin={!isRestricted}
-              hideFinancials={isSupervisor}
+              hideFinancials={hideFinancials}
               loadGeneration={dayLoadGen}
               skipUnmountSaveRef={skipUnmountSaveRef}
             />

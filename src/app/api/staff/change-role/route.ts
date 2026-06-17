@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing membershipId or newRole' }, { status: 400 });
     }
 
-    const validRoles = ['admin', 'supervisor', 'staff'];
+    const validRoles = ['admin', 'admin_staff', 'supervisor', 'staff'];
     if (!validRoles.includes(newRole)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
     }

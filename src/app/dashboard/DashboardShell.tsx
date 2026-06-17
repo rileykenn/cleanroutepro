@@ -10,7 +10,7 @@ import CreateOrgModal from '@/components/CreateOrgModal';
 
 interface UserProfile {
   id: string; org_id: string; full_name: string; email: string;
-  role: 'admin' | 'supervisor' | 'staff'; is_platform_admin: boolean;
+  role: 'admin' | 'admin_staff' | 'supervisor' | 'staff'; is_platform_admin: boolean;
   onboarding_completed: boolean; org_name: string;
   subscription_status: string; subscription_tier: string;
   timezone: string | null;
@@ -32,11 +32,16 @@ const STAFF_NAV = [
   { label: 'My Schedule', href: '/dashboard/staff-view', icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
 ];
 
-const SUPERVISOR_NAV = [
+const ADMIN_STAFF_NAV = [
   { label: 'Schedule',   href: '/dashboard/schedule',      icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
   { label: 'Completed',  href: '/dashboard/completed',      icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4' },
   { label: 'Clients',    href: '/dashboard/checklists',     icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { label: 'Staff View', href: '/dashboard/staff-preview',  icon: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z' },
+];
+
+const SUPERVISOR_NAV = [
+  { label: 'Schedule',    href: '/dashboard/schedule',    icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
+  { label: 'My Schedule', href: '/dashboard/staff-view',  icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4' },
 ];
 
 export default function DashboardShell({ children, serverProfile }: { children: React.ReactNode; serverProfile: UserProfile | null }) {
@@ -64,7 +69,7 @@ function Inner({ children }: { children: React.ReactNode }) {
 
   const hasOrg = !!profile?.org_id;
   const userRole = profile?.role || 'staff';
-  const navItems = userRole === 'staff' ? STAFF_NAV : userRole === 'supervisor' ? SUPERVISOR_NAV : ADMIN_NAV;
+  const navItems = userRole === 'staff' ? STAFF_NAV : userRole === 'supervisor' ? SUPERVISOR_NAV : userRole === 'admin_staff' ? ADMIN_STAFF_NAV : ADMIN_NAV;
   const initials = (profile?.full_name || profile?.email || '?').charAt(0).toUpperCase();
 
   // Close menus on outside click

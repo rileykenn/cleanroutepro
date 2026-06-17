@@ -123,6 +123,7 @@ interface ClientProfileViewProps {
   showBackButton?: boolean;
   onBack?: () => void;
   onDelete?: () => void;
+  hideRates?: boolean;
 }
 
 // ── Inline editable row ───────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ function EditRow({
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function ClientProfileView({ clientId, orgId, showBackButton, onBack, onDelete }: ClientProfileViewProps) {
+export default function ClientProfileView({ clientId, orgId, showBackButton, onBack, onDelete, hideRates }: ClientProfileViewProps) {
   const supabase = useMemo(() => createSupabaseClient(), []);
   const [client, setClient] = useState<ClientRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -334,7 +335,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   {durationHM} hrs
                 </span>
-                {client.rate != null && (
+                {client.rate != null && !hideRates && (
                   <span className="inline-flex items-center gap-1 text-[11px] text-text-secondary bg-surface-elevated rounded-full px-2.5 py-1 border border-border-light">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                     ${Number(client.rate).toFixed(2)}/hr
@@ -405,6 +406,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
                 }
               }}
             />
+            {!hideRates && (
             <EditRow
               icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>}
               label="Rate"
@@ -419,6 +421,7 @@ export default function ClientProfileView({ clientId, orgId, showBackButton, onB
               }
               onSave={val => updateField('rate', val === '' ? null : Number(val))}
             />
+            )}
           </div>
         </div>
 

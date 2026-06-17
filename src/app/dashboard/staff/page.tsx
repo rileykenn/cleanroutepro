@@ -27,7 +27,7 @@ interface OrgAccount {
   userId: string;
   fullName: string;
   email: string;
-  orgRole: 'admin' | 'supervisor' | 'staff';
+  orgRole: 'admin' | 'admin_staff' | 'supervisor' | 'staff';
   memberStatus: string;
   staffMemberId: string | null;
   staffName: string | null;
@@ -319,7 +319,7 @@ export default function StaffPage() {
         userId: m.user_id,
         fullName,
         email,
-        orgRole: m.role as 'admin' | 'supervisor' | 'staff',
+        orgRole: m.role as 'admin' | 'admin_staff' | 'supervisor' | 'staff',
         memberStatus: m.status,
         staffMemberId: m.staff_member_id,
         staffName: sm?.name || null,
@@ -330,7 +330,7 @@ export default function StaffPage() {
     });
 
     accounts.sort((a, b) => {
-      const roleOrder = { admin: 0, supervisor: 1, staff: 2 };
+      const roleOrder: Record<string, number> = { admin: 0, admin_staff: 1, supervisor: 2, staff: 3 };
       const ra = roleOrder[a.orgRole] ?? 2;
       const rb = roleOrder[b.orgRole] ?? 2;
       if (ra !== rb) return ra - rb;
@@ -856,6 +856,9 @@ export default function StaffPage() {
                                   {a.orgRole === 'admin' && !a.isOwner && (
                                     <span className="text-[10px] font-semibold bg-primary-light text-primary px-2 py-0.5 rounded-full border border-primary-border">Admin</span>
                                   )}
+                                  {a.orgRole === 'admin_staff' && (
+                                    <span className="text-[10px] font-semibold bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full border border-sky-200">Admin Staff</span>
+                                  )}
                                   {a.orgRole === 'supervisor' && (
                                     <span className="text-[10px] font-semibold bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">Supervisor</span>
                                   )}
@@ -887,7 +890,7 @@ export default function StaffPage() {
                                       disabled={actionLoading}
                                       className="text-xs font-medium bg-surface-elevated border border-border-light rounded-lg px-2.5 py-1.5 outline-none hover:border-primary/40 cursor-pointer disabled:opacity-50 flex items-center gap-1.5 transition-colors"
                                     >
-                                      {a.orgRole === 'admin' ? 'Admin' : a.orgRole === 'supervisor' ? 'Supervisor' : 'Staff'}
+                                      {a.orgRole === 'admin' ? 'Admin' : a.orgRole === 'admin_staff' ? 'Admin Staff' : a.orgRole === 'supervisor' ? 'Supervisor' : 'Staff'}
                                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                                     </button>
                                     {roleMenuOpenId === a.membershipId && (
@@ -896,8 +899,9 @@ export default function StaffPage() {
                                         <div className="absolute right-0 top-full mt-1 w-72 bg-white rounded-xl border border-border-light shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-1 z-50">
                                           {[
                                             { value: 'admin' as const, label: 'Admin', desc: 'Full access to everything', color: 'text-indigo-600', items: ['Schedule (edit & publish)', 'Staff management', 'Payroll & revenue', 'Templates', 'Settings', 'All pages'] },
-                                            { value: 'supervisor' as const, label: 'Supervisor', desc: 'View & train, no financials', color: 'text-amber-600', items: ['Schedule (view only)', 'Checklists (full access)', 'Staff dashboard preview', 'Completed jobs', 'Clients'] },
-                                            { value: 'staff' as const, label: 'Staff', desc: 'Own schedule only', color: 'text-emerald-600', items: ['My Schedule', 'Own daily jobs & tasks'] },
+                                            { value: 'admin_staff' as const, label: 'Admin Staff', desc: 'View & manage, no financials', color: 'text-sky-600', items: ['Schedule (view only)', 'Checklists (create & edit)', 'Completed checklists', 'Client cards (no rates)', 'Staff dashboard preview'] },
+                                            { value: 'supervisor' as const, label: 'Supervisor', desc: 'Published schedules only', color: 'text-amber-600', items: ['Published schedules (view)', 'My Schedule'] },
+                                            { value: 'staff' as const, label: 'Staff', desc: 'Own schedule only', color: 'text-emerald-600', items: ['My Schedule', 'Own daily jobs & tasks', 'Complete checklists'] },
                                           ].map(role => (
                                             <button
                                               key={role.value}

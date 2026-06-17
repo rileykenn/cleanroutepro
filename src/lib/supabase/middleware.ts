@@ -71,7 +71,7 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
-    // Paths that only admins can access (not staff or supervisors)
+    // Paths that only admins can access
     const adminOnlyPaths = ['/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/onboarding'];
     const isAdminOnly = adminOnlyPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
@@ -81,7 +81,17 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Staff — block all dashboard pages except staff-view
+    // Supervisor — can only access schedule (view-only) + staff-view (own dashboard)
+    const supervisorBlockedPaths = ['/dashboard/completed', '/dashboard/checklists', '/dashboard/clients', '/dashboard/staff-preview'];
+    const isSupervisorBlocked = supervisorBlockedPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
+
+    if (profile.role === 'supervisor' && isSupervisorBlocked) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard/schedule';
+      return NextResponse.redirect(url);
+    }
+
+    // Staff — can only access staff-view (own dashboard)
     const staffBlockedPaths = ['/dashboard/schedule', '/dashboard/completed', '/dashboard/checklists', '/dashboard/clients', '/dashboard/staff-preview'];
     const isStaffBlocked = staffBlockedPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
@@ -91,7 +101,7 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Admin/supervisor on /dashboard should go to schedule
+    // Non-staff on /dashboard should go to schedule
     if (profile.role !== 'staff' && request.nextUrl.pathname === '/dashboard') {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard/schedule';

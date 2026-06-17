@@ -12,16 +12,18 @@ interface PreviewAccount {
   staffId: string;
   userId: string | null;
   name: string;
-  role: 'admin' | 'supervisor' | 'staff';
+  role: 'admin' | 'admin_staff' | 'supervisor' | 'staff';
 }
 
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  admin:      { label: 'Admin',      color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
-  supervisor: { label: 'Supervisor', color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
-  staff:      { label: 'Staff',      color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  admin:       { label: 'Admin',       color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  admin_staff: { label: 'Admin Staff', color: 'text-sky-700',     bg: 'bg-sky-50',     border: 'border-sky-200' },
+  supervisor:  { label: 'Supervisor',  color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  staff:       { label: 'Staff',       color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
 };
 
-const SUPERVISOR_NAV = ['Schedule', 'Completed', 'Clients', 'Staff View'];
+const ADMIN_STAFF_NAV = ['Schedule', 'Completed', 'Clients', 'Staff View'];
+const SUPERVISOR_NAV = ['Schedule', 'My Schedule'];
 const STAFF_NAV = ['My Schedule'];
 const ADMIN_NAV = ['Schedule', 'Completed', 'Clients', 'Templates', 'Staff', 'Staff View', 'Settings'];
 
@@ -77,7 +79,7 @@ export default function StaffPreviewPage() {
         staffId: s.id,
         userId: s.user_id,
         name: s.name,
-        role: (s.user_id ? roleMap.get(s.user_id) || 'staff' : 'staff') as 'admin' | 'supervisor' | 'staff',
+        role: (s.user_id ? roleMap.get(s.user_id) || 'staff' : 'staff') as 'admin' | 'admin_staff' | 'supervisor' | 'staff',
       }));
 
       setAccounts(result);
@@ -98,7 +100,8 @@ export default function StaffPreviewPage() {
     );
   }
 
-  const navItems = selectedAccount?.role === 'supervisor' ? SUPERVISOR_NAV
+  const navItems = selectedAccount?.role === 'admin_staff' ? ADMIN_STAFF_NAV
+    : selectedAccount?.role === 'supervisor' ? SUPERVISOR_NAV
     : selectedAccount?.role === 'admin' ? ADMIN_NAV
     : STAFF_NAV;
 
@@ -198,7 +201,7 @@ export default function StaffPreviewPage() {
               transition={{ duration: 0.15 }}
               className="h-full overflow-auto"
             >
-              {selectedAccount.role === 'staff' ? (
+              {selectedAccount.role === 'staff' || selectedAccount.role === 'supervisor' ? (
                 <StaffPortalPage overrideStaffId={selectedStaffId} overrideStaffName={selectedAccount.name} />
               ) : (
                 <SchedulePage overrideRole={selectedAccount.role} />

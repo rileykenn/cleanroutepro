@@ -1369,6 +1369,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   staffNames={jobStaffRates.map(s => s.name)}
                   staffRates={jobStaffRates}
                   hideFinancials={hideFinancials}
+                  date={state.selectedDate}
                 />
               </div>
             )}

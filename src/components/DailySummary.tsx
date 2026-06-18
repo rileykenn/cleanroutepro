@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDuration, formatDistance, formatTimeDisplay } from '@/lib/timeUtils';
 import { DaySummary, ScheduleAction, TeamSchedule } from '@/lib/types';
-import { exportScheduleCSV, exportStaffScheduleCSV } from '@/lib/routeEngine';
+import { exportStaffScheduleCSV } from '@/lib/routeEngine';
+import { exportScheduleXLSX } from '@/lib/xlsxExport';
 
 interface StaffWithRate {
   id: string;
@@ -19,9 +20,10 @@ interface DailySummaryProps {
   staffNames?: string[];
   staffRates?: StaffWithRate[];
   hideFinancials?: boolean;
+  date?: string;
 }
 
-export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates, hideFinancials }: DailySummaryProps) {
+export default function DailySummaryCard({ team, summary, dispatch, staffNames, staffRates, hideFinancials, date }: DailySummaryProps) {
   const [showRevenueBreakdown, setShowRevenueBreakdown] = useState(false);
   const [csvMenuOpen, setCsvMenuOpen] = useState(false);
   const csvMenuRef = useRef<HTMLDivElement>(null);
@@ -37,13 +39,12 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [csvMenuOpen]);
 
-  const handleExport = () => {
-    const csv = exportScheduleCSV(team, summary, staffNames);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const handleExport = async () => {
+    const blob = await exportScheduleXLSX(team, summary, date || '', staffNames);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${team.name.replace(/\s+/g, '-')}-schedule.csv`);
+    link.setAttribute('download', `${team.name.replace(/\s+/g, '-')}-schedule.xlsx`);
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
@@ -147,7 +148,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
                   onClick={() => { handleExport(); setCsvMenuOpen(false); }}
                   className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover transition-colors flex items-center gap-2"
                 >
-                  📊 Admin CSV
+                  📊 Admin XLSX
                   <span className="text-[10px] text-text-tertiary ml-auto">Full data</span>
                 </button>
                 <button

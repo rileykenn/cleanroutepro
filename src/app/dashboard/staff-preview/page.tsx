@@ -201,7 +201,7 @@ export default function StaffPreviewPage() {
               transition={{ duration: 0.15 }}
               className="h-full overflow-auto"
             >
-              {selectedAccount.role === 'staff' || selectedAccount.role === 'supervisor' ? (
+              {selectedAccount.role === 'staff' || selectedAccount.role === 'supervisor' || selectedAccount.role === 'admin_staff' ? (
                 <StaffPortalPage overrideStaffId={selectedStaffId} overrideStaffName={selectedAccount.name} />
               ) : (
                 <SchedulePage overrideRole={selectedAccount.role} />

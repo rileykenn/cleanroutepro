@@ -24,8 +24,8 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json({ error: 'Only admins can revoke access' }, { status: 403 });
+    if (!profile || profile.role !== 'owner') {
+      return NextResponse.json({ error: 'Only the owner can revoke access' }, { status: 403 });
     }
 
     const body = await request.json();

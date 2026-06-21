@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const { orgId, confirmText } = await request.json();
     if (!orgId) return NextResponse.json({ error: 'Missing orgId' }, { status: 400 });
 
-    // Verify user is admin of this org
+    // Verify user is owner of this org
     const { data: membership } = await serverSupabase
       .from('org_members')
       .select('role')
@@ -20,8 +20,8 @@ export async function POST(request: Request) {
       .eq('status', 'accepted')
       .single();
 
-    if (!membership || membership.role !== 'admin') {
-      return NextResponse.json({ error: 'Only admins can delete organisations' }, { status: 403 });
+    if (!membership || membership.role !== 'owner') {
+      return NextResponse.json({ error: 'Only the owner can delete organisations' }, { status: 403 });
     }
 
     // Get org name for confirmation

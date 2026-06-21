@@ -15,8 +15,8 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json({ error: 'Only admins can invite staff' }, { status: 403 });
+    if (!profile || (profile.role !== 'owner' && profile.role !== 'admin')) {
+      return NextResponse.json({ error: 'Only owners and admins can invite staff' }, { status: 403 });
     }
 
     const body = await request.json();

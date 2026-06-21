@@ -441,9 +441,11 @@ interface DayEditorProps {
   hideFinancials?: boolean;
   /** When true, the entire editor is locked — no interactions at all. Used for published weeks. */
   readOnly?: boolean;
+  /** Fires when the DayEditor detects actual schedule changes (not just view transitions). */
+  onModified?: () => void | Promise<void>;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials, readOnly = false }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials, readOnly = false, onModified }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -547,6 +549,10 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track whether there are unsaved changes (for the manual save button + beforeunload)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const hasUnsavedChangesRef = useRef(false);
+
+  const onModifiedRef = useRef(onModified);
+  onModifiedRef.current = onModified;
 
   const saveNow = useCallback(async () => {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
@@ -562,6 +568,13 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
       needsSaveRef.current = false;
       isSavingRef.current = true;
       setSaveStatus('saving');
+
+      // Fire onModified BEFORE writing data — this lets the parent set
+      // is_published=false before we write the new job rows, so staff never
+      // see half-edited published data.
+      if (hasUnsavedChangesRef.current) {
+        await onModifiedRef.current?.();
+      }
 
       // ⚠️ SNAPSHOT state outside the retry loop so we don't accidentally save
       // a different day's data if the user switches days during a retry wait!
@@ -718,6 +731,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
         invalidateScheduleCache(); // Expire the page cache so tab-switching re-fetches fresh data
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
+        hasUnsavedChangesRef.current = false;
         if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
         savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
       } else {
@@ -834,6 +848,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     prevStateRef.current = fingerprint;
     prevNoTimesRef.current = fingerprintNoTimes;
     setHasUnsavedChanges(true);
+    hasUnsavedChangesRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
     // Structural = client/break count changed OR base/return address changed

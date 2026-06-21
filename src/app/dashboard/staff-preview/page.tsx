@@ -7,25 +7,25 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import StaffPortalPage from '../staff-view/page';
 import SchedulePage from '../schedule/page';
+import CompletedPage from '../completed/page';
 
 interface PreviewAccount {
   staffId: string;
   userId: string | null;
   name: string;
-  role: 'admin' | 'admin_staff' | 'supervisor' | 'staff';
+  role: 'owner' | 'admin' | 'supervisor' | 'staff';
 }
 
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  admin:       { label: 'Admin',       color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
-  admin_staff: { label: 'Admin Staff', color: 'text-sky-700',     bg: 'bg-sky-50',     border: 'border-sky-200' },
+  owner:       { label: 'Owner',      color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  admin:       { label: 'Admin',      color: 'text-sky-700',     bg: 'bg-sky-50',     border: 'border-sky-200' },
   supervisor:  { label: 'Supervisor',  color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
   staff:       { label: 'Staff',       color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
 };
 
-const ADMIN_STAFF_NAV = ['Schedule', 'Completed', 'Clients', 'Staff View'];
-const SUPERVISOR_NAV = ['Schedule', 'My Schedule'];
-const STAFF_NAV = ['My Schedule'];
 const ADMIN_NAV = ['Schedule', 'Completed', 'Clients', 'Templates', 'Staff', 'Staff View', 'Settings'];
+const SUPERVISOR_NAV = ['My Schedule', 'Published Schedules'];
+const STAFF_NAV = ['My Schedule'];
 
 export default function StaffPreviewPage() {
   const { profile, loading: authLoading } = useAuth();
@@ -35,6 +35,7 @@ export default function StaffPreviewPage() {
   const [accounts, setAccounts] = useState<PreviewAccount[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedAccount, setSelectedAccount] = useState<PreviewAccount | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('My Schedule');
 
   // Redirect staff users
   useEffect(() => {
@@ -79,7 +80,7 @@ export default function StaffPreviewPage() {
         staffId: s.id,
         userId: s.user_id,
         name: s.name,
-        role: (s.user_id ? roleMap.get(s.user_id) || 'staff' : 'staff') as 'admin' | 'admin_staff' | 'supervisor' | 'staff',
+        role: (s.user_id ? roleMap.get(s.user_id) || 'staff' : 'staff') as 'owner' | 'admin' | 'supervisor' | 'staff',
       }));
 
       setAccounts(result);
@@ -90,6 +91,13 @@ export default function StaffPreviewPage() {
     setSelectedStaffId(staffId);
     const account = accounts.find(a => a.staffId === staffId) || null;
     setSelectedAccount(account);
+    // Reset to first tab for the role
+    if (account) {
+      const tabs = account.role === 'supervisor' ? SUPERVISOR_NAV
+        : (account.role === 'owner' || account.role === 'admin') ? ADMIN_NAV
+        : STAFF_NAV;
+      setActiveTab(tabs[0]);
+    }
   };
 
   if (authLoading) {
@@ -100,9 +108,8 @@ export default function StaffPreviewPage() {
     );
   }
 
-  const navItems = selectedAccount?.role === 'admin_staff' ? ADMIN_STAFF_NAV
-    : selectedAccount?.role === 'supervisor' ? SUPERVISOR_NAV
-    : selectedAccount?.role === 'admin' ? ADMIN_NAV
+  const navItems = selectedAccount?.role === 'supervisor' ? SUPERVISOR_NAV
+    : (selectedAccount?.role === 'owner' || selectedAccount?.role === 'admin') ? ADMIN_NAV
     : STAFF_NAV;
 
   const roleStyle = selectedAccount ? ROLE_LABELS[selectedAccount.role] : null;
@@ -180,9 +187,17 @@ export default function StaffPreviewPage() {
             >
               <span className="text-[10px] text-text-tertiary mr-1">Pages:</span>
               {navItems.map(item => (
-                <span key={item} className="text-[10px] font-medium text-text-secondary bg-surface-elevated px-2 py-0.5 rounded-md border border-border-light">
+                <button
+                  key={item}
+                  onClick={() => setActiveTab(item)}
+                  className={`text-[10px] font-medium px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                    activeTab === item
+                      ? 'bg-primary text-white border-primary'
+                      : 'text-text-secondary bg-surface-elevated border-border-light hover:border-primary/40'
+                  }`}
+                >
                   {item}
-                </span>
+                </button>
               ))}
             </motion.div>
           )}
@@ -201,8 +216,10 @@ export default function StaffPreviewPage() {
               transition={{ duration: 0.15 }}
               className="h-full overflow-auto"
             >
-              {selectedAccount.role === 'staff' || selectedAccount.role === 'supervisor' || selectedAccount.role === 'admin_staff' ? (
+              {activeTab === 'My Schedule' ? (
                 <StaffPortalPage overrideStaffId={selectedStaffId} overrideStaffName={selectedAccount.name} />
+              ) : activeTab === 'Published Schedules' ? (
+                <CompletedPage />
               ) : (
                 <SchedulePage overrideRole={selectedAccount.role} />
               )}

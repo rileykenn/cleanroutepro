@@ -26,9 +26,10 @@ interface ClientCardProps {
   savedClients?: SavedClient[];
   onOpenChecklist?: (client: Client) => void;
   orgId?: string | null;
+  hideFinancials?: boolean;
 }
 
-export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist, orgId }: ClientCardProps) {
+export default function ClientCard({ client, index, totalClients, team, dispatch, availableStaff, staffBusyPeriods, driverAssignments, savedClients, onOpenChecklist, orgId, hideFinancials }: ClientCardProps) {
   const supabase = useMemo(() => createSupabaseClient(), []);
   const [addressText, setAddressText] = useState('');
   const [hasEdited, setHasEdited] = useState(false);
@@ -721,7 +722,7 @@ export default function ClientCard({ client, index, totalClients, team, dispatch
             );
           })()}
           {/* Client rate badge */}
-          {client.rate != null && client.rate > 0 && (
+          {!hideFinancials && client.rate != null && client.rate > 0 && (
             <div className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl border" style={{ backgroundColor: `${cardColor}10`, color: cardColor, borderColor: `${cardColor}30` }}>
               <span>${client.rate}/hr</span>
             </div>

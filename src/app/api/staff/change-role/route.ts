@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json({ error: 'Only admins can change roles' }, { status: 403 });
+    if (!profile || profile.role !== 'owner') {
+      return NextResponse.json({ error: 'Only the owner can change roles' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing membershipId or newRole' }, { status: 400 });
     }
 
-    const validRoles = ['admin', 'admin_staff', 'supervisor', 'staff'];
+    const validRoles = ['admin', 'supervisor', 'staff'];
     if (!validRoles.includes(newRole)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
     }

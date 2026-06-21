@@ -486,7 +486,7 @@ export default function CompletedPage() {
 
     // 3. Jobs (non-break, with client, including assigned staff)
     const { data: jobsRaw } = await supabase
-      .from('schedule_jobs')
+      .from('published_jobs')
       .select('id, name, address, client_id, checklist_id, schedule_id, assigned_staff_ids')
       .in('schedule_id', scheduleIds)
       .eq('is_break', false)

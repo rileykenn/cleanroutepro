@@ -144,9 +144,9 @@ export default function PayrollPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  // Admin-only page
+  // Owner-only page
   useEffect(() => {
-    if (profile && profile.role !== 'admin') {
+    if (profile && profile.role !== 'owner') {
       router.replace(profile.role === 'staff' ? '/dashboard/staff-view' : '/dashboard/schedule');
     }
   }, [profile?.role, router]);

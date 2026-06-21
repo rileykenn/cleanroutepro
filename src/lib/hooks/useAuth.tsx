@@ -10,7 +10,7 @@ export interface UserProfile {
   org_id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'admin_staff' | 'supervisor' | 'staff';
+  role: 'owner' | 'admin' | 'supervisor' | 'staff';
   is_platform_admin: boolean;
   onboarding_completed: boolean;
   org_name: string;
@@ -81,7 +81,7 @@ export function AuthProvider({ children, serverProfile }: { children: React.Reac
         org_id: profileData.org_id || '',
         full_name: profileData.full_name,
         email: profileData.email,
-        role: profileData.role as 'admin' | 'admin_staff' | 'supervisor' | 'staff',
+        role: profileData.role as 'owner' | 'admin' | 'supervisor' | 'staff',
         is_platform_admin: profileData.is_platform_admin || false,
         onboarding_completed: profileData.onboarding_completed || false,
         org_name: orgName,

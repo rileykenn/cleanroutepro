@@ -38,7 +38,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         org_id: profileData.org_id || '',
         full_name: profileData.full_name,
         email: profileData.email,
-        role: profileData.role as 'admin' | 'staff',
+        role: profileData.role as 'owner' | 'admin' | 'supervisor' | 'staff',
         is_platform_admin: profileData.is_platform_admin || false,
         onboarding_completed: profileData.onboarding_completed || false,
         org_name: orgName,

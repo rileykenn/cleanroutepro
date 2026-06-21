@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   // Admin-only page
   useEffect(() => {
-    if (profile && profile.role !== 'admin') {
+    if (profile && profile.role !== 'owner' && profile.role !== 'admin') {
       router.replace('/dashboard/schedule');
     }
   }, [profile?.role, router]);
@@ -147,6 +147,7 @@ export default function SettingsPage() {
         </div>
 
         {/* ── Scheduling Defaults ─────────────────────────────────────────── */}
+        {profile?.role === 'owner' && (
         <div className="card-elevated p-5 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-text-primary">Scheduling Defaults</h3>
@@ -224,6 +225,7 @@ export default function SettingsPage() {
             {defaultsSaved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
           </div>
         </div>
+        )}
 
         {/* Subscription */}
         <div className="card-elevated p-5 space-y-4">

@@ -62,7 +62,7 @@ function DeleteZone() {
   );
 }
 
-export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' | 'admin_staff' | 'supervisor' | 'staff' } = {}) {
+export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' | 'admin' | 'supervisor' | 'staff' } = {}) {
   const [state, dispatch] = useReducer(scheduleReducer, null, createInitialState);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -89,6 +89,10 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
 
   const [weekSchedules, setWeekSchedules] = useState<Map<string, Map<string, DaySchedule>>>(new Map());
   const [publishedDates, setPublishedDates] = useState<Set<string>>(new Set());
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
+  const [rotationLabel, setRotationLabel] = useState('');
+  const [showLabelInput, setShowLabelInput] = useState(false);
+  const labelSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
   const [teamStaffMap, setTeamStaffMap] = useState<Map<string, { id: string; name: string; hourly_rate: number }[]>>(new Map());
   const selectedDateRef = useRef(state.selectedDate);
@@ -119,18 +123,36 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
   // Each call increments this; if the value changed by the time the DB responds, discard.
   const dayLoadRequestRef = useRef(0);
 
+  // ── Financial-visibility flag ──
+  // Only the org owner can see pay rates, revenue, and related columns.
+  const isWeeklySummaryOpen = useRef(false);
+
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const orgId = profile?.org_id || null;
   const effectiveRole = overrideRole || profile?.role;
-  const isStaff = effectiveRole === 'staff';
-  const isAdminStaff = effectiveRole === 'admin_staff';
-  const isSupervisor = effectiveRole === 'supervisor';
-  const isRestricted = isStaff || isAdminStaff || isSupervisor; // Can view but not edit
-  const hideFinancials = isAdminStaff || isSupervisor || isStaff;
+  const isRestricted = effectiveRole !== 'owner' && effectiveRole !== 'admin';
+  const hideFinancials = effectiveRole !== 'owner';
 
   const weekDates = useMemo(() => getWeekDates(state.focusedDate), [state.focusedDate]);
   const weekLabel = useMemo(() => getWeekLabel(weekDates[0], weekDates[6]), [weekDates]);
+
+  // Reset dirty state when navigating to a different week
+  const weekKey = weekDates[0];
+  useEffect(() => { setHasUnpublishedChanges(false); }, [weekKey]);
+
+  // ─── Load rotation label for the current week ───
+  useEffect(() => {
+    if (!orgId) return;
+    setRotationLabel('');
+    setShowLabelInput(false);
+    (async () => {
+      const { data } = await supabase
+        .from('week_labels').select('label')
+        .eq('org_id', orgId).eq('week_start', weekKey).maybeSingle();
+      if (data?.label) setRotationLabel(data.label);
+    })();
+  }, [orgId, weekKey, supabase]);
 
   // ─── Drag and Drop sensors ───
   const sensors = useSensors(
@@ -340,6 +362,14 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
       console.error('Failed to save dropped client:', insertError);
       // Roll back the optimistic update by reloading from DB
       loadWeekSchedules(weekDates);
+    } else if (weekIsPublished && !hasUnpublishedChanges) {
+      setHasUnpublishedChanges(true);
+      if (orgId) {
+        await supabase.from('schedules')
+          .update({ needs_republish: true })
+          .eq('org_id', orgId)
+          .in('schedule_date', weekDates);
+      }
     }
   };
 
@@ -479,7 +509,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
       const teamIds = teamsList.map((t: TeamSchedule) => t.id);
       const { data: allScheduleRows } = await supabase
         .from('schedules')
-        .select('id, team_id, schedule_date, is_published, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id, staff_ids')
+        .select('id, team_id, schedule_date, is_published, needs_republish, template_code, base_address, base_lat, base_lng, base_place_id, return_address, return_lat, return_lng, return_place_id, has_start_base, has_return_base, driver_staff_id, staff_ids')
         .in('team_id', teamIds)
         .in('schedule_date', dates);
 
@@ -588,7 +618,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
             }
           }
 
-          if (isPublished) newPublished.add(date);
+          if (isPublished || schedule?.needs_republish) newPublished.add(date);
 
           teamMap.set(date, {
             date,
@@ -669,6 +699,10 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
 
       setWeekSchedules(allTeamMaps);
       setPublishedDates(newPublished);
+
+      // Check if any schedule in this week needs republishing
+      const anyNeedsRepublish = (allScheduleRows || []).some((r: { needs_republish?: boolean }) => r.needs_republish);
+      setHasUnpublishedChanges(anyNeedsRepublish);
 
       // Store ALL org teams — used by addTeam, template save, template load, etc.
       allOrgTeamsRef.current = teamsList;
@@ -1174,35 +1208,69 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
 
 
 
+
   // ─── Publish / Unpublish Week ───
   const handlePublishWeek = async () => {
     if (!orgId) return;
+
+    // 1. Mark all schedules as published
+    const allScheduleIds: string[] = [];
     for (const date of weekDates) {
       const { data: schedules } = await supabase
         .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
       if (schedules) {
         for (const s of schedules) {
-          await supabase.from('schedules').update({ is_published: true }).eq('id', s.id);
+          await supabase.from('schedules').update({ is_published: true, needs_republish: false }).eq('id', s.id);
+          allScheduleIds.push(s.id);
         }
       }
     }
+
+    // 2. Snapshot: delete old published_jobs, copy current schedule_jobs
+    if (allScheduleIds.length > 0) {
+      await supabase.from('published_jobs').delete().in('schedule_id', allScheduleIds);
+      const { data: currentJobs } = await supabase
+        .from('schedule_jobs').select('*').in('schedule_id', allScheduleIds);
+      if (currentJobs && currentJobs.length > 0) {
+        // Strip any fields supabase might reject and insert
+        const rows = currentJobs.map((j: Record<string, unknown>) => ({
+          id: j.id, schedule_id: j.schedule_id, org_id: j.org_id, client_id: j.client_id,
+          position: j.position, name: j.name, address: j.address, lat: j.lat, lng: j.lng,
+          place_id: j.place_id, duration_minutes: j.duration_minutes, staff_count: j.staff_count,
+          is_locked: j.is_locked, fixed_start_time: j.fixed_start_time, is_break: j.is_break,
+          break_label: j.break_label, notes: j.notes, start_time: j.start_time, end_time: j.end_time,
+          assigned_staff_ids: j.assigned_staff_ids, checklist_id: j.checklist_id,
+          checklist_override: j.checklist_override,
+        }));
+        await supabase.from('published_jobs').insert(rows);
+      }
+    }
+
     setPublishedDates(new Set(weekDates));
+    setHasUnpublishedChanges(false);
     loadWeekSchedules(weekDates);
     loadPublishHistory();
   };
 
   const handleUnpublishWeek = async () => {
     if (!orgId) return;
+    const allScheduleIds: string[] = [];
     for (const date of weekDates) {
       const { data: schedules } = await supabase
         .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
       if (schedules) {
         for (const s of schedules) {
-          await supabase.from('schedules').update({ is_published: false }).eq('id', s.id);
+          await supabase.from('schedules').update({ is_published: false, needs_republish: false }).eq('id', s.id);
+          allScheduleIds.push(s.id);
         }
       }
     }
+    // Remove snapshot so staff no longer see this week
+    if (allScheduleIds.length > 0) {
+      await supabase.from('published_jobs').delete().in('schedule_id', allScheduleIds);
+    }
     setPublishedDates(new Set());
+    setHasUnpublishedChanges(false);
     loadWeekSchedules(weekDates);
     loadPublishHistory();
   };
@@ -1218,7 +1286,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
   }, [weekSchedules]);
 
   const weekIsPublished = datesWithSchedules.size > 0 && [...datesWithSchedules].every((d) => publishedDates.has(d));
-  const weekPartiallyPublished = !weekIsPublished && [...datesWithSchedules].some((d) => publishedDates.has(d));
+
 
   // Check if current week has any jobs across all teams
   const weekHasJobs = useMemo(() => {
@@ -1865,6 +1933,57 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
               <span className="text-sm font-semibold text-text-primary text-center px-1 lg:min-w-[180px]">
                 {state.viewMode === 'day' ? dayLabel : weekLabel}
               </span>
+              {/* Rotation label */}
+              {state.viewMode === 'week' && !isRestricted && (
+                rotationLabel && !showLabelInput ? (
+                  <button
+                    onClick={() => setShowLabelInput(true)}
+                    className="ml-1 px-2 py-0.5 text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-md hover:bg-primary/15 transition-colors"
+                    title="Edit rotation label"
+                  >
+                    {rotationLabel}
+                  </button>
+                ) : showLabelInput ? (
+                  <input
+                    autoFocus
+                    value={rotationLabel}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRotationLabel(val);
+                      if (labelSaveTimer.current) clearTimeout(labelSaveTimer.current);
+                      labelSaveTimer.current = setTimeout(async () => {
+                        if (!orgId) return;
+                        if (val.trim()) {
+                          await supabase.from('week_labels').upsert(
+                            { org_id: orgId, week_start: weekKey, label: val.trim() },
+                            { onConflict: 'org_id,week_start' }
+                          );
+                        } else {
+                          await supabase.from('week_labels').delete()
+                            .eq('org_id', orgId).eq('week_start', weekKey);
+                        }
+                      }, 400);
+                    }}
+                    onBlur={() => setShowLabelInput(false)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') setShowLabelInput(false); }}
+                    placeholder="e.g. A1"
+                    className="ml-1 w-16 px-2 py-0.5 text-xs font-bold text-primary bg-white border border-primary/30 rounded-md outline-none focus:ring-1 focus:ring-primary/40"
+                  />
+                ) : (
+                  <button
+                    onClick={() => setShowLabelInput(true)}
+                    className="ml-1 w-6 h-6 flex items-center justify-center rounded-md text-text-tertiary hover:bg-surface-hover hover:text-text-secondary transition-colors"
+                    title="Add rotation label"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  </button>
+                )
+              )}
+              {state.viewMode === 'week' && isRestricted && rotationLabel && (
+                <span className="ml-1 px-2 py-0.5 text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-md">
+                  {rotationLabel}
+                </span>
+              )}
               <button
                 onClick={state.viewMode === 'day' ? goToNextDay : goToNextWeek}
                 disabled={state.viewMode === 'day' && atWeekEnd}
@@ -1926,11 +2045,24 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
                 <div className="flex items-center gap-1">
                   {weekIsPublished ? (
                     <button
-                      onClick={handleUnpublishWeek}
-                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors bg-success-light text-success hover:bg-red-50 hover:text-red-600 group"
+                      onClick={hasUnpublishedChanges ? handlePublishWeek : handleUnpublishWeek}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                        hasUnpublishedChanges
+                          ? 'bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200'
+                          : 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                      }`}
                     >
-                      <span className="group-hover:hidden">✓</span>
-                      <span className="hidden group-hover:inline">Unpub</span>
+                      {hasUnpublishedChanges ? (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          Re-publish
+                        </>
+                      ) : (
+                        <>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                          Published
+                        </>
+                      )}
                     </button>
                   ) : (
                     <button
@@ -1940,12 +2072,10 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
                       className={`text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors ${
                         !weekHasJobs
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : weekPartiallyPublished
-                            ? 'bg-amber-50 text-amber-700 hover:bg-primary hover:text-white'
-                            : 'bg-primary text-white hover:bg-primary-hover'
+                          : 'bg-primary text-white hover:bg-primary-hover'
                       }`}
                     >
-                      {weekPartiallyPublished ? 'Partial' : 'Publish'}
+                      Publish
                     </button>
                   )}
 
@@ -1964,6 +2094,15 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
             </div>
           </div>
 
+          {/* Unpublished changes warning */}
+          {weekIsPublished && hasUnpublishedChanges && !isRestricted && (
+            <div className="mx-0 mt-1 mb-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" className="shrink-0">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span className="text-xs font-medium text-amber-800">Changes made to this week aren&apos;t published. Click <strong>Re-publish</strong> to save changes.</span>
+            </div>
+          )}
 
           {/* Team tabs — only render when there are teams */}
           {state.teams.length > 0 && (
@@ -2157,6 +2296,17 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'admin' 
               hideFinancials={hideFinancials}
               loadGeneration={dayLoadGen}
               skipUnmountSaveRef={skipUnmountSaveRef}
+              onModified={async () => {
+                if (weekIsPublished && !hasUnpublishedChanges) {
+                  setHasUnpublishedChanges(true);
+                  if (orgId) {
+                    await supabase.from('schedules')
+                      .update({ needs_republish: true })
+                      .eq('org_id', orgId)
+                      .in('schedule_date', weekDates);
+                  }
+                }
+              }}
             />
           )}
         </div>

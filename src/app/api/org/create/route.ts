@@ -21,10 +21,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: orgError?.message || 'Failed to create organisation' }, { status: 500 });
     }
 
-    // Link user to org as admin
+    // Link user to org as owner
     await supabase.from('profiles').update({
       org_id: org.id,
-      role: 'admin',
+      role: 'owner',
       full_name: user.user_metadata?.full_name || '',
       onboarding_completed: true,
     }).eq('id', user.id);
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     await supabase.from('org_members').insert({
       user_id: user.id,
       org_id: org.id,
-      role: 'admin',
+      role: 'owner',
       status: 'accepted',
     });
 

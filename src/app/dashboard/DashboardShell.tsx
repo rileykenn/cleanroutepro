@@ -8,9 +8,11 @@ import { createClient } from '@/lib/supabase/client';
 import OrgSwitcher, { DeleteOrgModal } from '@/components/OrgSwitcher';
 import CreateOrgModal from '@/components/CreateOrgModal';
 
+import { ROLE_LABELS, type Role } from '@/lib/permissions';
+
 interface UserProfile {
   id: string; org_id: string; full_name: string; email: string;
-  role: 'admin' | 'admin_staff' | 'supervisor' | 'staff'; is_platform_admin: boolean;
+  role: Role; is_platform_admin: boolean;
   onboarding_completed: boolean; org_name: string;
   subscription_status: string; subscription_tier: string;
   timezone: string | null;
@@ -18,30 +20,58 @@ interface UserProfile {
 
 interface OrgMembership { org_id: string; role: string; org_name: string; }
 
-const ADMIN_NAV = [
-  { label: 'Schedule',   href: '/dashboard/schedule',   icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
-  { label: 'Completed',  href: '/dashboard/completed',  icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4' },
-  { label: 'Clients',    href: '/dashboard/checklists', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
-  { label: 'Templates',  href: '/dashboard/templates',  icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
-  { label: 'Staff',      href: '/dashboard/staff',      icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M19 8v6M22 11h-6' },
-  { label: 'Staff View', href: '/dashboard/staff-preview', icon: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z' },
-  { label: 'Settings',   href: '/dashboard/settings',   icon: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
-];
+// ── Nav item definitions ────────────────────────────────────────────────────
+interface NavItem { label: string; href: string; icon: string; }
 
-const STAFF_NAV = [
-  { label: 'My Schedule', href: '/dashboard/staff-view', icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
-];
+const NAV_ICONS = {
+  schedule:    'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z',
+  completed:   'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4',
+  clients:     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+  templates:   'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8',
+  staff:       'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M19 8v6M22 11h-6',
+  staffView:   'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  settings:    'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+  mySchedule:  'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z',
+};
 
-const ADMIN_STAFF_NAV = [
-  { label: 'Schedule',   href: '/dashboard/schedule',      icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
-  { label: 'Completed',  href: '/dashboard/completed',      icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4' },
-  { label: 'Clients',    href: '/dashboard/checklists',     icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
-  { label: 'Staff View', href: '/dashboard/staff-preview',  icon: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z' },
-];
+/** Build nav items based on role — desktop only. Mobile always shows staff view. */
+function getNavForRole(role: Role): NavItem[] {
+  switch (role) {
+    case 'owner':
+      return [
+        { label: 'Schedule',   href: '/dashboard/schedule',      icon: NAV_ICONS.schedule },
+        { label: 'Completed',  href: '/dashboard/completed',      icon: NAV_ICONS.completed },
+        { label: 'Clients',    href: '/dashboard/checklists',     icon: NAV_ICONS.clients },
+        { label: 'Templates',  href: '/dashboard/templates',      icon: NAV_ICONS.templates },
+        { label: 'Staff',      href: '/dashboard/staff',          icon: NAV_ICONS.staff },
+        { label: 'Staff View', href: '/dashboard/staff-preview',  icon: NAV_ICONS.staffView },
+        { label: 'Settings',   href: '/dashboard/settings',       icon: NAV_ICONS.settings },
+      ];
+    case 'admin':
+      return [
+        { label: 'Schedule',   href: '/dashboard/schedule',      icon: NAV_ICONS.schedule },
+        { label: 'Completed',  href: '/dashboard/completed',      icon: NAV_ICONS.completed },
+        { label: 'Clients',    href: '/dashboard/checklists',     icon: NAV_ICONS.clients },
+        { label: 'Templates',  href: '/dashboard/templates',      icon: NAV_ICONS.templates },
+        { label: 'Staff',      href: '/dashboard/staff',          icon: NAV_ICONS.staff },
+        { label: 'Staff View', href: '/dashboard/staff-preview',  icon: NAV_ICONS.staffView },
+        { label: 'Settings',   href: '/dashboard/settings',       icon: NAV_ICONS.settings },
+      ];
+    case 'supervisor':
+      return [
+        { label: 'My Schedule',          href: '/dashboard/staff-view', icon: NAV_ICONS.mySchedule },
+        { label: 'Published Schedules',  href: '/dashboard/completed',  icon: NAV_ICONS.completed },
+      ];
+    case 'staff':
+    default:
+      return [
+        { label: 'My Schedule', href: '/dashboard/staff-view', icon: NAV_ICONS.mySchedule },
+      ];
+  }
+}
 
-const SUPERVISOR_NAV = [
-  { label: 'Schedule',    href: '/dashboard/schedule',    icon: 'M8 2v4M16 2v4M3 10h18M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z' },
-  { label: 'My Schedule', href: '/dashboard/staff-view',  icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9l2 2 4-4' },
+const MOBILE_STAFF_NAV: NavItem[] = [
+  { label: 'My Schedule', href: '/dashboard/staff-view', icon: NAV_ICONS.mySchedule },
 ];
 
 export default function DashboardShell({ children, serverProfile }: { children: React.ReactNode; serverProfile: UserProfile | null }) {
@@ -68,9 +98,30 @@ function Inner({ children }: { children: React.ReactNode }) {
   const orgMenuRef = useRef<HTMLDivElement>(null);
 
   const hasOrg = !!profile?.org_id;
-  const userRole = profile?.role || 'staff';
-  const navItems = userRole === 'staff' ? STAFF_NAV : userRole === 'supervisor' ? SUPERVISOR_NAV : userRole === 'admin_staff' ? ADMIN_STAFF_NAV : ADMIN_NAV;
+  const userRole: Role = (profile?.role as Role) || 'staff';
   const initials = (profile?.full_name || profile?.email || '?').charAt(0).toUpperCase();
+
+  // ── Mobile detection: all roles see staff view on mobile ────────────────
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 1024); // lg breakpoint
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Auto-redirect to staff-view on mobile (except staff who are already there)
+  useEffect(() => {
+    if (isMobile && hasOrg && !pathname.startsWith('/dashboard/staff-view') && pathname !== '/dashboard') {
+      router.replace('/dashboard/staff-view');
+    }
+  }, [isMobile, hasOrg, pathname, router]);
+
+  // Desktop: role-based nav — Mobile: always staff nav
+  const navItems = useMemo(() => {
+    if (isMobile) return MOBILE_STAFF_NAV;
+    return getNavForRole(userRole);
+  }, [userRole, isMobile]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -305,10 +356,10 @@ function Inner({ children }: { children: React.ReactNode }) {
                     {/* User info */}
                     <div className="px-3 py-2 border-b border-border-light mb-1">
                       <p className="text-sm font-semibold text-text-primary truncate">{profile?.full_name || profile?.email}</p>
-                      <p className="text-xs text-text-tertiary capitalize">{userRole} · {profile?.org_name}</p>
+                      <p className="text-xs text-text-tertiary capitalize">{ROLE_LABELS[userRole] || userRole} · {profile?.org_name}</p>
                     </div>
 
-                    {userRole === 'admin' && (
+                    {(userRole === 'owner' || userRole === 'admin') && (
                       <button
                         onClick={() => { router.push('/dashboard/settings'); setUserMenuOpen(false); }}
                         className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-surface-hover transition-colors flex items-center gap-2"
@@ -318,7 +369,7 @@ function Inner({ children }: { children: React.ReactNode }) {
                       </button>
                     )}
 
-                    {userRole === 'admin' && (
+                    {userRole === 'owner' && (
                       <button
                         onClick={() => { setShowDelete({ orgId: profile?.org_id || '', orgName: profile?.org_name || '' }); setUserMenuOpen(false); }}
                         className="w-full text-left px-3 py-2 text-sm text-danger hover:bg-danger-light transition-colors flex items-center gap-2"
@@ -350,7 +401,7 @@ function Inner({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ── Mobile bottom tab bar ─────────────────────────────────────────── */}
-      {userRole !== 'staff' && (
+      {!isMobile && userRole !== 'staff' && (
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-lg border-t border-border-light pb-safe"
           style={{ boxShadow: '0 -1px 0 0 rgba(0,0,0,0.06), 0 -8px 24px rgba(0,0,0,0.06)' }}>
           <div className="flex items-stretch h-14">

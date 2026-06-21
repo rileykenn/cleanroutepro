@@ -71,47 +71,59 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
-    // Paths that only admins can access
-    const adminOnlyPaths = ['/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/onboarding'];
-    const isAdminOnly = adminOnlyPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
+    // ── Role-based route guards ──────────────────────────────────────────
 
-    if (profile.role !== 'admin' && isAdminOnly) {
+    const role = profile.role as string;
+
+    // Payroll — owner only (must check before general admin paths)
+    if (request.nextUrl.pathname.startsWith('/dashboard/staff/payroll')) {
+      if (role !== 'owner') {
+        const url = request.nextUrl.clone();
+        url.pathname = role === 'staff' ? '/dashboard/staff-view' : role === 'supervisor' ? '/dashboard/completed' : '/dashboard/schedule';
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // Paths that only owner + admin can access
+    const managementPaths = ['/dashboard/templates', '/dashboard/settings', '/dashboard/staff', '/dashboard/onboarding'];
+    const isManagementPath = managementPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
+
+    if (isManagementPath && role !== 'owner' && role !== 'admin') {
       const url = request.nextUrl.clone();
-      url.pathname = profile.role === 'staff' ? '/dashboard/staff-view' : '/dashboard/schedule';
+      url.pathname = role === 'staff' ? '/dashboard/staff-view' : '/dashboard/schedule';
       return NextResponse.redirect(url);
     }
 
-    // Supervisor — can only access schedule (view-only) + staff-view (own dashboard)
-    const supervisorBlockedPaths = ['/dashboard/completed', '/dashboard/checklists', '/dashboard/clients', '/dashboard/staff-preview'];
+    // Supervisor — can access staff-view + completed (published schedules) only
+    const supervisorBlockedPaths = ['/dashboard/schedule', '/dashboard/checklists', '/dashboard/staff-preview', '/dashboard/clients'];
     const isSupervisorBlocked = supervisorBlockedPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
-    if (profile.role === 'supervisor' && isSupervisorBlocked) {
+    if (role === 'supervisor' && isSupervisorBlocked) {
       const url = request.nextUrl.clone();
-      url.pathname = '/dashboard/schedule';
+      url.pathname = '/dashboard/completed';
       return NextResponse.redirect(url);
     }
 
-    // Staff — can only access staff-view (own dashboard)
+    // Staff — can only access staff-view
     const staffBlockedPaths = ['/dashboard/schedule', '/dashboard/completed', '/dashboard/checklists', '/dashboard/clients', '/dashboard/staff-preview'];
     const isStaffBlocked = staffBlockedPaths.some(p => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/'));
 
-    if (profile.role === 'staff' && isStaffBlocked) {
+    if (role === 'staff' && isStaffBlocked) {
       const url = request.nextUrl.clone();
       url.pathname = '/dashboard/staff-view';
       return NextResponse.redirect(url);
     }
 
-    // Non-staff on /dashboard should go to schedule
-    if (profile.role !== 'staff' && request.nextUrl.pathname === '/dashboard') {
+    // Default landing
+    if (request.nextUrl.pathname === '/dashboard') {
       const url = request.nextUrl.clone();
-      url.pathname = '/dashboard/schedule';
-      return NextResponse.redirect(url);
-    }
-
-    // Staff on /dashboard should go to staff-view
-    if (profile.role === 'staff' && request.nextUrl.pathname === '/dashboard') {
-      const url = request.nextUrl.clone();
-      url.pathname = '/dashboard/staff-view';
+      if (role === 'owner' || role === 'admin') {
+        url.pathname = '/dashboard/schedule';
+      } else if (role === 'supervisor') {
+        url.pathname = '/dashboard/staff-view';
+      } else {
+        url.pathname = '/dashboard/staff-view';
+      }
       return NextResponse.redirect(url);
     }
   }

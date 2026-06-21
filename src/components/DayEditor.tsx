@@ -439,9 +439,11 @@ interface DayEditorProps {
    *  When true the unmount-cleanup save is skipped to prevent a double-save race. */
   skipUnmountSaveRef?: MutableRefObject<boolean>;
   hideFinancials?: boolean;
+  /** When true, the entire editor is locked — no interactions at all. Used for published weeks. */
+  readOnly?: boolean;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials, readOnly = false }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -630,6 +632,24 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             if (!created) continue;
             scheduleId = created.id;
           }
+
+          // ── Safety guard: prevent accidental job wipe ──────────────────
+          // If the in-memory state has zero clients but the DB schedule
+          // already has jobs, something went wrong during load (network
+          // blip, stale state, etc.). Skip the delete-and-reinsert to
+          // avoid wiping live schedule data.
+          if (existingSched && team.clients.length === 0) {
+            const { count } = await supabase
+              .from('schedule_jobs')
+              .select('id', { count: 'exact', head: true })
+              .eq('schedule_id', scheduleId)
+              .eq('is_break', false);
+            if (count && count > 0) {
+              console.warn(`[AutoSave] Skipping job save for team "${team.name}" — DB has ${count} jobs but state has 0 clients (possible load failure)`);
+              continue;
+            }
+          }
+
           await supabase.from('schedule_jobs').delete().eq('schedule_id', scheduleId);
           // Build rows: regular clients first, then breaks
           const allRows: Record<string, unknown>[] = [
@@ -1016,7 +1036,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
   return (
     <>
       <MapsInitializer onServiceReady={setDirectionsService} />
-      <div className="flex-1 flex min-h-0 h-full">
+      <div className={`flex-1 flex min-h-0 h-full ${readOnly ? 'pointer-events-none select-none opacity-70' : ''}`}>
         {/* Schedule Panel */}
         <div className={`${mobileShowMap ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[420px] lg:w-[460px] shrink-0 border-r border-border-light bg-white/50 relative`}>
           <div className="flex items-center justify-between px-4 py-2 border-b border-border-light bg-white">
@@ -1227,7 +1247,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                       team={activeTeam} dispatch={dispatch} availableStaff={availableStaff}
                       staffBusyPeriods={staffBusyPeriods} driverAssignments={crossTeamDrivers}
                       savedClients={savedClients} orgId={orgId}
-                      onOpenChecklist={setActiveChecklistClient} />
+                      onOpenChecklist={setActiveChecklistClient} hideFinancials={hideFinancials} />
                     {breakAfterThis ? (
                       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                         className="mx-2 my-1 p-3 rounded-xl bg-amber-50/80 border border-amber-200/60">

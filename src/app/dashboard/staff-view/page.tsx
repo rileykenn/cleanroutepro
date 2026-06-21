@@ -30,6 +30,15 @@ interface JobInfo {
   checklist_completed?: boolean;
 }
 
+interface TeamSegment {
+  teamName: string;
+  teamColor: string;
+  startTime: string | null;
+  driverName: string | null;
+  driverIsMe: boolean;
+  jobs: JobInfo[];
+}
+
 interface DayData {
   date: string;
   dayName: string;
@@ -38,6 +47,8 @@ interface DayData {
   isToday: boolean;
   jobs: JobInfo[];
   published: boolean;
+  teamSegments: TeamSegment[];
+  /** First segment's team (backward compat for week overview accent bar) */
   teamName: string;
   teamColor: string;
   startTime: string | null;
@@ -407,7 +418,7 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
 
     if (scheduleIds.length > 0) {
       const { data: jobsData } = await supabase
-        .from('schedule_jobs').select('*').in('schedule_id', scheduleIds).order('position');
+        .from('published_jobs').select('*').in('schedule_id', scheduleIds).order('position');
       allJobs = (jobsData || []) as RawJob[];
 
       // Checklist completion status
@@ -422,12 +433,10 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
     const days: DayData[] = weekDates.map(wd => {
       type RawSched = { id: string; schedule_date: string; team_id: string; is_published: boolean; driver_staff_id: string | null; staff_ids: string[] | null };
       const daySchedules = (schedules || []).filter((s: RawSched) => s.schedule_date === wd.date && s.is_published) as RawSched[];
-      const dayJobs: JobInfo[] = [];
-      let teamName = '';
-      let teamColor = TEAM_COLORS[0];
-      let startTime: string | null = null;
-      let driverName: string | null = null;
-      let driverIsMe = false;
+
+      // ── Build per-team segments instead of merging into one flat list ──
+      const teamSegments: TeamSegment[] = [];
+      const allOrderedJobs: JobInfo[] = [];
 
       for (const sched of daySchedules) {
         type RawTeam = { id: string; name: string; color_index: number; day_start_time: string };
@@ -437,69 +446,80 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
           .filter(j => j.schedule_id === sched.id && ((j.assigned_staff_ids || []).includes(staffMemberId!) || isDayStaff))
           .map(j => ({ ...j, checklist_completed: completionMap.has(j.id) }));
 
+        if (myJobs.length === 0) continue;
 
+        // Sort jobs within this team by position
+        myJobs.sort((a, b) => a.position - b.position);
 
-        dayJobs.push(...myJobs);
+        // Re-insert breaks at correct positions within this team's jobs
+        const clientJobsOrdered = myJobs.filter(j => !j.is_break);
+        const breakJobs = myJobs.filter(j => j.is_break);
+        const orderedJobs: JobInfo[] = [...clientJobsOrdered];
 
-        if (team && myJobs.length > 0 && !teamName) {
-          teamName = team.name;
-          teamColor = TEAM_COLORS[team.color_index % TEAM_COLORS.length];
-          startTime = team.day_start_time;
+        for (const brk of breakJobs) {
+          let insertIdx = orderedJobs.length;
+          try {
+            const meta = brk.notes ? JSON.parse(brk.notes) : null;
+            if (meta?.afterClientId) {
+              const afterIdx = orderedJobs.findIndex(j => j.id === meta.afterClientId);
+              if (afterIdx !== -1) insertIdx = afterIdx + 1;
+            } else if (typeof meta?.afterPosition === 'number') {
+              insertIdx = Math.min(meta.afterPosition + 1, orderedJobs.length);
+            }
+          } catch { /* notes isn't JSON — insert at end */ }
+
+          if (insertIdx > 0) {
+            const prevJob = orderedJobs[insertIdx - 1];
+            if (prevJob?.end_time) brk.start_time = prevJob.end_time;
+          }
+          orderedJobs.splice(insertIdx, 0, brk);
         }
 
-        if (sched.driver_staff_id && myJobs.length > 0 && !driverName) {
+        // Resolve driver name for this team/schedule
+        let segDriverName: string | null = null;
+        let segDriverIsMe = false;
+        if (sched.driver_staff_id) {
           const driver = allStaff.find(s => s.id === sched.driver_staff_id);
           if (driver) {
-            driverName = driver.name;
-            driverIsMe = sched.driver_staff_id === staffMemberId;
-          }
-        }
-      }
-
-      dayJobs.sort((a, b) => a.position - b.position);
-
-      // Breaks are stored in DB with position = clients.length + i (always at end).
-      // Their actual insertion point is encoded in the `notes` JSON field as
-      // { afterClientId, afterPosition }. Re-insert breaks at the correct spot
-      // and calculate their start_time from the preceding job's end_time.
-      const clientJobsOrdered = dayJobs.filter(j => !j.is_break);
-      const breakJobs = dayJobs.filter(j => j.is_break);
-      const orderedJobs: JobInfo[] = [...clientJobsOrdered];
-
-      for (const brk of breakJobs) {
-        let insertIdx = orderedJobs.length; // default: end
-        try {
-          const meta = brk.notes ? JSON.parse(brk.notes) : null;
-          if (meta?.afterClientId) {
-            const afterIdx = orderedJobs.findIndex(j => j.id === meta.afterClientId);
-            if (afterIdx !== -1) insertIdx = afterIdx + 1;
-          } else if (typeof meta?.afterPosition === 'number') {
-            insertIdx = Math.min(meta.afterPosition + 1, orderedJobs.length);
-          }
-        } catch { /* notes isn't JSON — insert at end */ }
-
-        // Calculate break start_time from the preceding job's end_time
-        if (insertIdx > 0) {
-          const prevJob = orderedJobs[insertIdx - 1];
-          if (prevJob?.end_time) {
-            brk.start_time = prevJob.end_time;
+            segDriverName = driver.name;
+            segDriverIsMe = sched.driver_staff_id === staffMemberId;
           }
         }
 
-        orderedJobs.splice(insertIdx, 0, brk);
+        const tColor = team ? TEAM_COLORS[team.color_index % TEAM_COLORS.length] : TEAM_COLORS[0];
+
+        teamSegments.push({
+          teamName: team?.name || 'Team',
+          teamColor: tColor,
+          startTime: team?.day_start_time || null,
+          driverName: segDriverName,
+          driverIsMe: segDriverIsMe,
+          jobs: orderedJobs,
+        });
+
+        allOrderedJobs.push(...orderedJobs);
       }
 
-      const clientJobs = orderedJobs.filter(j => !j.is_break && j.client_id);
+      // Sort segments by start time so day shifts appear before evening shifts
+      teamSegments.sort((a, b) => {
+        const timeA = a.startTime || '23:59';
+        const timeB = b.startTime || '23:59';
+        return timeA.localeCompare(timeB);
+      });
+
+      const firstSeg = teamSegments[0];
+      const clientJobs = allOrderedJobs.filter(j => !j.is_break && j.client_id);
 
       return {
         ...wd,
-        jobs: orderedJobs,
+        jobs: allOrderedJobs,
         published: daySchedules.length > 0,
-        teamName,
-        teamColor,
-        startTime,
-        driverName,
-        driverIsMe,
+        teamSegments,
+        teamName: firstSeg?.teamName || '',
+        teamColor: firstSeg?.teamColor || TEAM_COLORS[0],
+        startTime: firstSeg?.startTime || null,
+        driverName: firstSeg?.driverName || null,
+        driverIsMe: firstSeg?.driverIsMe || false,
         checklistsDone: clientJobs.filter(j => j.checklist_completed).length,
         checklistsTotal: clientJobs.length,
       };
@@ -801,7 +821,7 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
                           weekday: 'long', day: 'numeric', month: 'long',
                         })}
                       </h2>
-                      {selectedDayData.teamName && (
+                      {selectedDayData.teamSegments.length <= 1 && selectedDayData.teamName && (
                         <div className="flex items-center gap-2 mt-1.5">
                           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: selectedDayData.teamColor }} />
                           <span className="text-sm text-text-secondary">{selectedDayData.teamName}</span>
@@ -814,8 +834,8 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
                       )}
                     </div>
 
-                    {/* Driver banner */}
-                    {selectedDayData.driverName && (
+                    {/* Single-team driver banner (only when 1 segment — multi-team shows per-segment) */}
+                    {selectedDayData.teamSegments.length <= 1 && selectedDayData.driverName && (
                       <DriverBanner
                         driverName={selectedDayData.driverName}
                         driverIsMe={selectedDayData.driverIsMe}
@@ -829,7 +849,69 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
                         <div className="text-4xl mb-3">📋</div>
                         <p className="text-sm font-semibold text-text-secondary">No jobs for this day</p>
                       </div>
+                    ) : selectedDayData.teamSegments.length > 1 ? (
+                      /* ── Multi-team / split shift display ── */
+                      selectedDayData.teamSegments.map((seg, segIdx) => {
+                        let clientIdx = 0;
+                        return (
+                          <div key={`seg-${segIdx}`}>
+                            {/* Team segment header */}
+                            <div className={`flex items-center gap-3 ${segIdx > 0 ? 'mt-6 pt-5 border-t border-border-light' : ''}`}>
+                              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: seg.teamColor }} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-text-primary">{seg.teamName}</p>
+                                {seg.startTime && (
+                                  <p className="text-xs text-text-tertiary">starts {formatTime(seg.startTime)}</p>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-semibold text-text-tertiary bg-surface-elevated px-2 py-0.5 rounded-lg border border-border-light">
+                                {seg.jobs.filter(j => !j.is_break).length} job{seg.jobs.filter(j => !j.is_break).length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+
+                            {/* Driver banner for this segment */}
+                            {seg.driverName && (
+                              <div className="mt-2">
+                                <DriverBanner
+                                  driverName={seg.driverName}
+                                  driverIsMe={seg.driverIsMe}
+                                  teamName={seg.teamName}
+                                  teamColor={seg.teamColor}
+                                />
+                              </div>
+                            )}
+
+                            {/* Jobs for this segment */}
+                            <div className="mt-2 space-y-3">
+                              {seg.jobs.map((job, i) => {
+                                if (!job.is_break) clientIdx++;
+                                return (
+                                  <JobCard
+                                    key={job.id}
+                                    job={job}
+                                    index={job.is_break ? i : clientIdx - 1}
+                                    teamColor={seg.teamColor}
+                                    onChecklist={() => setChecklistJob({
+                                      clientId: job.client_id!,
+                                      clientName: job.name,
+                                      clientAddress: job.address,
+                                      jobId: job.id,
+                                      checklistId: job.checklist_id || null,
+                                    })}
+                                    onInfo={() => {
+                                      setInfoClientId(job.client_id!);
+                                      setInfoClientName(job.name);
+                                      setInfoJobId(job.id);
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
                     ) : (
+                      /* ── Single team display (original) ── */
                       (() => {
                         let clientIdx = 0;
                         return selectedDayData.jobs.map((job, i) => {
@@ -904,11 +986,23 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
                                 </p>
                               </div>
 
-                              {/* Colour accent */}
-                              <div
-                                className="w-1 h-10 rounded-full shrink-0"
-                                style={{ backgroundColor: hasJobs ? day.teamColor : 'var(--color-border)' }}
-                              />
+                              {/* Colour accent — stacked dots for multi-team */}
+                              {day.teamSegments.length > 1 ? (
+                                <div className="flex flex-col gap-1 shrink-0">
+                                  {day.teamSegments.map((seg, si) => (
+                                    <div
+                                      key={si}
+                                      className="w-2.5 h-2.5 rounded-full"
+                                      style={{ backgroundColor: seg.teamColor }}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div
+                                  className="w-1 h-10 rounded-full shrink-0"
+                                  style={{ backgroundColor: hasJobs ? day.teamColor : 'var(--color-border)' }}
+                                />
+                              )}
 
                               {/* Info */}
                               <div className="flex-1 min-w-0">
@@ -922,10 +1016,16 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
                                         · {formatDuration(clientJobs.reduce((s, j) => s + j.duration_minutes, 0))}
                                       </span>
                                     </div>
-                                    <p className="text-xs text-text-secondary truncate">
-                                      {clientJobs.map(j => j.name).join(' → ')}
-                                    </p>
-                                    {day.driverName && (
+                                    {day.teamSegments.length > 1 ? (
+                                      <p className="text-xs text-text-secondary truncate">
+                                        {day.teamSegments.map(seg => seg.teamName).join(' · ')}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-text-secondary truncate">
+                                        {clientJobs.map(j => j.name).join(' → ')}
+                                      </p>
+                                    )}
+                                    {day.teamSegments.length <= 1 && day.driverName && (
                                       <p className="text-[10px] text-text-tertiary mt-0.5">
                                         {day.driverIsMe ? <>🚗 You&apos;re driving</> : `🚗 ${day.driverName}`}
                                       </p>

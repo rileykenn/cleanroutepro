@@ -45,17 +45,42 @@ function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) 
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const path = `${orgId}/${clientId}/${Date.now()}-${file.name}`;
-    const { error } = await supabase.storage.from('client-media').upload(path, file);
-    if (!error) {
-      const { data: row } = await supabase.from('client_media').insert({
-        org_id: orgId, client_id: clientId,
-        file_name: file.name, file_path: path, file_type: file.type, file_size: file.size,
-      }).select('id, file_name, file_path, file_type, caption').single() as { data: MediaRow | null };
-      if (row) setMedia(m => [row, ...m]);
+
+    try {
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const path = `${orgId}/${clientId}/${Date.now()}-${cleanFileName}`;
+      const { error: uploadError } = await supabase.storage.from('client-media').upload(path, file);
+      
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        alert(`Failed to upload file: ${uploadError.message}`);
+        setUploading(false);
+        if (inputRef.current) inputRef.current.value = '';
+        return;
+      }
+
+      const { data: row, error: insertError } = await supabase.from('client_media').insert({
+        org_id: orgId, 
+        client_id: clientId,
+        file_name: file.name, 
+        file_path: path, 
+        file_type: file.type.startsWith('video') ? 'video' : 'image', 
+        file_size: file.size,
+      }).select('id, file_name, file_path, file_type, caption').single();
+
+      if (insertError) {
+        console.error('Database insert error:', insertError);
+        alert(`Failed to save media record: ${insertError.message}`);
+      } else if (row) {
+        setMedia(m => [row as MediaRow, ...m]);
+      }
+    } catch (err: any) {
+      console.error('Unexpected upload error:', err);
+      alert(`An unexpected error occurred: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
     }
-    setUploading(false);
-    if (inputRef.current) inputRef.current.value = '';
   };
 
   const getUrl = (path: string) => supabase.storage.from('client-media').getPublicUrl(path).data.publicUrl;
@@ -94,8 +119,8 @@ function MediaSection({ clientId, orgId }: { clientId: string; orgId: string }) 
                 : <img src={getUrl(m.file_path)} alt={m.file_name} className="w-full h-full object-cover"/>
               }
               <button onClick={() => deleteMedia(m.id, m.file_path)}
-                className="absolute top-1 right-1 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                className="absolute top-1.5 right-1.5 p-1 rounded-md bg-black/60 text-white transition-opacity hover:bg-red-500/80">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
           ))}

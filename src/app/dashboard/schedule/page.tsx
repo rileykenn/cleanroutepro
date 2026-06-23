@@ -7,10 +7,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 
 import { scheduleReducer, createInitialState } from '@/lib/scheduleReducer';
-import { calculateScheduleTimes } from '@/lib/routeEngine';
+import { calculateScheduleTimes, calculateDaySummary } from '@/lib/routeEngine';
 import { getTodayISO, getWeekDates, getWeekLabel, addDays, generateId } from '@/lib/timeUtils';
 import { TravelSegment, Client, TeamSchedule, TEAM_COLORS, DaySchedule, StaffMember, getNextColorIndex, Location as AppLocation } from '@/lib/types';
 import { computeDayWarnings } from '@/lib/scheduleWarnings';
+import { exportDayRosterCSV } from '@/lib/rosterCsvExport';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { SavedClient } from '@/lib/hooks/useClients';
@@ -1275,6 +1276,47 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' 
     loadPublishHistory();
   };
 
+  const handleRevertWeek = async () => {
+    if (!orgId || !confirm("Are you sure you want to revert all changes made since the week was last published? This cannot be undone.")) return;
+
+    const allScheduleIds: string[] = [];
+    for (const date of weekDates) {
+      const { data: schedules } = await supabase
+        .from('schedules').select('id').eq('org_id', orgId).eq('schedule_date', date);
+      if (schedules) {
+        for (const s of schedules) {
+          allScheduleIds.push(s.id);
+          await supabase.from('schedules').update({ needs_republish: false }).eq('id', s.id);
+        }
+      }
+    }
+
+    if (allScheduleIds.length > 0) {
+      // Delete current jobs
+      await supabase.from('schedule_jobs').delete().in('schedule_id', allScheduleIds);
+      
+      // Copy published jobs back to current jobs
+      const { data: publishedJobs } = await supabase
+        .from('published_jobs').select('*').in('schedule_id', allScheduleIds);
+        
+      if (publishedJobs && publishedJobs.length > 0) {
+        const rows = publishedJobs.map((j: Record<string, unknown>) => ({
+          id: j.id, schedule_id: j.schedule_id, org_id: j.org_id, client_id: j.client_id,
+          position: j.position, name: j.name, address: j.address, lat: j.lat, lng: j.lng,
+          place_id: j.place_id, duration_minutes: j.duration_minutes, staff_count: j.staff_count,
+          is_locked: j.is_locked, fixed_start_time: j.fixed_start_time, is_break: j.is_break,
+          break_label: j.break_label, notes: j.notes, start_time: j.start_time, end_time: j.end_time,
+          assigned_staff_ids: j.assigned_staff_ids, checklist_id: j.checklist_id,
+          checklist_override: j.checklist_override,
+        }));
+        await supabase.from('schedule_jobs').insert(rows);
+      }
+    }
+
+    setHasUnpublishedChanges(false);
+    loadWeekSchedules(weekDates);
+  };
+
   // Only consider dates that have at least one schedule row for any team.
   // Days with no jobs have no schedule row — they should not count as "unpublished".
   const datesWithSchedules = useMemo(() => {
@@ -1999,6 +2041,69 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' 
             {/* Right actions */}
             <div className="flex items-center gap-1">
 
+              {/* Export Today's Roster — day view only, when any team has clients */}
+              {state.viewMode === 'day' && state.teams.some(t => t.clients.length > 0) && (
+                <button
+                  onClick={async () => {
+                    const tc = activeWeekSchedules.get(state.selectedDate)?.templateCode;
+                    // Build summaries map from live state
+                    const summaries = new Map(state.teams.map(t => [t.id, calculateDaySummary(t)]));
+
+                    // For teams with 0 travel/distance (route not calculated this session),
+                    // pull saved values from the database as fallback
+                    const teamsNeedingFallback = state.teams.filter(t => {
+                      const s = summaries.get(t.id);
+                      return t.clients.length > 0 && s && (s.totalTravelMinutes === 0 || s.totalDistanceKm === 0);
+                    });
+                    if (teamsNeedingFallback.length > 0 && orgId) {
+                      const teamIds = teamsNeedingFallback.map(t => t.id);
+                      const { data: savedScheds } = await supabase
+                        .from('schedules')
+                        .select('team_id, total_travel_minutes, total_distance_km')
+                        .eq('schedule_date', state.selectedDate)
+                        .in('team_id', teamIds);
+                      if (savedScheds) {
+                        for (const saved of savedScheds) {
+                          const existing = summaries.get(saved.team_id);
+                          if (existing) {
+                            const savedTravel = saved.total_travel_minutes || 0;
+                            const savedDist = saved.total_distance_km || 0;
+                            if (existing.totalTravelMinutes === 0 && savedTravel > 0) {
+                              existing.totalTravelMinutes = savedTravel;
+                              existing.payableMinutes += savedTravel;
+                            }
+                            if (existing.totalDistanceKm === 0 && savedDist > 0) {
+                              existing.totalDistanceKm = savedDist;
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    const blob = exportDayRosterCSV(state.teams, allStaff, state.selectedDate, tc, summaries);
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.setAttribute('href', url);
+                    const dayName = new Date(state.selectedDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long' });
+                    link.setAttribute('download', `staff-roster-${dayName}-${state.selectedDate}.csv`);
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-all"
+                  title="Export staff roster for all teams today"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Export Today&apos;s Roster
+                </button>
+              )}
+
               {/* Template badge — left of the calendar icon */}
               {loadedTemplateName && loadedTemplateName.weekStart === weekDates[0] && state.viewMode === 'week' && (
                 <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-primary bg-primary/8 border border-primary/15 px-2.5 py-1 rounded-full">
@@ -2096,11 +2201,23 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' 
 
           {/* Unpublished changes warning */}
           {weekIsPublished && hasUnpublishedChanges && !isRestricted && (
-            <div className="mx-0 mt-1 mb-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" className="shrink-0">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-              <span className="text-xs font-medium text-amber-800">Changes made to this week aren&apos;t published. Click <strong>Re-publish</strong> to save changes.</span>
+            <div className="mx-0 mt-1 mb-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" className="shrink-0">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span className="text-xs font-medium text-amber-800">Changes made to this week aren&apos;t published. Click <strong>Re-publish</strong> to save changes, or click <strong>Revert</strong> to discard them.</span>
+              </div>
+              <button
+                onClick={handleRevertWeek}
+                className="text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 shrink-0"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+                Revert
+              </button>
             </div>
           )}
 
@@ -2296,6 +2413,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' 
               hideFinancials={hideFinancials}
               loadGeneration={dayLoadGen}
               skipUnmountSaveRef={skipUnmountSaveRef}
+              templateCode={activeWeekSchedules.get(state.selectedDate)?.templateCode}
               onModified={async () => {
                 if (weekIsPublished && !hasUnpublishedChanges) {
                   setHasUnpublishedChanges(true);

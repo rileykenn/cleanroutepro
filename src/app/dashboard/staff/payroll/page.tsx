@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
+import { exportPayrollCsv, DayPayrollData } from '@/lib/payrollCsvExport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface StaffMember {
@@ -29,16 +30,11 @@ interface ScheduleJob {
   schedule_id: string;
 }
 
-interface DayData {
-  date: string;
-  dayLabel: string;
+interface DayData extends DayPayrollData {
   jobs: ScheduleJob[];
   breaks: ScheduleJob[];
-  firstStart: string | null;
-  lastEnd: string | null;
   totalJobMinutes: number;
   totalBreakMinutes: number;
-  workMinutes: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -58,7 +54,10 @@ function addDays(date: Date, days: number): Date {
 }
 
 function toDateStr(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function parseTimeToMinutes(t: string | null): number {
@@ -79,65 +78,6 @@ function minutesToDecimal(mins: number): string {
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// ─── CSV Export ───────────────────────────────────────────────────────────────
-function exportCsv(
-  staffName: string,
-  weekStart: Date,
-  days: DayData[],
-  weekTotals: { totalJobMins: number; totalBreakMins: number; workMins: number },
-  hourlyRate: number,
-  perKmRate: number,
-  totalKm: number,
-) {
-  const weekEnding = addDays(weekStart, 6).toLocaleDateString('en-AU');
-  const grossWage = (weekTotals.workMins / 60) * hourlyRate;
-  const kmAllowance = totalKm * perKmRate;
-
-  const rows: string[][] = [
-    [`CleanRoute Pro — Staff Payroll Export`],
-    [`Staff:`, staffName],
-    [`Week Ending:`, weekEnding],
-    [`Hourly Rate:`, `$${hourlyRate.toFixed(2)}`],
-    [],
-    [`Day`, `Date`, `Jobs`, `Start`, `Finish`, `Job Hours`, `Break Mins`, `Net Work`],
-  ];
-
-  days.forEach(day => {
-    const jobNames = day.jobs.map(j => j.name).join('; ') || '—';
-    rows.push([
-      day.dayLabel,
-      new Date(day.date + 'T00:00:00').toLocaleDateString('en-AU'),
-      jobNames,
-      day.firstStart || '—',
-      day.lastEnd || '—',
-      minutesToHHMM(day.totalJobMinutes),
-      String(day.totalBreakMinutes),
-      minutesToHHMM(day.workMinutes),
-    ]);
-  });
-
-  rows.push([]);
-  rows.push([`WEEKLY TOTALS`]);
-  rows.push([`Total Job Hours:`, minutesToHHMM(weekTotals.totalJobMins), `(${minutesToDecimal(weekTotals.totalJobMins)} hrs decimal)`]);
-  rows.push([`Total Break:`, minutesToHHMM(weekTotals.totalBreakMins)]);
-  rows.push([`Net Work Hours:`, minutesToHHMM(weekTotals.workMins), `(${minutesToDecimal(weekTotals.workMins)} hrs decimal)`]);
-  rows.push([`Gross Wage:`, `$${grossWage.toFixed(2)}`]);
-  if (totalKm > 0) {
-    rows.push([`Total KM:`, `${totalKm.toFixed(1)} km`]);
-    rows.push([`KM Allowance ($${perKmRate}/km):`, `$${kmAllowance.toFixed(2)}`]);
-    rows.push([`Total Payable:`, `$${(grossWage + kmAllowance).toFixed(2)}`]);
-  }
-
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `payroll-${staffName.replace(/\s+/g, '-')}-w${weekEnding.replace(/\//g, '-')}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PayrollPage() {
   const { profile } = useAuth();
@@ -154,21 +94,78 @@ export default function PayrollPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [weekStart, setWeekStart] = useState<Date>(() => getMondayOf(new Date()));
+  const [publishedWeeks, setPublishedWeeks] = useState<{ start: string, end: string, startObj: Date, display: string }[]>([]);
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [perKmRate, setPerKmRate] = useState(0.99);
   const [totalKm, setTotalKm] = useState(0);
+  const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null }>>({});
+  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number }>>(new Map());
 
   // Load staff list
   useEffect(() => {
-    if (!profile?.org_id) return;
-    supabase.from('staff_members').select('id, name, hourly_rate, role')
-      .eq('org_id', profile.org_id).order('name')
-      .then(({ data }: { data: StaffMember[] | null }) => {
-        if (data) {
-          setStaff(data);
-          if (data.length > 0) setSelectedStaffId(data[0].id);
+    async function loadStaff() {
+      if (!profile?.org_id) return;
+      const { data } = await supabase.from('staff_members').select('*').eq('org_id', profile.org_id).order('name');
+      if (data) {
+        setStaff(data);
+        if (data.length > 0 && !selectedStaffId) setSelectedStaffId(data[0].id);
+      }
+    }
+    loadStaff();
+  }, [supabase, profile?.org_id, selectedStaffId]);
 
+  // Fetch all published weeks to populate the dropdown
+  useEffect(() => {
+    async function fetchPublishedWeeks() {
+      if (!profile?.org_id) return;
+      const { data } = await supabase
+        .from('schedules')
+        .select('schedule_date')
+        .eq('org_id', profile.org_id)
+        .eq('is_published', true);
+      
+      if (!data) return;
+      const mondayStrs = new Set<string>();
+      data.forEach((r: any) => {
+        const d = new Date(r.schedule_date + 'T00:00:00');
+        mondayStrs.add(toDateStr(getMondayOf(d)));
+      });
+
+      const weeks = Array.from(mondayStrs).map(s => {
+        const startObj = new Date(s + 'T00:00:00');
+        const endObj = addDays(startObj, 6);
+        return {
+          start: s,
+          end: toDateStr(endObj),
+          startObj,
+          display: `${startObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} — ${endObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+        };
+      }).sort((a, b) => b.startObj.getTime() - a.startObj.getTime()); // Descending order (newest first)
+
+      setPublishedWeeks(weeks);
+
+      // If the currently selected weekStart is not in the list, default to the newest one
+      setWeekStart((currentStart) => {
+        const currentStartStr = toDateStr(currentStart);
+        if (!mondayStrs.has(currentStartStr) && weeks.length > 0) {
+          return weeks[0].startObj;
+        }
+        return currentStart;
+      });
+    }
+    fetchPublishedWeeks();
+  }, [supabase, profile?.org_id]);
+
+  // Load teams
+  useEffect(() => {
+    if (!profile?.org_id) return;
+    supabase.from('teams').select('id, name, day_start_time').eq('org_id', profile.org_id)
+      .then(({ data }: { data: any }) => {
+        if (data) {
+          const map: Record<string, { name: string, dayStartTime: string | null }> = {};
+          data.forEach((t: any) => map[t.id] = { name: t.name, dayStartTime: t.day_start_time });
+          setTeams(map);
         }
       });
   }, [profile?.org_id, supabase]);
@@ -183,15 +180,24 @@ export default function PayrollPage() {
 
     // Get all schedules in the week range for this org
     const { data: schedules } = await supabase
-      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id')
+      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id, team_id, total_travel_minutes')
       .eq('org_id', profile.org_id)
       .gte('schedule_date', weekStartStr)
-      .lte('schedule_date', weekEnd);
+      .lte('schedule_date', weekEnd)
+      .eq('is_published', true);
 
     if (!schedules || schedules.length === 0) { setJobs([]); setLoading(false); return; }
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
+    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number }>();
+    schedules.forEach((s: any) => {
+      const staffIds = s.staff_ids || [];
+      const size = staffIds.length > 0 ? staffIds.length : 1;
+      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0 });
+    });
+    setScheduleDataMap(newScheduleDataMap);
+
     const staffScheduleIds = new Set(schedules
       .filter((s: any) => (s.staff_ids || []).includes(selectedStaffId) || s.driver_staff_id === selectedStaffId)
       .map((s: any) => s.id)
@@ -238,26 +244,79 @@ export default function PayrollPage() {
       const totalJobMinutes = dayJobs.reduce((sum, j) => sum + (j.duration_minutes || 0), 0);
       const totalBreakMinutes = dayBreaks.reduce((sum, j) => sum + (j.duration_minutes || 0), 0);
 
-      // Work mins from wall-clock span if available, else sum of durations
-      let workMinutes = totalJobMinutes;
-      if (firstStart && lastEnd) {
-        const span = parseTimeToMinutes(lastEnd) - parseTimeToMinutes(firstStart);
-        if (span > 0) workMinutes = span - totalBreakMinutes;
+      const teamNamesSet = new Set<string>();
+      let individualJobMinutes = 0;
+      
+      // We will also track which team this day primarily belongs to, 
+      // so we can pull their day_start_time to calculate travel to the first job.
+      let primaryTeamId: string | null = null;
+
+      // We will also track the saved travel minutes for this day's schedule
+      let savedTravelMinutes = 0;
+
+      dayJobs.forEach(j => {
+        const schedData = scheduleDataMap.get(j.schedule_id);
+        const tSize = schedData?.teamSize || 1;
+        individualJobMinutes += (j.duration_minutes || 0) / tSize;
+        if (schedData?.teamId && teams[schedData.teamId]) {
+          teamNamesSet.add(teams[schedData.teamId].name);
+          if (!primaryTeamId) primaryTeamId = schedData.teamId;
+        }
+        if (schedData?.totalTravelMinutes) {
+          // If a team has multiple schedules in a day, take the max, or assume they belong to one schedule.
+          savedTravelMinutes = Math.max(savedTravelMinutes, schedData.totalTravelMinutes);
+        }
+      });
+
+      // Calculate pure travel time from gaps as a fallback
+      let travelMinutes = 0;
+      let lastEndTracker = 0;
+      
+      if (primaryTeamId && teams[primaryTeamId]?.dayStartTime) {
+         lastEndTracker = parseTimeToMinutes(teams[primaryTeamId].dayStartTime!);
       }
+
+      // Sort jobs and breaks by start time to find the true travel gaps
+      const allSorted = [...dayJobs, ...dayBreaks]
+        .filter(j => j.start_time && j.end_time)
+        .sort((a, b) => parseTimeToMinutes(a.start_time) - parseTimeToMinutes(b.start_time));
+
+      allSorted.forEach(j => {
+        const sTime = parseTimeToMinutes(j.start_time);
+        if (lastEndTracker > 0 && sTime > lastEndTracker) {
+           travelMinutes += (sTime - lastEndTracker);
+        }
+        lastEndTracker = parseTimeToMinutes(j.end_time);
+      });
+      
+      // Use the saved Google Maps travel time if available, otherwise fallback to the timeline gap calculation
+      if (savedTravelMinutes > 0) {
+        travelMinutes = savedTravelMinutes;
+      }
+      
+      const workMinutes = individualJobMinutes + travelMinutes;
+
+      const teamName = Array.from(teamNamesSet).join(', ') || '—';
+      const jobNames = dayJobs.map(j => j.name).join('; ') || '—';
 
       return {
         date,
         dayLabel: DAY_LABELS[di],
+        teamName,
+        jobNames,
         jobs: dayJobs,
         breaks: dayBreaks,
         firstStart,
         lastEnd,
+        dayTotalJobMinutes: totalJobMinutes,
+        individualJobMinutes,
+        travelMinutes,
         totalJobMinutes,
         totalBreakMinutes,
         workMinutes: Math.max(0, workMinutes),
       };
     });
-  }, [weekStart, jobs]);
+  }, [weekStart, jobs, scheduleDataMap, teams]);
 
   const weekTotals = useMemo(() => ({
     totalJobMins: days.reduce((s, d) => s + d.totalJobMinutes, 0),
@@ -326,31 +385,53 @@ export default function PayrollPage() {
 
           {/* Week navigation */}
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Week</label>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setWeekStart(d => getMondayOf(addDays(d, -7)))}
-                className="p-2 rounded-xl border border-border-light hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="15 18 9 12 15 6"/>
-                </svg>
-              </button>
-              <div className="flex-1 text-center">
-                <p className="text-sm font-semibold text-text-primary">{weekStartDisplay} — {weekEndDisplay}</p>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Published Week</label>
+            {publishedWeeks.length === 0 ? (
+              <p className="text-sm text-text-tertiary py-2">No published weeks available yet.</p>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={publishedWeeks.findIndex(w => w.start === toDateStr(weekStart)) >= publishedWeeks.length - 1}
+                  onClick={() => {
+                    const idx = publishedWeeks.findIndex(w => w.start === toDateStr(weekStart));
+                    if (idx < publishedWeeks.length - 1) setWeekStart(publishedWeeks[idx + 1].startObj);
+                  }}
+                  className="p-2 rounded-xl border border-border-light hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed text-text-secondary transition-colors"
+                  title="Older Week">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                  </svg>
+                </button>
+                
+                <div className="flex-1 text-center">
+                  <select 
+                    className="input-field text-sm font-semibold w-full text-center appearance-none"
+                    value={toDateStr(weekStart)}
+                    onChange={(e) => {
+                      const sel = publishedWeeks.find(w => w.start === e.target.value);
+                      if (sel) setWeekStart(sel.startObj);
+                    }}
+                  >
+                    {publishedWeeks.map(w => (
+                      <option key={w.start} value={w.start}>{w.display}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <button
+                  disabled={publishedWeeks.findIndex(w => w.start === toDateStr(weekStart)) <= 0}
+                  onClick={() => {
+                    const idx = publishedWeeks.findIndex(w => w.start === toDateStr(weekStart));
+                    if (idx > 0) setWeekStart(publishedWeeks[idx - 1].startObj);
+                  }}
+                  className="p-2 rounded-xl border border-border-light hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed text-text-secondary transition-colors"
+                  title="Newer Week">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </button>
               </div>
-              <button
-                onClick={() => setWeekStart(d => getMondayOf(addDays(d, 7)))}
-                className="p-2 rounded-xl border border-border-light hover:bg-surface-hover text-text-secondary transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="9 18 15 12 9 6"/>
-                </svg>
-              </button>
-              <button
-                onClick={() => setWeekStart(getMondayOf(new Date()))}
-                className="btn-ghost text-xs py-1.5 border border-border-light">
-                This week
-              </button>
-            </div>
+            )}
           </div>
         </div>
 
@@ -520,15 +601,25 @@ export default function PayrollPage() {
         {/* Export button */}
         <div className="flex justify-end">
           <button
-            onClick={() => exportCsv(
-              selectedStaff?.name || 'Staff',
-              weekStart,
-              days,
-              weekTotals,
-              hourlyRate,
-              perKmRate,
-              totalKm,
-            )}
+            onClick={() => {
+              const blob = exportPayrollCsv(
+                selectedStaff?.name || 'Staff',
+                selectedStaff?.role || 'staff',
+                hourlyRate,
+                weekStart,
+                days,
+                weekTotals,
+                perKmRate,
+                totalKm
+              );
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              const weekEnding = addDays(weekStart, 6).toLocaleDateString('en-AU').replace(/\//g, '-');
+              a.href = url;
+              a.download = `payroll-${(selectedStaff?.name || 'Staff').replace(/\s+/g, '-')}-w${weekEnding}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
             className="btn-primary gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>

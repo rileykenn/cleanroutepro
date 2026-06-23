@@ -286,31 +286,3 @@ export function exportScheduleCSV(team: TeamSchedule, summary: DaySummary, staff
   if (team.perKmRate > 0) rows.push([`Per-KM ($${team.perKmRate}/km)`,`$${summary.perKmCost.toFixed(2)}`]);
   return [h,...rows].map(r => r.join(',')).join('\n');
 }
-
-export function exportStaffScheduleCSV(team: TeamSchedule, summary: DaySummary): string {
-  const hasBase = team.baseAddress && team.baseAddress.lat !== 0;
-  const h = ['Stop', 'Client', 'Address', 'Start Time', 'End Time', 'Duration'];
-  const rows: string[][] = hasBase ? [['0', 'Base', team.baseAddress?.address || '', team.dayStartTime, '', '']] : [];
-
-  team.clients.forEach((c, i) => {
-    rows.push([
-      String(i + 1),
-      c.name,
-      c.location.address,
-      c.startTime || '',
-      c.endTime || '',
-      `${c.jobDurationMinutes} min`,
-    ]);
-  });
-
-  if (team.clients.length > 0 && hasBase) {
-    const last = team.clients[team.clients.length - 1];
-    rows.push([String(team.clients.length + 1), 'Return to Base', team.baseAddress?.address || '', last.endTime || '', '', '']);
-  }
-
-  rows.push([], ['Summary']);
-  rows.push(['Total Clients', String(summary.clientCount)]);
-  rows.push(['Total Job Time', `${summary.totalJobMinutes} min`]);
-
-  return [h, ...rows].map(r => r.join(',')).join('\n');
-}

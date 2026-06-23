@@ -443,9 +443,11 @@ interface DayEditorProps {
   readOnly?: boolean;
   /** Fires when the DayEditor detects actual schedule changes (not just view transitions). */
   onModified?: () => void | Promise<void>;
+  /** Template code for the current day (e.g. "Week A4") — passed through to staff export. */
+  templateCode?: string;
 }
 
-export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials, readOnly = false, onModified }: DayEditorProps) {
+export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, saveRef, allStaff, isAdmin = true, loadGeneration = 0, disableAutoSave = false, skipUnmountSaveRef, hideFinancials, readOnly = false, onModified, templateCode }: DayEditorProps) {
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null);
   const [mobileShowMap, setMobileShowMap] = useState(false);
   const [activeChecklistClient, setActiveChecklistClient] = useState<Client | null>(null);
@@ -605,6 +607,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
 
           if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !hasDriver && !hasStaff && !existingSched) continue;
 
+          const teamSummary = calculateDaySummary(team);
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
             has_start_base: team.baseAddress !== null,
@@ -613,6 +616,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             driver_staff_id: team.driverStaffId || null,
             staff_ids: team.staffIds || [],
           };
+          // Only write travel/distance when we have real data (> 0).
+          // This prevents overwriting previously saved values with 0 for
+          // teams whose Google Maps routes haven't loaded this session.
+          if (teamSummary.totalTravelMinutes > 0) {
+            scheduleData.total_travel_minutes = teamSummary.totalTravelMinutes;
+          }
+          if (teamSummary.totalDistanceKm > 0) {
+            scheduleData.total_distance_km = teamSummary.totalDistanceKm;
+          }
           if (team.baseAddress) {
             scheduleData.base_address = team.baseAddress.address;
             scheduleData.base_lat = team.baseAddress.lat;
@@ -965,12 +977,47 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     const teamId = activeTeamRef.current.id;
     dispatch({ type: 'CLEAR_TRAVEL', teamId });
     const timer = setTimeout(async () => {
+      // ── 1. Calculate active team's routes ──
+      let totalTravelMins = 0;
+      let totalDistKm = 0;
       await calculateAllTravel(directionsService, activeTeamRef.current, (segment) => {
         dispatch({ type: 'UPDATE_TRAVEL', teamId, segment });
+        if (!segment.isCalculating) {
+          totalTravelMins += segment.durationMinutes;
+          totalDistKm += segment.distanceKm;
+        }
       });
+      // Save active team's totals
+      if (orgId && (totalTravelMins > 0 || totalDistKm > 0)) {
+        const schedDate = stateRef.current.selectedDate;
+        await supabase.from('schedules')
+          .update({ total_travel_minutes: totalTravelMins, total_distance_km: totalDistKm })
+          .eq('team_id', teamId)
+          .eq('schedule_date', schedDate);
+      }
+
+      // ── 2. Background-calculate routes for all OTHER teams with clients ──
+      const otherTeams = stateRef.current.teams.filter(t => t.id !== teamId && t.clients.length > 0);
+      for (const otherTeam of otherTeams) {
+        let otherTravelMins = 0;
+        let otherDistKm = 0;
+        await calculateAllTravel(directionsService, otherTeam, (segment) => {
+          dispatch({ type: 'UPDATE_TRAVEL', teamId: otherTeam.id, segment });
+          if (!segment.isCalculating) {
+            otherTravelMins += segment.durationMinutes;
+            otherDistKm += segment.distanceKm;
+          }
+        });
+        if (orgId && (otherTravelMins > 0 || otherDistKm > 0)) {
+          await supabase.from('schedules')
+            .update({ total_travel_minutes: otherTravelMins, total_distance_km: otherDistKm })
+            .eq('team_id', otherTeam.id)
+            .eq('schedule_date', stateRef.current.selectedDate);
+        }
+      }
     }, 500);
     return () => clearTimeout(timer);
-  }, [routeKey, directionsService, dispatch]);
+  }, [routeKey, directionsService, dispatch, orgId, supabase]);
 
   const optimizeRoute = () => {
     if (!directionsService || activeTeam.clients.length < 2) return;
@@ -1405,6 +1452,8 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
                   staffRates={jobStaffRates}
                   hideFinancials={hideFinancials}
                   date={state.selectedDate}
+                  driverName={activeTeam.driverStaffId && allStaff ? allStaff.find(s => s.id === activeTeam.driverStaffId)?.name : undefined}
+                  templateCode={templateCode}
                 />
               </div>
             )}

@@ -154,7 +154,7 @@ function FieldCard({
         <Header />
         <div className="flex gap-2">
           {(['yes', 'no'] as const).map(opt => (
-            <button key={opt} onClick={() => !isNa && onChange(opt)} disabled={isNa}
+            <button key={opt} onClick={() => !isNa && onChange(value === opt ? null : opt)} disabled={isNa}
               className={`flex-1 py-3.5 rounded-xl font-semibold text-sm transition-all active:scale-[0.98] ${
                 value === opt
                   ? opt === 'yes' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-red-400 text-white shadow-sm'
@@ -319,6 +319,14 @@ export default function StaffChecklistView({
   const [errors, setErrors] = useState<Set<string>>(new Set());
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completionIdRef = useRef<string | null>(null);
+  const saveLockRef = useRef(false);
+  const pendingSaveRef = useRef(false);
+  const dirtyRef = useRef(false);
+
+  // Synchronous refs for save payload — React state is stale inside async save
+  const answersRef = useRef<Map<string, FieldAnswer>>(new Map());
+  const notesRef = useRef('');
+  const mediaUrlsRef = useRef<MediaUrls>({});
   const currentUserIdRef = useRef<string | null>(null);
 
   // ── Collaboration: user color ─────────────────────────────────────────────
@@ -468,13 +476,14 @@ export default function StaffChecklistView({
               next.set(remoteAnswer.fieldId, remoteAnswer);
             }
           });
+          answersRef.current = next; // Keep ref in sync
           buildUserMap(next);
           // Fetch names for any new users
           const newIds = items
             .map(a => a.completed_by)
             .filter((id): id is string => !!id && !sourceMap.has(id));
           if (newIds.length > 0) fetchUserNames(newIds);
-          writeDraft(next, '');
+          writeDraft(next, notesRef.current);
           return next;
         });
       } catch { /* ignore */ }
@@ -490,13 +499,14 @@ export default function StaffChecklistView({
 
       if (data) {
         completionIdRef.current = data.id;
-        if (data.notes) setNotes(data.notes);
-        if (data.media_urls) setMediaUrls(data.media_urls as MediaUrls);
+        if (data.notes) { setNotes(data.notes); notesRef.current = data.notes; }
+        if (data.media_urls) { const mu = data.media_urls as MediaUrls; setMediaUrls(mu); mediaUrlsRef.current = mu; }
         try {
           const items: FieldAnswer[] = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || []);
           if (Array.isArray(items) && items.length > 0) {
             const ansMap = new Map(items.map(a => [a.fieldId, a]));
             setAnswers(ansMap);
+            answersRef.current = ansMap;
             buildUserMap(ansMap);
             const uids = [...new Set(items.map(a => a.completed_by).filter(Boolean))] as string[];
             fetchUserNames(uids);
@@ -515,9 +525,10 @@ export default function StaffChecklistView({
             if (Array.isArray(parsed.answers) && parsed.answers.length > 0) {
               const ansMap = new Map(parsed.answers.map(a => [a.fieldId, a]));
               setAnswers(ansMap);
-              if (parsed.notes) setNotes(parsed.notes);
+              answersRef.current = ansMap;
+              if (parsed.notes) { setNotes(parsed.notes); notesRef.current = parsed.notes; }
               buildUserMap(ansMap);
-              autoSaveRef.current = setTimeout(() => { performSave(false); }, 2000);
+              autoSaveRef.current = setTimeout(() => { performSaveRef.current(false); }, 2000);
             }
           }
         } catch { /* corrupted */ }
@@ -548,17 +559,24 @@ export default function StaffChecklistView({
   }, [scheduleJobId, templateId, supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Answer helpers ────────────────────────────────────────────────────────
-  const setAnswer = (fieldId: string, value: FieldAnswer['value']) => {
+  // `debounce` = true for text fields (keystrokes), false for discrete fields
+  const setAnswer = (fieldId: string, value: FieldAnswer['value'], debounce = false) => {
     const myId = currentUserIdRef.current;
     setAnswers(prev => {
       const next = new Map(prev);
       next.set(fieldId, { ...next.get(fieldId) || { fieldId }, value, na: false, completed_by: myId || undefined });
-      writeDraft(next, notes);
+      answersRef.current = next; // Sync ref immediately for save
+      writeDraft(next, notesRef.current);
       buildUserMap(next);
       return next;
     });
     setSaved(false);
-    scheduleAutoSave();
+    dirtyRef.current = true;
+    if (debounce) {
+      scheduleDebouncedSave();
+    } else {
+      saveNow();
+    }
   };
 
   const toggleNa = (fieldId: string) => {
@@ -567,12 +585,14 @@ export default function StaffChecklistView({
       const next = new Map(prev);
       const cur = next.get(fieldId) || { fieldId, value: null };
       next.set(fieldId, { ...cur, na: !cur.na, value: !cur.na ? null : cur.value, completed_by: myId || undefined });
-      writeDraft(next, notes);
+      answersRef.current = next; // Sync ref immediately for save
+      writeDraft(next, notesRef.current);
       buildUserMap(next);
       return next;
     });
     setSaved(false);
-    scheduleAutoSave();
+    dirtyRef.current = true;
+    saveNow();
   };
 
   // ── Media upload ──────────────────────────────────────────────────────────
@@ -590,84 +610,162 @@ export default function StaffChecklistView({
       }
     }
     if (uploaded.length > 0) {
-      setMediaUrls(prev => ({ ...prev, [fieldId]: [...(prev[fieldId] || []), ...uploaded] }));
+      setMediaUrls(prev => {
+        const next = { ...prev, [fieldId]: [...(prev[fieldId] || []), ...uploaded] };
+        mediaUrlsRef.current = next; // Sync ref immediately for save
+        return next;
+      });
       setAnswers(prev => {
         const next = new Map(prev);
         const cur = next.get(fieldId) || { fieldId, value: [] };
         const existing = Array.isArray(cur.value) ? cur.value as string[] : [];
         next.set(fieldId, { ...cur, value: [...existing, ...uploaded], completed_by: user?.id });
+        answersRef.current = next; // Sync ref immediately for save
         return next;
       });
     }
     setUploading(false);
     setSaved(false);
-    scheduleAutoSave();
+    dirtyRef.current = true;
+    saveNow();
   };
 
-  // ── Auto-save ─────────────────────────────────────────────────────────────
-  const scheduleAutoSave = useCallback(() => {
+  // ── Auto-save engine ──────────────────────────────────────────────────────
+  // Use a ref so that useCallback/setTimeout always calls the LATEST performSave
+  // (avoids stale-closure bug where autosave would write empty state)
+  const performSaveRef = useRef<(isFinal: boolean) => Promise<void>>(() => Promise.resolve());
+
+  // saveNow: immediate save (for discrete field changes like checkbox, yesno)
+  const saveNow = useCallback(() => {
+    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+    performSaveRef.current(false);
+  }, []);
+
+  // scheduleDebouncedSave: 500ms debounce (for text input keystrokes)
+  const scheduleDebouncedSave = useCallback(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(() => { performSave(false); }, 1500);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    autoSaveRef.current = setTimeout(() => { performSaveRef.current(false); }, 500);
+  }, []);
+
+  // Flush pending saves on page close / tab switch
+  useEffect(() => {
+    const flushSave = () => {
+      if (dirtyRef.current && !saveLockRef.current) {
+        dirtyRef.current = false;
+      }
+    };
+    const handleVisChange = () => {
+      if (document.visibilityState === 'hidden' && dirtyRef.current) {
+        if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+        performSaveRef.current(false);
+      }
+    };
+    window.addEventListener('beforeunload', flushSave);
+    document.addEventListener('visibilitychange', handleVisChange);
+    return () => {
+      window.removeEventListener('beforeunload', flushSave);
+      document.removeEventListener('visibilitychange', handleVisChange);
+    };
+  }, []);
 
   const performSave = async (isFinal: boolean) => {
     if (!templateId) return;
+
+    // Prevent concurrent saves — queue a follow-up if one is in progress
+    if (saveLockRef.current && !isFinal) {
+      pendingSaveRef.current = true;
+      return;
+    }
+    saveLockRef.current = true;
+    pendingSaveRef.current = false;
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profileData } = await supabase.from('profiles').select('org_id').eq('id', user!.id).single();
-    const answersArr = Array.from(answers.values());
-    const now = new Date().toISOString();
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setSaving(false); saveLockRef.current = false; return; }
+      const { data: profileData } = await supabase.from('profiles').select('org_id').eq('id', user.id).single();
+      if (!profileData?.org_id) { setSaving(false); saveLockRef.current = false; return; }
+      // Read from refs (not React state) to get the LATEST values
+      const answersArr = Array.from(answersRef.current.values());
+      const now = new Date().toISOString();
 
-    // Base payload for both insert and autosave updates
-    const basePayload = {
-      org_id: profileData!.org_id,
-      client_id: clientId,
-      schedule_job_id: scheduleJobId || null,
-      checklist_template_id: templateId,
-      items: JSON.stringify(answersArr),
-      media_urls: mediaUrls,
-      notes,
-      completed_by: user!.id,
-      completed_at: now,
-    };
+      const payload = {
+        org_id: profileData.org_id,
+        client_id: clientId,
+        schedule_job_id: scheduleJobId || null,
+        checklist_template_id: templateId,
+        items: JSON.stringify(answersArr),
+        media_urls: mediaUrlsRef.current,
+        notes: notesRef.current,
+        completed_by: user.id,
+        completed_at: now,
+        status: isFinal ? 'submitted' : 'in_progress',
+        submitted_at: isFinal ? now : null,
+      };
 
-    // On final submit add status=submitted + submitted_at
-    // On autosave keep status=in_progress (never downgrade a submitted record)
-    const insertPayload = { ...basePayload, status: isFinal ? 'submitted' : 'in_progress', submitted_at: isFinal ? now : null };
+      // Use completionIdRef to avoid a query race between autosave and submit
+      const existingId = completionIdRef.current;
 
-    if (scheduleJobId) {
-      const { data: existing } = await supabase
-        .from('checklist_completions')
-        .select('id, status')
-        .eq('schedule_job_id', scheduleJobId)
-        .maybeSingle();
-      if (existing) {
-        // Don't downgrade a submitted record back to in_progress on autosave
-        const updatePayload = isFinal
-          ? { ...basePayload, status: 'submitted', submitted_at: now }
-          : (existing as { status?: string }).status === 'submitted'
-            ? { items: basePayload.items, notes: basePayload.notes, media_urls: basePayload.media_urls } // only update content, not status
-            : { ...basePayload, status: 'in_progress' };
-        await supabase.from('checklist_completions').update(updatePayload).eq('id', existing.id);
-        completionIdRef.current = existing.id;
+      if (existingId) {
+        // Row already exists — update it
+        // On autosave: don't downgrade submitted → in_progress
+        if (!isFinal) {
+          // Check current status so we don't overwrite a submitted record
+          const { data: current } = await supabase
+            .from('checklist_completions').select('status').eq('id', existingId).single();
+          if (current?.status === 'submitted') {
+            // Only update content, not status
+            await supabase.from('checklist_completions').update({
+              items: payload.items, notes: payload.notes, media_urls: payload.media_urls,
+            }).eq('id', existingId);
+          } else {
+            await supabase.from('checklist_completions').update(payload).eq('id', existingId);
+          }
+        } else {
+          // Final submit — always set submitted
+          await supabase.from('checklist_completions').update(payload).eq('id', existingId);
+        }
+      } else if (scheduleJobId) {
+        // No known row — check DB once (first save for this job)
+        const { data: existing } = await supabase
+          .from('checklist_completions').select('id')
+          .eq('schedule_job_id', scheduleJobId).maybeSingle();
+        if (existing) {
+          completionIdRef.current = existing.id;
+          await supabase.from('checklist_completions').update(payload).eq('id', existing.id);
+        } else {
+          const { data: ins } = await supabase.from('checklist_completions')
+            .insert(payload).select('id').single();
+          if (ins) completionIdRef.current = ins.id;
+        }
       } else {
-        const { data: ins } = await supabase.from('checklist_completions').insert(insertPayload).select('id').single();
+        // No scheduleJobId, no existing row — insert
+        const { data: ins } = await supabase.from('checklist_completions')
+          .insert(payload).select('id').single();
         if (ins) completionIdRef.current = ins.id;
       }
-    } else if (completionIdRef.current) {
-      await supabase.from('checklist_completions')
-        .update({ ...basePayload, ...(isFinal ? { status: 'submitted', submitted_at: now } : { status: 'in_progress' }) })
-        .eq('id', completionIdRef.current);
-    } else {
-      const { data: ins } = await supabase.from('checklist_completions').insert(insertPayload).select('id').single();
-      if (ins) completionIdRef.current = ins.id;
+      dirtyRef.current = false;
+    } catch (err) {
+      console.error('Checklist save error:', err);
     }
     setSaving(false);
+    saveLockRef.current = false;
     if (isFinal) { setSaved(true); clearDraft(); }
+
+    // If another save was queued while we were saving, run it now
+    if (pendingSaveRef.current && !isFinal) {
+      pendingSaveRef.current = false;
+      performSave(false);
+    }
   };
+
+  // Keep ref in sync so useCallback/setTimeout closures always call latest version
+  performSaveRef.current = performSave;
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    // Cancel any pending autosave to prevent race condition
+    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+
     const errs = new Set<string>();
     allFields.forEach(f => {
       if (!f.required) return;
@@ -865,7 +963,10 @@ export default function StaffChecklistView({
                           <FieldCard
                             field={field}
                             answer={ans}
-                            onChange={val => setAnswer(field.id, val)}
+                            onChange={val => {
+                            const isTextType = field.type === 'text';
+                            setAnswer(field.id, val, isTextType);
+                          }}
                             onNa={() => toggleNa(field.id)}
                             onFileChange={files => handleFileChange(field.id, files)}
                             hasError={errors.has(field.id)}
@@ -882,7 +983,7 @@ export default function StaffChecklistView({
               <div className="rounded-2xl border-2 border-border-light bg-white p-4">
                 <p className="text-sm font-semibold text-text-primary mb-2">Additional notes</p>
                 <textarea value={notes}
-                  onChange={e => { const n = e.target.value; setNotes(n); writeDraft(answers, n); setSaved(false); scheduleAutoSave(); }}
+                  onChange={e => { const n = e.target.value; setNotes(n); notesRef.current = n; writeDraft(answersRef.current, n); setSaved(false); dirtyRef.current = true; scheduleDebouncedSave(); }}
                   rows={3} placeholder="Any extra notes for this job..."
                   className="w-full bg-surface-elevated border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-text-tertiary" />
               </div>

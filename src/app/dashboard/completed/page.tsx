@@ -117,6 +117,9 @@ function ChecklistPanel({
   onClose: () => void;
   loading: boolean;
 }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState<'image' | 'video'>('image');
+
   // Build userId → {color, name} from assignedStaff first (consistent colors)
   const staffByUserId = useMemo(() => {
     const m = new Map<string, AssignedStaff>();
@@ -124,9 +127,16 @@ function ChecklistPanel({
     return m;
   }, [job.assignedStaff]);
 
+  // Fallback colors for unknown users
+  const unknownColorMap = useMemo(() => new Map<string, string>(), []);
+  let nextUnknownIdx = job.assignedStaff.length;
+
   const getColor = (uid?: string) => {
-    if (!uid) return undefined;
-    return staffByUserId.get(uid)?.color;
+    if (!uid) return '#94A3B8';
+    const staff = staffByUserId.get(uid);
+    if (staff) return staff.color;
+    if (!unknownColorMap.has(uid)) { unknownColorMap.set(uid, STAFF_COLORS[nextUnknownIdx++ % STAFF_COLORS.length]); }
+    return unknownColorMap.get(uid) || '#94A3B8';
   };
 
   const getName = (uid?: string) => {
@@ -154,18 +164,23 @@ function ChecklistPanel({
   const contributors = useMemo(() => {
     const seen = new Set<string>();
     (completion?.items || []).forEach(a => { if (a.completed_by) seen.add(a.completed_by); });
-    return [...seen].map(uid => ({ uid, color: getColor(uid) || STAFF_COLORS[0], name: getName(uid) }));
+    return [...seen].map(uid => ({ uid, color: getColor(uid), name: getName(uid) }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completion, staffByUserId, userNameMap]);
+
+  const openPreview = (url: string, type: 'image' | 'video') => {
+    setPreviewUrl(url);
+    setPreviewType(type);
+  };
 
   return (
     <motion.div
       initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col border-l border-border-light lg:inset-y-0 lg:right-0 lg:top-auto lg:bottom-auto"
+      className="fixed inset-y-0 right-0 w-full max-w-md bg-[#f5f6fa] shadow-2xl z-50 flex flex-col border-l border-border-light lg:inset-y-0 lg:right-0 lg:top-auto lg:bottom-auto"
     >
       {/* Header */}
-      <div className="shrink-0 px-5 py-4 border-b border-border-light">
+      <div className="shrink-0 px-5 py-4 bg-white border-b border-border-light">
         <div className="flex items-start gap-3">
           <button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-elevated text-text-secondary transition-colors shrink-0 mt-0.5">
@@ -206,16 +221,16 @@ function ChecklistPanel({
           </div>
         )}
 
-        {/* Who filled it in */}
+        {/* Who filled it in — with colour legend */}
         {contributors.length > 0 && (
           <div className="mt-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1.5">Filled in by</p>
             <div className="flex flex-wrap gap-1.5">
               {contributors.map(({ uid, color, name }) => (
                 <span key={uid}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border"
-                  style={{ borderColor: color, color }}>
-                  ● {name}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full text-white"
+                  style={{ backgroundColor: color }}>
+                  {name}
                 </span>
               ))}
             </div>
@@ -235,11 +250,11 @@ function ChecklistPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading ? (
           <div className="space-y-2">
-            {[1,2,3,4,5].map(i => <div key={i} className="shimmer h-12 rounded-xl" />)}
+            {[1,2,3,4,5].map(i => <div key={i} className="shimmer h-14 rounded-2xl" />)}
           </div>
         ) : sections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-12">
-            <div className="w-12 h-12 rounded-xl bg-surface-elevated flex items-center justify-center text-2xl">📋</div>
+            <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-2xl border border-border-light">📋</div>
             <p className="text-sm font-semibold text-text-secondary">No checklist assigned</p>
             <p className="text-xs text-text-tertiary">Assign a checklist to this job in the scheduler</p>
           </div>
@@ -255,7 +270,7 @@ function ChecklistPanel({
                   <div className="flex-1 h-px bg-border" />
                 </div>
               )}
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {section.fields.map(field => {
                   if (field.type === 'heading') return (
                     <p key={field.id} className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary pt-2">
@@ -266,78 +281,132 @@ function ChecklistPanel({
 
                   const ans = answers.get(field.id);
                   const answererColor = getColor(ans?.completed_by);
+                  const answererName = getName(ans?.completed_by);
                   const isAnswered = !!ans && (
                     ans.na === true ||
                     (ans.value !== null && ans.value !== undefined && ans.value !== '' &&
                      ans.value !== false && !(Array.isArray(ans.value) && ans.value.length === 0))
                   );
 
+                  // Display value
                   let displayVal = '';
                   if (ans?.na) displayVal = 'N/A';
-                  else if (ans?.value === true || ans?.value === 'yes') displayVal = '✓  Yes';
-                  else if (ans?.value === false || ans?.value === 'no') displayVal = '✗  No';
+                  else if (ans?.value === true || ans?.value === 'yes') displayVal = 'Yes';
+                  else if (ans?.value === false || ans?.value === 'no') displayVal = 'No';
                   else if (Array.isArray(ans?.value) && field.type !== 'photo' && field.type !== 'video')
                     displayVal = (ans.value as string[]).join(', ');
                   else if (ans?.value && field.type !== 'photo' && field.type !== 'video')
                     displayVal = String(ans.value);
 
-                  // For photo/video fields: get array of URLs
+                  // Status icon for checkbox/yesno
+                  const statusIcon = field.type === 'checkbox' ? (
+                    isAnswered && !ans?.na ? (
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: answererColor }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="w-6 h-6 rounded-lg border-2 border-gray-200 shrink-0" />
+                    )
+                  ) : null;
+
+                  // Yes/No pill
+                  const yesNoPill = field.type === 'yesno' && isAnswered && !ans?.na ? (
+                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
+                      ans?.value === true || ans?.value === 'yes'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {ans?.value === true || ans?.value === 'yes' ? '✓ Yes' : '✗ No'}
+                    </span>
+                  ) : null;
+
+                  // Photo/video URLs
                   const mediaUrls: string[] = (field.type === 'photo' || field.type === 'video')
                     ? (Array.isArray(ans?.value) ? (ans.value as string[]) : ans?.value ? [String(ans.value)] : [])
                     : [];
 
                   return (
                     <div key={field.id}
-                      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border transition-all ${
-                        isAnswered
-                          ? 'bg-white border-border-light'
-                          : 'bg-surface-elevated/50 border-transparent'
+                      className={`rounded-2xl border bg-white transition-all overflow-hidden ${
+                        isAnswered ? 'border-border-light' : 'border-border-light/50 opacity-60'
                       }`}
                       style={isAnswered && answererColor
                         ? { borderLeftColor: answererColor, borderLeftWidth: 3 }
                         : undefined}
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-text-primary leading-snug">{field.label}</p>
+                      <div className="px-3.5 py-3">
+                        <div className="flex items-start gap-3">
+                          {/* Checkbox icon */}
+                          {statusIcon}
 
-                        {/* ── Photo thumbnails ── */}
-                        {(field.type === 'photo' || field.type === 'video') ? (
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[13px] font-semibold leading-snug ${
+                              isAnswered ? 'text-text-primary' : 'text-text-tertiary'
+                            }`}>{field.label}</p>
+
+                            {/* Display value for non-checkbox, non-yesno, non-media fields */}
+                            {field.type !== 'checkbox' && field.type !== 'yesno' && field.type !== 'photo' && field.type !== 'video' && (
+                              displayVal ? (
+                                <p className="text-xs text-text-secondary mt-1 font-medium">{displayVal}</p>
+                              ) : (
+                                <p className="text-[11px] text-text-tertiary mt-0.5 italic">Not answered</p>
+                              )
+                            )}
+
+                            {/* N/A badge */}
+                            {ans?.na && (
+                              <span className="inline-block text-[10px] font-bold text-text-tertiary bg-surface-elevated px-2 py-0.5 rounded-lg mt-1 border border-border-light">N/A</span>
+                            )}
+                          </div>
+
+                          {/* Yes/No pill */}
+                          {yesNoPill}
+
+                          {/* Staff indicator */}
+                          {isAnswered && ans?.completed_by && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <div
+                                className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                                style={{ backgroundColor: answererColor }}
+                                title={answererName}
+                              >
+                                {(answererName || '?')[0].toUpperCase()}
+                              </div>
+                              <span className="text-[10px] font-medium text-text-tertiary max-w-[60px] truncate hidden sm:block">
+                                {answererName.split(' ')[0]}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── Photo/Video grid ── */}
+                        {(field.type === 'photo' || field.type === 'video') && (
                           mediaUrls.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 mt-2">
+                            <div className="flex flex-wrap gap-2 mt-3">
                               {mediaUrls.map((url, ui) =>
                                 field.type === 'photo' ? (
-                                  <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
-                                    className="block w-20 h-20 rounded-xl overflow-hidden border border-border-light bg-surface-elevated shrink-0 hover:opacity-80 transition-opacity">
+                                  <button key={ui} onClick={() => openPreview(url, 'image')}
+                                    className="block w-24 h-24 rounded-xl overflow-hidden border border-border-light bg-surface-elevated shrink-0 hover:opacity-80 transition-opacity hover:ring-2 hover:ring-primary/30 active:scale-95">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={url} alt={`Photo ${ui + 1}`} className="w-full h-full object-cover" />
-                                  </a>
+                                  </button>
                                 ) : (
-                                  <a key={ui} href={url} target="_blank" rel="noopener noreferrer"
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border-light bg-surface-elevated text-xs font-medium text-primary hover:bg-primary/5 transition-colors">
-                                    <span className="text-base">🎬</span>
+                                  <button key={ui} onClick={() => openPreview(url, 'video')}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border-light bg-surface-elevated text-xs font-semibold text-primary hover:bg-primary/5 transition-colors active:scale-95">
+                                    <span className="text-lg">🎬</span>
                                     View video {ui + 1}
-                                  </a>
+                                  </button>
                                 )
                               )}
                             </div>
                           ) : (
-                            <p className="text-[10px] text-text-tertiary mt-0.5">Not answered</p>
+                            <p className="text-[11px] text-text-tertiary mt-1 italic">No media uploaded</p>
                           )
-                        ) : displayVal ? (
-                          <p className="text-xs text-text-secondary mt-0.5 font-medium">{displayVal}</p>
-                        ) : (
-                          <p className="text-[10px] text-text-tertiary mt-0.5">Not answered</p>
                         )}
                       </div>
-                      {isAnswered && answererColor && (
-                        <div
-                          className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold text-white mt-0.5"
-                          style={{ backgroundColor: answererColor }}
-                          title={getName(ans?.completed_by)}
-                        >
-                          {(getName(ans?.completed_by) || '?')[0].toUpperCase()}
-                        </div>
-                      )}
                     </div>
                   );
 
@@ -349,18 +418,26 @@ function ChecklistPanel({
 
         {/* Notes */}
         {completion?.notes && (
-          <div className="rounded-xl border border-border-light bg-amber-50 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-amber-600 mb-1">Notes</p>
-            <p className="text-sm text-text-primary">{completion.notes}</p>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-amber-700">Staff Notes</p>
+            </div>
+            <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">{completion.notes}</p>
           </div>
         )}
 
         {/* Submitted timestamp */}
         {isSubmitted && completion?.completed_at && (
-          <div className="text-center py-4">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-xl">
-              <span className="text-emerald-500">✓</span>
-              <span className="text-xs font-semibold text-emerald-700">
+          <div className="text-center py-3">
+            <div className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span className="text-xs font-bold text-emerald-700">
                 Submitted {new Date(completion.completed_at).toLocaleString('en-AU', {
                   weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
                 })}
@@ -372,7 +449,8 @@ function ChecklistPanel({
         {/* No completion yet */}
         {!loading && !completion && sections.length > 0 && (
           <div className="text-center py-8">
-            <p className="text-sm text-text-tertiary">No checklist submitted yet.</p>
+            <div className="w-14 h-14 rounded-2xl bg-white border border-border-light flex items-center justify-center text-2xl mx-auto mb-3">⏳</div>
+            <p className="text-sm font-semibold text-text-secondary">No checklist submitted yet</p>
             {job.assignedStaff.length > 0 && (
               <p className="text-xs text-text-tertiary mt-1">
                 Waiting on: {job.assignedStaff.map(s => s.name).join(', ')}
@@ -381,6 +459,32 @@ function ChecklistPanel({
           </div>
         )}
       </div>
+
+      {/* ── Media Preview Modal ── */}
+      <AnimatePresence>
+        {previewUrl && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4"
+            onClick={() => setPreviewUrl(null)}
+          >
+            <button onClick={() => setPreviewUrl(null)}
+              className="absolute top-4 right-4 p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 z-10 active:scale-90 transition-transform">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+            <div className="max-w-3xl max-h-[85vh] w-full" onClick={e => e.stopPropagation()}>
+              {previewType === 'image' ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrl} alt="Preview" className="w-full h-auto max-h-[85vh] object-contain rounded-xl" />
+              ) : (
+                <video src={previewUrl} controls autoPlay className="w-full max-h-[85vh] rounded-xl" />
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -573,6 +677,7 @@ export default function CompletedPage() {
 
   useEffect(() => { loadWeek(); }, [loadWeek]);
 
+
   // ── Page-level realtime: watch ALL completions for this org ─────────────────
   // So when staff submit a checklist the job card updates immediately
   useEffect(() => {
@@ -597,6 +702,8 @@ export default function CompletedPage() {
           notes: row.notes as string | null,
           completed_by: row.completed_by as string,
           completed_at: row.completed_at as string,
+          status: row.status as string | undefined,
+          submitted_at: row.submitted_at as string | null | undefined,
         });
 
         setJobs(prev => prev.map(j => {
@@ -679,9 +786,13 @@ export default function CompletedPage() {
           notes: row.notes as string | null,
           completed_by: row.completed_by as string,
           completed_at: row.completed_at as string,
+          status: row.status as string | undefined,
+          submitted_at: row.submitted_at as string | null | undefined,
         });
         setLiveCompletion(comp);
-        setJobs(prev => prev.map(j => j.id === job.id ? { ...j, completion: comp } : j));
+        setJobs(prev => prev.map(j => j.id === job.id
+          ? { ...j, completion: comp, answeredFields: countAnswered(comp.items), totalFields: Math.max(j.totalFields, comp.items.length) }
+          : j));
       })
       .subscribe();
     realtimeChannelRef.current = ch;

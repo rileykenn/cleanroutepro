@@ -272,7 +272,7 @@ function JobCard({
             </svg>
             Navigate
           </a>
-          {job.client_id && (
+          {job.client_id && job.checklist_id && (
             <button
               onClick={onChecklist}
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold active:scale-95 transition-transform ${
@@ -421,11 +421,11 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
         .from('published_jobs').select('*').in('schedule_id', scheduleIds).order('position');
       allJobs = (jobsData || []) as RawJob[];
 
-      // Checklist completion status
+      // Checklist completion status — only count submitted checklists as done
       const jobIds = allJobs.filter(j => !j.is_break && j.client_id).map(j => j.id);
       if (jobIds.length > 0) {
         const { data: completions } = await supabase
-          .from('checklist_completions').select('schedule_job_id').in('schedule_job_id', jobIds);
+          .from('checklist_completions').select('schedule_job_id').in('schedule_job_id', jobIds).eq('status', 'submitted');
         (completions || []).forEach((c: { schedule_job_id: string }) => completionMap.set(c.schedule_job_id, true));
       }
     }
@@ -542,6 +542,7 @@ export default function StaffPortalPage({ overrideStaffId, overrideStaffName }: 
       .from('checklist_completions')
       .select('id, client_id, schedule_job_id, completed_at, checklist_template_id')
       .eq('completed_by', user.id)
+      .eq('status', 'submitted')
       .order('completed_at', { ascending: false })
       .limit(60);
 

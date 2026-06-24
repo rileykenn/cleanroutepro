@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { APIProvider } from '@vis.gl/react-google-maps';
@@ -160,13 +160,47 @@ export default function ChecklistsPage() {
     setBuilderIsDefault(checklistsFor(clientId).length === 0);
   };
 
-  // ── Builder state ──────────────────────────────────────────────────────────
   const [builderSections, setBuilderSections] = useState<ChecklistSection[]>([]);
   const [builderName, setBuilderName] = useState('');
   const [builderIsDefault, setBuilderIsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAsTemplate, setSavedAsTemplate] = useState(false);
   const { addMaster } = useChecklistMasters(orgId);
+
+  // ── Inline rename state ─────────────────────────────────────────────────────
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  const startRename = (cl: { id: string; name: string }) => {
+    setRenamingId(cl.id);
+    setRenameValue(cl.name);
+  };
+
+  const commitRename = async () => {
+    if (!renamingId) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenamingId(null); return; }
+    // Update in DB
+    await supabase.from('client_checklists').update({ name: trimmed }).eq('id', renamingId);
+    // Update local state
+    setAllChecklists(prev => prev.map(c => c.id === renamingId ? { ...c, name: trimmed } : c));
+    // Update builder name if this checklist is currently selected
+    if (selectedChecklistId === renamingId) setBuilderName(trimmed);
+    setRenamingId(null);
+  };
+
+  const cancelRename = () => {
+    setRenamingId(null);
+    setRenameValue('');
+  };
 
   const handleSaveAsTemplate = useCallback(async () => {
     if (!selectedChecklistId || selectedChecklistId === 'new') return;
@@ -311,17 +345,35 @@ export default function ChecklistsPage() {
                         cls.map(cl => {
                           const isActive = selectedChecklistId === cl.id;
                           return (
-                            <button key={cl.id}
+                            <div key={cl.id}
+                              className={`w-full flex items-center gap-2.5 pl-10 pr-3 py-2 transition-colors text-left cursor-pointer ${isActive ? 'bg-primary/10 border-r-2 border-primary' : 'hover:bg-surface-elevated'}`}
                               onClick={() => selectChecklist(client.id, cl.id)}
-                              className={`w-full flex items-center gap-2.5 pl-10 pr-3 py-2 transition-colors text-left ${isActive ? 'bg-primary/10 border-r-2 border-primary' : 'hover:bg-surface-elevated'}`}>
+                              onDoubleClick={(e) => { e.stopPropagation(); startRename(cl); }}
+                            >
                               <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${cl.is_default ? 'bg-primary' : 'bg-border-light'}`}/>
-                              <span className={`text-xs flex-1 truncate ${isActive ? 'text-primary font-semibold' : 'text-text-secondary font-medium'}`}>
-                                {cl.name}
-                              </span>
+                              {renamingId === cl.id ? (
+                                <input
+                                  ref={renameInputRef}
+                                  type="text"
+                                  value={renameValue}
+                                  onChange={e => setRenameValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') commitRename();
+                                    if (e.key === 'Escape') cancelRename();
+                                  }}
+                                  onBlur={() => commitRename()}
+                                  onClick={e => e.stopPropagation()}
+                                  className="flex-1 text-xs font-medium bg-white border border-primary rounded-md px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/30 text-text-primary min-w-0"
+                                />
+                              ) : (
+                                <span className={`text-xs flex-1 truncate ${isActive ? 'text-primary font-semibold' : 'text-text-secondary font-medium'}`}>
+                                  {cl.name}
+                                </span>
+                              )}
                               {cl.is_default && (
                                 <span className="text-[9px] font-bold text-primary shrink-0">Default</span>
                               )}
-                            </button>
+                            </div>
                           );
                         })
                       )}

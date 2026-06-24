@@ -101,13 +101,15 @@ function Inner({ children }: { children: React.ReactNode }) {
   const userRole: Role = (profile?.role as Role) || 'staff';
   const initials = (profile?.full_name || profile?.email || '?').charAt(0).toUpperCase();
 
-  // ── Mobile detection: all roles see staff view on mobile ────────────────
+  // ── Mobile detection: detect actual mobile DEVICE, not window width ─────
+  // This prevents desktop users in split-screen from being forced into mobile view
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 1024); // lg breakpoint
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
+    const ua = navigator.userAgent || '';
+    const isMobileDevice =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
+      (navigator.maxTouchPoints > 0 && /Mobi|Tablet/i.test(ua));
+    setIsMobile(isMobileDevice);
   }, []);
 
   // Auto-redirect to staff-view on mobile (except staff who are already there)

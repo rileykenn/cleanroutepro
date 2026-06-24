@@ -15,7 +15,7 @@ export interface DayPayrollData {
 
 export interface WeekPayrollTotals {
   totalJobMins: number;
-  totalBreakMins: number;
+  totalTravelMins: number;
   workMins: number;
 }
 
@@ -112,7 +112,7 @@ export function exportPayrollCsv(
   rows.push([]);
   rows.push(['WEEKLY TOTALS']);
   rows.push(['Total Job Hours', minsToHHMM(weekTotals.totalJobMins), `${minsToDecimal(weekTotals.totalJobMins)} hrs decimal`]);
-  rows.push(['Total Break', minsToHHMM(weekTotals.totalBreakMins)]);
+  rows.push(['Total Travel', minsToHHMM(weekTotals.totalTravelMins), `${minsToDecimal(weekTotals.totalTravelMins)} hrs decimal`]);
   rows.push(['Net Work Hours', minsToHHMM(weekTotals.workMins), `${minsToDecimal(weekTotals.workMins)} hrs decimal`]);
   
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;

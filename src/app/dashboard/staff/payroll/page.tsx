@@ -320,7 +320,7 @@ export default function PayrollPage() {
 
   const weekTotals = useMemo(() => ({
     totalJobMins: days.reduce((s, d) => s + d.totalJobMinutes, 0),
-    totalBreakMins: days.reduce((s, d) => s + d.totalBreakMinutes, 0),
+    totalTravelMins: days.reduce((s, d) => s + d.travelMinutes, 0),
     workMins: days.reduce((s, d) => s + d.workMinutes, 0),
   }), [days]);
 
@@ -454,7 +454,7 @@ export default function PayrollPage() {
               <span>Start</span>
               <span>Finish</span>
               <span>Job Hours</span>
-              <span>Breaks</span>
+              <span>Travel</span>
               <span>Net Work</span>
             </div>
 
@@ -530,7 +530,7 @@ export default function PayrollPage() {
                       <p className="text-sm text-text-secondary">{day.firstStart || '—'}</p>
                       <p className="text-sm text-text-secondary">{day.lastEnd || '—'}</p>
                       <p className="text-sm font-medium text-text-primary">{hasWork ? minutesToHHMM(day.totalJobMinutes) : '—'}</p>
-                      <p className="text-sm text-text-secondary">{day.totalBreakMinutes > 0 ? `${day.totalBreakMinutes}m` : '—'}</p>
+                      <p className="text-sm text-text-secondary">{day.travelMinutes > 0 ? minutesToHHMM(day.travelMinutes) : '—'}</p>
                       <p className={`text-sm font-bold ${hasWork ? 'text-text-primary' : 'text-text-tertiary'}`}>
                         {hasWork ? minutesToHHMM(day.workMinutes) : '—'}
                       </p>
@@ -549,7 +549,7 @@ export default function PayrollPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: 'Total Job Hours', value: minutesToHHMM(weekTotals.totalJobMins), sub: `${minutesToDecimal(weekTotals.totalJobMins)} decimal` },
-              { label: 'Total Breaks', value: minutesToHHMM(weekTotals.totalBreakMins), sub: `${weekTotals.totalBreakMins} minutes` },
+              { label: 'Total Travel', value: minutesToHHMM(weekTotals.totalTravelMins), sub: `${minutesToDecimal(weekTotals.totalTravelMins)} decimal` },
               { label: 'Net Work Hours', value: minutesToHHMM(weekTotals.workMins), sub: `${minutesToDecimal(weekTotals.workMins)} decimal` },
               { label: 'Days Worked', value: String(days.filter(d => d.jobs.length > 0).length), sub: 'days with jobs' },
             ].map(stat => (

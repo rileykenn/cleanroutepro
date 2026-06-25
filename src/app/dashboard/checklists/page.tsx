@@ -537,7 +537,7 @@ export default function ChecklistsPage() {
                   key={selectedClientId}
                   clientId={selectedClientId}
                   orgId={orgId}
-                  hideRates={profile?.role !== 'admin'}
+                  hideRates={profile?.role === 'staff'}
                   onDelete={async () => {
                     await deleteClient(selectedClientId);
                     setSelectedClientId(null);

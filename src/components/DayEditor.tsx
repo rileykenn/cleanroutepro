@@ -1208,31 +1208,32 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             )}
 
             {/* Start Time */}
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-              className="card p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-secondary">Day starts at</span>
-                <input type="time" value={activeTeam.dayStartTime}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    // Only dispatch when browser provides a complete HH:MM value.
-                    // While typing manually the field may emit "" or partial strings.
-                    if (v && /^\d{2}:\d{2}$/.test(v)) {
-                      dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: v });
-                    }
-                  }}
-                  className="text-sm font-medium bg-surface-elevated border border-border-light rounded-lg px-3 py-1.5 outline-none focus:border-primary" />
-              </div>
-              {baseDepartureTime !== activeTeam.dayStartTime && (
-                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border-light">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary shrink-0">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                  <span className="text-[11px] text-text-secondary">Leave base at</span>
-                  <span className="text-[11px] font-bold text-primary ml-auto">{baseDepartureTime}</span>
-                </div>
-              )}
-            </motion.div>
+            {(() => {
+              const hasBaseDeparture = baseDepartureTime && baseDepartureTime !== activeTeam.dayStartTime;
+              const displayTime = hasBaseDeparture ? baseDepartureTime : activeTeam.dayStartTime;
+              return (
+                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+                  className="card p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        className={hasBaseDeparture ? 'text-primary' : 'text-text-tertiary'}>
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                      </svg>
+                      <span className="text-xs text-text-secondary">Day starts at</span>
+                    </div>
+                    <input type="time" value={displayTime}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v && /^\d{2}:\d{2}$/.test(v)) {
+                          dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: v });
+                        }
+                      }}
+                      className={`text-sm font-medium bg-surface-elevated border rounded-lg px-3 py-1.5 outline-none focus:border-primary ${hasBaseDeparture ? 'border-primary/40 text-primary font-bold' : 'border-border-light'}`} />
+                  </div>
+                </motion.div>
+              );
+            })()}
 
             {/* Team Staff Picker (replaces driver picker + per-job assignment) */}
             {(() => {

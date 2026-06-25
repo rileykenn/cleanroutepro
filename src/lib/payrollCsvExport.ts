@@ -149,12 +149,6 @@ export function exportPayrollCsv(
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;
   rows.push(['Gross Wage', `$${grossWage.toFixed(2)}`]);
 
-  if (effectiveTotalKm > 0) {
-    const kmAllowance = effectiveTotalKm * perKmRate;
-    rows.push([`KM Allowance ($${perKmRate}/km)`, `$${kmAllowance.toFixed(2)}`]);
-    rows.push(['Total Payable', `$${(grossWage + kmAllowance).toFixed(2)}`]);
-  }
-
   const csvContent = rows.map(r => r.map(escapeCsv).join(',')).join('\n');
   return new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 }

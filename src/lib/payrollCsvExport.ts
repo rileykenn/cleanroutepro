@@ -67,31 +67,10 @@ export function exportPayrollCsv(
     'Finish',
     'Jobs',
     'Job Hours Total (Team)',
-    '',
     'Job Hours (Individual)',
-    '',
     'Travel',
-    '',
     'Net Work',
-    '',
     'KM',
-  ]);
-  // Sub-headers for h:mm / decimal pairs
-  rows.push([
-    '',
-    '',
-    '',
-    '',
-    '',
-    'h:mm',
-    'Decimal',
-    'h:mm',
-    'Decimal',
-    'h:mm',
-    'Decimal',
-    'h:mm',
-    'Decimal',
-    '',
   ]);
   rows.push([]); // Blank row before data
 
@@ -101,7 +80,7 @@ export function exportPayrollCsv(
 
     const dateObj = new Date(day.date + 'T00:00:00');
 
-    // Row 1: Day Name with values
+    // Row 1: Day Name + h:mm values
     rows.push([
       day.dayLabel,
       day.teamName,
@@ -109,19 +88,24 @@ export function exportPayrollCsv(
       day.lastEnd || '—',
       day.jobNames || '—',
       minsToHHMM(day.dayTotalJobMinutes),
-      minsToDecimal(day.dayTotalJobMinutes),
       minsToHHMM(day.individualJobMinutes),
-      minsToDecimal(day.individualJobMinutes),
       minsToHHMM(day.travelMinutes),
-      minsToDecimal(day.travelMinutes),
       minsToHHMM(day.workMinutes),
-      minsToDecimal(day.workMinutes),
       day.distanceKm > 0 ? day.distanceKm.toFixed(1) : '—',
     ]);
 
-    // Row 2: Date String
+    // Row 2: Date String + decimal values
     rows.push([
       dateObj.toLocaleDateString('en-AU', { day: '2-digit', month: 'long', year: 'numeric' }),
+      '',
+      '',
+      '',
+      '',
+      minsToDecimal(day.dayTotalJobMinutes),
+      minsToDecimal(day.individualJobMinutes),
+      minsToDecimal(day.travelMinutes),
+      minsToDecimal(day.workMinutes),
+      '',
     ]);
 
     // Blank row separator between days

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
-import { exportPayrollCsv, DayPayrollData } from '@/lib/payrollCsvExport';
+import { exportPayrollXlsx, DayPayrollData } from '@/lib/payrollXlsxExport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface StaffMember {
@@ -458,12 +458,13 @@ export default function PayrollPage() {
             </div>
 
             {/* Table header */}
-            <div className="hidden sm:grid grid-cols-[80px_1fr_80px_80px_100px_90px_80px] gap-3 px-4 py-2 bg-surface-elevated border-b border-border-light text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">
+            <div className="hidden sm:grid grid-cols-[80px_1fr_70px_70px_100px_100px_90px_90px] gap-2 px-4 py-2 bg-surface-elevated border-b border-border-light text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">
               <span>Day</span>
               <span>Jobs</span>
               <span>Start</span>
               <span>Finish</span>
-              <span>Job Hours</span>
+              <span>Team Total</span>
+              <span>Job Split</span>
               <span>Travel</span>
               <span>Net Work</span>
             </div>
@@ -511,7 +512,7 @@ export default function PayrollPage() {
                     </div>
 
                     {/* Desktop layout */}
-                    <div className="hidden sm:grid grid-cols-[80px_1fr_80px_80px_100px_90px_80px] gap-3 items-center">
+                    <div className="hidden sm:grid grid-cols-[80px_1fr_70px_70px_100px_100px_90px_90px] gap-2 items-start">
                       <div>
                         <p className={`text-sm font-semibold ${isToday ? 'text-primary' : hasWork ? 'text-text-primary' : 'text-text-tertiary'}`}>
                           {day.dayLabel}
@@ -539,11 +540,32 @@ export default function PayrollPage() {
 
                       <p className="text-sm text-text-secondary">{day.firstStart || '—'}</p>
                       <p className="text-sm text-text-secondary">{day.lastEnd || '—'}</p>
-                      <p className="text-sm font-medium text-text-primary">{hasWork ? minutesToHHMM(day.totalJobMinutes) : '—'}</p>
-                      <p className="text-sm text-text-secondary">{day.travelMinutes > 0 ? minutesToHHMM(day.travelMinutes) : '—'}</p>
-                      <p className={`text-sm font-bold ${hasWork ? 'text-text-primary' : 'text-text-tertiary'}`}>
-                        {hasWork ? minutesToHHMM(day.workMinutes) : '—'}
-                      </p>
+
+                      {/* Team Total */}
+                      <div>
+                        <p className="text-sm font-medium text-text-primary">{hasWork ? minutesToHHMM(day.totalJobMinutes) : '—'}</p>
+                        {hasWork && <p className="text-[10px] text-text-tertiary">{minutesToDecimal(day.totalJobMinutes)} dec</p>}
+                      </div>
+
+                      {/* Job Split */}
+                      <div>
+                        <p className="text-sm font-medium text-text-primary">{hasWork ? minutesToHHMM(day.individualJobMinutes) : '—'}</p>
+                        {hasWork && <p className="text-[10px] text-text-tertiary">{minutesToDecimal(day.individualJobMinutes)} dec</p>}
+                      </div>
+
+                      {/* Travel */}
+                      <div>
+                        <p className="text-sm text-text-secondary">{day.travelMinutes > 0 ? minutesToHHMM(day.travelMinutes) : '—'}</p>
+                        {day.travelMinutes > 0 && <p className="text-[10px] text-text-tertiary">{minutesToDecimal(day.travelMinutes)} dec</p>}
+                      </div>
+
+                      {/* Net Work */}
+                      <div>
+                        <p className={`text-sm font-bold ${hasWork ? 'text-text-primary' : 'text-text-tertiary'}`}>
+                          {hasWork ? minutesToHHMM(day.workMinutes) : '—'}
+                        </p>
+                        {hasWork && <p className="text-[10px] text-text-tertiary">{minutesToDecimal(day.workMinutes)} dec</p>}
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -556,9 +578,10 @@ export default function PayrollPage() {
         <div className="card p-5 space-y-4">
           <h3 className="text-sm font-bold text-text-primary">Weekly Summary</h3>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { label: 'Total Job Hours', value: minutesToHHMM(weekTotals.totalJobMins), sub: `${minutesToDecimal(weekTotals.totalJobMins)} decimal` },
+              { label: 'Job Hours (Team)', value: minutesToHHMM(weekTotals.totalJobMins), sub: `${minutesToDecimal(weekTotals.totalJobMins)} decimal` },
+              { label: 'Job Hours (Split)', value: minutesToHHMM(days.reduce((s, d) => s + d.individualJobMinutes, 0)), sub: `${minutesToDecimal(days.reduce((s, d) => s + d.individualJobMinutes, 0))} decimal` },
               { label: 'Total Travel', value: minutesToHHMM(weekTotals.totalTravelMins), sub: `${minutesToDecimal(weekTotals.totalTravelMins)} decimal` },
               { label: 'Net Work Hours', value: minutesToHHMM(weekTotals.workMins), sub: `${minutesToDecimal(weekTotals.workMins)} decimal` },
               { label: 'Days Worked', value: String(days.filter(d => d.jobs.length > 0).length), sub: 'days with jobs' },
@@ -611,22 +634,21 @@ export default function PayrollPage() {
         {/* Export button */}
         <div className="flex justify-end">
           <button
-            onClick={() => {
-              const blob = exportPayrollCsv(
+            onClick={async () => {
+              const blob = await exportPayrollXlsx(
                 selectedStaff?.name || 'Staff',
                 selectedStaff?.role || 'staff',
                 hourlyRate,
                 weekStart,
                 days,
                 weekTotals,
-                perKmRate,
                 totalKm
               );
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               const weekEnding = addDays(weekStart, 6).toLocaleDateString('en-AU').replace(/\//g, '-');
               a.href = url;
-              a.download = `payroll-${(selectedStaff?.name || 'Staff').replace(/\s+/g, '-')}-w${weekEnding}.csv`;
+              a.download = `payroll-${(selectedStaff?.name || 'Staff').replace(/\s+/g, '-')}-w${weekEnding}.xlsx`;
               a.click();
               URL.revokeObjectURL(url);
             }}
@@ -636,7 +658,7 @@ export default function PayrollPage() {
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Download CSV
+            Download XLSX
           </button>
         </div>
 

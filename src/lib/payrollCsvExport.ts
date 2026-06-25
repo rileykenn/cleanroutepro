@@ -61,24 +61,49 @@ export function exportPayrollCsv(
   // ── Column Headers ─────────────────────────────────────────────────────────
   rows.push([
     'Day / Date',
-    'Team Allocation',
+    'Team',
     'Start',
     'Finish',
     'Jobs',
-    'Job Hours - Day Total',
+    'Job Hours Total (Team)',
+    '',
     'Job Hours (Individual)',
+    '',
     'Travel',
-    'Net Work (Individual Job hours + Travel)'
+    '',
+    'Net Work',
+    '',
+    'KM',
+  ]);
+  // Sub-headers for h:mm / decimal pairs
+  rows.push([
+    '',
+    '',
+    '',
+    '',
+    '',
+    'h:mm',
+    'Decimal',
+    'h:mm',
+    'Decimal',
+    'h:mm',
+    'Decimal',
+    'h:mm',
+    'Decimal',
+    '',
   ]);
   rows.push([]); // Blank row before data
 
   // ── Daily Data ─────────────────────────────────────────────────────────────
+  const workedDays = days.filter(d => d.workMinutes > 0);
+  const kmPerDay = workedDays.length > 0 ? totalKm / workedDays.length : 0;
+
   for (const day of days) {
     if (day.workMinutes === 0) continue; // Skip days with no work
 
     const dateObj = new Date(day.date + 'T00:00:00');
-    
-    // Row 1: Day Name + HH:MM values
+
+    // Row 1: Day Name with values
     rows.push([
       day.dayLabel,
       day.teamName,
@@ -86,22 +111,19 @@ export function exportPayrollCsv(
       day.lastEnd || '—',
       day.jobNames || '—',
       minsToHHMM(day.dayTotalJobMinutes),
+      minsToDecimal(day.dayTotalJobMinutes),
       minsToHHMM(day.individualJobMinutes),
+      minsToDecimal(day.individualJobMinutes),
       minsToHHMM(day.travelMinutes),
-      minsToHHMM(day.workMinutes)
+      minsToDecimal(day.travelMinutes),
+      minsToHHMM(day.workMinutes),
+      minsToDecimal(day.workMinutes),
+      kmPerDay > 0 ? kmPerDay.toFixed(1) : '—',
     ]);
 
-    // Row 2: Date String + Decimal values
+    // Row 2: Date String
     rows.push([
-      dateObj.toLocaleDateString('en-AU', { day: '2-digit', month: 'long', year: 'numeric' }), // e.g., "15 June 2026"
-      '',
-      '',
-      '',
-      '',
-      minsToDecimal(day.dayTotalJobMinutes),
-      minsToDecimal(day.individualJobMinutes),
-      minsToDecimal(day.travelMinutes),
-      minsToDecimal(day.workMinutes)
+      dateObj.toLocaleDateString('en-AU', { day: '2-digit', month: 'long', year: 'numeric' }),
     ]);
 
     // Blank row separator between days
@@ -111,16 +133,39 @@ export function exportPayrollCsv(
   // ── Weekly Totals ──────────────────────────────────────────────────────────
   rows.push([]);
   rows.push(['WEEKLY TOTALS']);
-  rows.push(['Total Job Hours', minsToHHMM(weekTotals.totalJobMins), `${minsToDecimal(weekTotals.totalJobMins)} hrs decimal`]);
-  rows.push(['Total Travel', minsToHHMM(weekTotals.totalTravelMins), `${minsToDecimal(weekTotals.totalTravelMins)} hrs decimal`]);
-  rows.push(['Net Work Hours', minsToHHMM(weekTotals.workMins), `${minsToDecimal(weekTotals.workMins)} hrs decimal`]);
-  
+
+  const totalIndividualJobMins = days.reduce((s, d) => s + d.individualJobMinutes, 0);
+
+  rows.push([
+    'Total Job Hours (Team)',
+    minsToHHMM(weekTotals.totalJobMins),
+    `${minsToDecimal(weekTotals.totalJobMins)} hrs decimal`,
+  ]);
+  rows.push([
+    'Total Job Hours (Individual)',
+    minsToHHMM(totalIndividualJobMins),
+    `${minsToDecimal(totalIndividualJobMins)} hrs decimal`,
+  ]);
+  rows.push([
+    'Total Travel',
+    minsToHHMM(weekTotals.totalTravelMins),
+    `${minsToDecimal(weekTotals.totalTravelMins)} hrs decimal`,
+  ]);
+  rows.push([
+    'Net Work Hours',
+    minsToHHMM(weekTotals.workMins),
+    `${minsToDecimal(weekTotals.workMins)} hrs decimal`,
+  ]);
+  rows.push([
+    'Total KM',
+    totalKm > 0 ? `${totalKm.toFixed(1)} km` : '—',
+  ]);
+
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;
   rows.push(['Gross Wage', `$${grossWage.toFixed(2)}`]);
 
   if (totalKm > 0) {
     const kmAllowance = totalKm * perKmRate;
-    rows.push(['Total KM', `${totalKm.toFixed(1)} km`]);
     rows.push([`KM Allowance ($${perKmRate}/km)`, `$${kmAllowance.toFixed(2)}`]);
     rows.push(['Total Payable', `$${(grossWage + kmAllowance).toFixed(2)}`]);
   }

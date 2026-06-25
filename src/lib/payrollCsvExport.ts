@@ -10,6 +10,7 @@ export interface DayPayrollData {
   dayTotalJobMinutes: number;
   individualJobMinutes: number;
   travelMinutes: number;
+  distanceKm: number;
   workMinutes: number;
 }
 
@@ -95,9 +96,6 @@ export function exportPayrollCsv(
   rows.push([]); // Blank row before data
 
   // ── Daily Data ─────────────────────────────────────────────────────────────
-  const workedDays = days.filter(d => d.workMinutes > 0);
-  const kmPerDay = workedDays.length > 0 ? totalKm / workedDays.length : 0;
-
   for (const day of days) {
     if (day.workMinutes === 0) continue; // Skip days with no work
 
@@ -118,7 +116,7 @@ export function exportPayrollCsv(
       minsToDecimal(day.travelMinutes),
       minsToHHMM(day.workMinutes),
       minsToDecimal(day.workMinutes),
-      kmPerDay > 0 ? kmPerDay.toFixed(1) : '—',
+      day.distanceKm > 0 ? day.distanceKm.toFixed(1) : '—',
     ]);
 
     // Row 2: Date String
@@ -130,7 +128,10 @@ export function exportPayrollCsv(
     rows.push([]);
   }
 
-  // ── Weekly Totals ──────────────────────────────────────────────────────────
+  // Use sum of per-day KM from schedule data, fall back to manually entered totalKm
+  const computedTotalKm = days.reduce((s, d) => s + d.distanceKm, 0);
+  const effectiveTotalKm = computedTotalKm > 0 ? computedTotalKm : totalKm;
+
   rows.push([]);
   rows.push(['WEEKLY TOTALS']);
 
@@ -158,14 +159,14 @@ export function exportPayrollCsv(
   ]);
   rows.push([
     'Total KM',
-    totalKm > 0 ? `${totalKm.toFixed(1)} km` : '—',
+    effectiveTotalKm > 0 ? `${effectiveTotalKm.toFixed(1)} km` : '—',
   ]);
 
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;
   rows.push(['Gross Wage', `$${grossWage.toFixed(2)}`]);
 
-  if (totalKm > 0) {
-    const kmAllowance = totalKm * perKmRate;
+  if (effectiveTotalKm > 0) {
+    const kmAllowance = effectiveTotalKm * perKmRate;
     rows.push([`KM Allowance ($${perKmRate}/km)`, `$${kmAllowance.toFixed(2)}`]);
     rows.push(['Total Payable', `$${(grossWage + kmAllowance).toFixed(2)}`]);
   }

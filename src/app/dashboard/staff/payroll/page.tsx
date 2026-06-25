@@ -100,7 +100,7 @@ export default function PayrollPage() {
   const [perKmRate, setPerKmRate] = useState(0.99);
   const [totalKm, setTotalKm] = useState(0);
   const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null }>>({});
-  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number }>>(new Map());
+  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number }>>(new Map());
 
   // Load staff list
   useEffect(() => {
@@ -180,7 +180,7 @@ export default function PayrollPage() {
 
     // Get all schedules in the week range for this org
     const { data: schedules } = await supabase
-      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id, team_id, total_travel_minutes')
+      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id, team_id, total_travel_minutes, total_distance_km')
       .eq('org_id', profile.org_id)
       .gte('schedule_date', weekStartStr)
       .lte('schedule_date', weekEnd)
@@ -190,11 +190,11 @@ export default function PayrollPage() {
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
-    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number }>();
+    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number }>();
     schedules.forEach((s: any) => {
       const staffIds = s.staff_ids || [];
       const size = staffIds.length > 0 ? staffIds.length : 1;
-      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0 });
+      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0 });
     });
     setScheduleDataMap(newScheduleDataMap);
 
@@ -253,6 +253,7 @@ export default function PayrollPage() {
 
       // We will also track the saved travel minutes for this day's schedule
       let savedTravelMinutes = 0;
+      let dayDistanceKm = 0;
 
       dayJobs.forEach(j => {
         const schedData = scheduleDataMap.get(j.schedule_id);
@@ -263,8 +264,10 @@ export default function PayrollPage() {
           if (!primaryTeamId) primaryTeamId = schedData.teamId;
         }
         if (schedData?.totalTravelMinutes) {
-          // If a team has multiple schedules in a day, take the max, or assume they belong to one schedule.
           savedTravelMinutes = Math.max(savedTravelMinutes, schedData.totalTravelMinutes);
+        }
+        if (schedData?.totalDistanceKm) {
+          dayDistanceKm = Math.max(dayDistanceKm, schedData.totalDistanceKm);
         }
       });
 
@@ -311,6 +314,7 @@ export default function PayrollPage() {
         dayTotalJobMinutes: totalJobMinutes,
         individualJobMinutes,
         travelMinutes,
+        distanceKm: dayDistanceKm,
         totalJobMinutes,
         totalBreakMinutes,
         workMinutes: Math.max(0, workMinutes),
@@ -323,6 +327,12 @@ export default function PayrollPage() {
     totalTravelMins: days.reduce((s, d) => s + d.travelMinutes, 0),
     workMins: days.reduce((s, d) => s + d.workMinutes, 0),
   }), [days]);
+
+  // Auto-populate totalKm from schedule route data
+  useEffect(() => {
+    const computedKm = days.reduce((s, d) => s + d.distanceKm, 0);
+    if (computedKm > 0) setTotalKm(computedKm);
+  }, [days]);
 
   const selectedStaff = staff.find(s => s.id === selectedStaffId);
   const hourlyRate = selectedStaff?.hourly_rate || 0;

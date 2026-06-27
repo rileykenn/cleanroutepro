@@ -37,6 +37,11 @@ export default function SettingsPage() {
   const [defaultsSaving, setDefaultsSaving] = useState(false);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
+  // Payroll cycle start day
+  const [payrollStartDay, setPayrollStartDay] = useState(1);
+  const [payrollSaving, setPayrollSaving] = useState(false);
+  const [payrollSaved, setPayrollSaved] = useState(false);
+
   // Sync timezone state when profile loads
   useEffect(() => {
     setTimezone(getAppTimezone());
@@ -47,10 +52,10 @@ export default function SettingsPage() {
     if (!profile?.org_id) return;
     supabase
       .from('organizations')
-      .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate')
+      .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate, payroll_cycle_start_day')
       .eq('id', profile.org_id)
       .single()
-      .then(({ data }: { data: { default_hourly_rate: number; default_fuel_efficiency: number; default_fuel_price: number; default_per_km_rate: number } | null }) => {
+      .then(({ data }: { data: any }) => {
         if (data) {
           setDefaults({
             default_hourly_rate: Number(data.default_hourly_rate) || 38,
@@ -58,6 +63,7 @@ export default function SettingsPage() {
             default_fuel_price: Number(data.default_fuel_price) || 1.85,
             default_per_km_rate: Number(data.default_per_km_rate) || 0,
           });
+          setPayrollStartDay(data.payroll_cycle_start_day ?? 1);
         }
       });
   }, [supabase, profile?.org_id]);
@@ -87,6 +93,14 @@ export default function SettingsPage() {
     await supabase.from('organizations').update(defaults).eq('id', profile.org_id);
     setDefaultsSaving(false); setDefaultsSaved(true);
     setTimeout(() => setDefaultsSaved(false), 2000);
+  };
+
+  const handleSavePayrollCycle = async () => {
+    if (!profile?.org_id) return;
+    setPayrollSaving(true);
+    await supabase.from('organizations').update({ payroll_cycle_start_day: payrollStartDay }).eq('id', profile.org_id);
+    setPayrollSaving(false); setPayrollSaved(true);
+    setTimeout(() => setPayrollSaved(false), 2000);
   };
 
   // Detect browser timezone for the label
@@ -223,6 +237,38 @@ export default function SettingsPage() {
               {defaultsSaving ? 'Saving...' : 'Save Defaults'}
             </button>
             {defaultsSaved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
+          </div>
+        </div>
+        )}
+
+        {/* ── Payroll Settings ────────────────────────────────────────────── */}
+        {profile?.role === 'owner' && (
+        <div className="card-elevated p-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-text-primary">Payroll Settings</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">Configure your organization's payroll cycle.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Payroll Cycle Start Day</label>
+            <select
+              value={payrollStartDay}
+              onChange={(e) => setPayrollStartDay(Number(e.target.value))}
+              className="input-field text-sm w-full"
+            >
+              <option value={0}>Sunday</option>
+              <option value={1}>Monday</option>
+              <option value={2}>Tuesday</option>
+              <option value={3}>Wednesday</option>
+              <option value={4}>Thursday</option>
+              <option value={5}>Friday</option>
+              <option value={6}>Saturday</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleSavePayrollCycle} disabled={payrollSaving} className="btn-primary text-sm">
+              {payrollSaving ? 'Saving...' : 'Save Payroll Cycle'}
+            </button>
+            {payrollSaved && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-success font-medium">✓ Saved</motion.span>}
           </div>
         </div>
         )}

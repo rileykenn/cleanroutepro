@@ -38,10 +38,10 @@ interface DayData extends DayPayrollData {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function getMondayOf(date: Date): Date {
+function getCycleStartOf(date: Date, startDayOfWeek: number): Date {
   const d = new Date(date);
   const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day; // Monday start
+  const diff = day >= startDayOfWeek ? startDayOfWeek - day : startDayOfWeek - day - 7;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -76,8 +76,6 @@ function minutesToDecimal(mins: number): string {
   return (mins / 60).toFixed(2);
 }
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PayrollPage() {
   const { profile } = useAuth();
@@ -93,14 +91,16 @@ export default function PayrollPage() {
 
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  const [weekStart, setWeekStart] = useState<Date>(() => getMondayOf(new Date()));
-  const [publishedWeeks, setPublishedWeeks] = useState<{ start: string, end: string, startObj: Date, display: string }[]>([]);
+  const [payrollStartDay, setPayrollStartDay] = useState<number | null>(null);
+  const [weekStart, setWeekStart] = useState<Date | null>(null);
+  const [publishedWeeks, setPublishedWeeks] = useState<{ start: string, end: string, startObj: Date, display: string, publishedCount: number }[]>([]);
+  const [publishedDatesInCycle, setPublishedDatesInCycle] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [perKmRate, setPerKmRate] = useState(0.99);
   const [totalKm, setTotalKm] = useState(0);
   const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null }>>({});
-  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number }>>(new Map());
+  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string }>>(new Map());
 
   // Load staff list
   useEffect(() => {
@@ -115,10 +115,31 @@ export default function PayrollPage() {
     loadStaff();
   }, [supabase, profile?.org_id, selectedStaffId]);
 
+  // Load org payroll start day
+  useEffect(() => {
+    if (!profile?.org_id) return;
+    supabase
+      .from('organizations')
+      .select('payroll_cycle_start_day')
+      .eq('id', profile.org_id)
+      .single()
+      .then(({ data }: { data: any }) => {
+        if (data && data.payroll_cycle_start_day !== undefined) {
+          const day = data.payroll_cycle_start_day;
+          setPayrollStartDay(day);
+          // Set initial weekStart once we know the actual start day
+          setWeekStart(prev => prev || getCycleStartOf(new Date(), day));
+        } else {
+          setPayrollStartDay(1);
+          setWeekStart(prev => prev || getCycleStartOf(new Date(), 1));
+        }
+      });
+  }, [supabase, profile?.org_id]);
+
   // Fetch all published weeks to populate the dropdown
   useEffect(() => {
     async function fetchPublishedWeeks() {
-      if (!profile?.org_id) return;
+      if (!profile?.org_id || payrollStartDay === null) return;
       const { data } = await supabase
         .from('schedules')
         .select('schedule_date')
@@ -126,36 +147,50 @@ export default function PayrollPage() {
         .eq('is_published', true);
       
       if (!data) return;
-      const mondayStrs = new Set<string>();
+
+      // Group published dates by payroll cycle
+      const cycleDateMap = new Map<string, Set<string>>();
       data.forEach((r: any) => {
         const d = new Date(r.schedule_date + 'T00:00:00');
-        mondayStrs.add(toDateStr(getMondayOf(d)));
+        const cycleStart = toDateStr(getCycleStartOf(d, payrollStartDay));
+        if (!cycleDateMap.has(cycleStart)) cycleDateMap.set(cycleStart, new Set());
+        cycleDateMap.get(cycleStart)!.add(r.schedule_date);
       });
 
-      const weeks = Array.from(mondayStrs).map(s => {
+      const weeks = Array.from(cycleDateMap.entries()).map(([s, dates]) => {
         const startObj = new Date(s + 'T00:00:00');
         const endObj = addDays(startObj, 6);
+        const publishedCount = dates.size;
         return {
           start: s,
           end: toDateStr(endObj),
           startObj,
-          display: `${startObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} — ${endObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+          publishedCount,
+          display: `${startObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} — ${endObj.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}${publishedCount < 7 ? ` (${publishedCount}/7 days)` : ''}`
         };
-      }).sort((a, b) => b.startObj.getTime() - a.startObj.getTime()); // Descending order (newest first)
+      }).sort((a, b) => b.startObj.getTime() - a.startObj.getTime());
 
       setPublishedWeeks(weeks);
 
       // If the currently selected weekStart is not in the list, default to the newest one
       setWeekStart((currentStart) => {
-        const currentStartStr = toDateStr(currentStart);
-        if (!mondayStrs.has(currentStartStr) && weeks.length > 0) {
+        const currentStartStr = currentStart ? toDateStr(currentStart) : '';
+        if (!cycleDateMap.has(currentStartStr) && weeks.length > 0) {
+          // Also set the published dates for the default selection
+          setPublishedDatesInCycle(cycleDateMap.get(weeks[0].start) || new Set());
           return weeks[0].startObj;
         }
+        if (weeks.length === 0) {
+          setPublishedDatesInCycle(new Set());
+          return getCycleStartOf(new Date(), payrollStartDay);
+        }
+        // Update published dates for currently selected cycle
+        setPublishedDatesInCycle(cycleDateMap.get(currentStartStr) || new Set());
         return currentStart;
       });
     }
     fetchPublishedWeeks();
-  }, [supabase, profile?.org_id]);
+  }, [supabase, profile?.org_id, payrollStartDay]);
 
   // Load teams
   useEffect(() => {
@@ -172,7 +207,7 @@ export default function PayrollPage() {
 
   // Load jobs for selected staff + week
   const loadJobs = useCallback(async () => {
-    if (!profile?.org_id || !selectedStaffId) return;
+    if (!profile?.org_id || !selectedStaffId || !weekStart) return;
     setLoading(true);
 
     const weekEnd = toDateStr(addDays(weekStart, 6));
@@ -190,11 +225,11 @@ export default function PayrollPage() {
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
-    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number }>();
+    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string }>();
     schedules.forEach((s: any) => {
       const staffIds = s.staff_ids || [];
       const size = staffIds.length > 0 ? staffIds.length : 1;
-      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0 });
+      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0, driverStaffId: s.driver_staff_id });
     });
     setScheduleDataMap(newScheduleDataMap);
 
@@ -230,7 +265,7 @@ export default function PayrollPage() {
   // ── Compute per-day data ──────────────────────────────────────────────────
   const days = useMemo<DayData[]>(() => {
     return Array.from({ length: 7 }, (_, di) => {
-      const date = toDateStr(addDays(weekStart, di));
+      const date = toDateStr(addDays(weekStart!, di));
       const dayJobs = jobs.filter(j => j.schedule_date === date && !j.is_break);
       const dayBreaks = jobs.filter(j => j.schedule_date === date && j.is_break);
 
@@ -266,7 +301,7 @@ export default function PayrollPage() {
         if (schedData?.totalTravelMinutes) {
           savedTravelMinutes = Math.max(savedTravelMinutes, schedData.totalTravelMinutes);
         }
-        if (schedData?.totalDistanceKm) {
+        if (schedData?.totalDistanceKm && schedData.driverStaffId === selectedStaffId) {
           dayDistanceKm = Math.max(dayDistanceKm, schedData.totalDistanceKm);
         }
       });
@@ -304,7 +339,7 @@ export default function PayrollPage() {
 
       return {
         date,
-        dayLabel: DAY_LABELS[di],
+        dayLabel: new Date(date + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' }),
         teamName,
         jobNames,
         jobs: dayJobs,
@@ -320,7 +355,14 @@ export default function PayrollPage() {
         workMinutes: Math.max(0, workMinutes),
       };
     });
-  }, [weekStart, jobs, scheduleDataMap, teams]);
+  }, [weekStart, jobs, scheduleDataMap, teams, selectedStaffId]);
+
+  // Compute whether the current cycle is complete
+  const currentCyclePublishedCount = useMemo(() => {
+    const week = publishedWeeks.find(w => weekStart && w.start === toDateStr(weekStart));
+    return week?.publishedCount ?? 0;
+  }, [publishedWeeks, weekStart]);
+  const isCycleIncomplete = currentCyclePublishedCount > 0 && currentCyclePublishedCount < 7;
 
   const weekTotals = useMemo(() => ({
     totalJobMins: days.reduce((s, d) => s + d.totalJobMinutes, 0),
@@ -340,8 +382,19 @@ export default function PayrollPage() {
   const kmAllowance = totalKm * perKmRate;
   const totalPayable = grossWage + kmAllowance;
 
-  const weekEndDisplay = addDays(weekStart, 6).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
-  const weekStartDisplay = weekStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+  const weekEndDisplay = weekStart ? addDays(weekStart, 6).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const weekStartDisplay = weekStart ? weekStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+  // Show loading state until payroll config is ready
+  if (payrollStartDay === null || !weekStart) {
+    return (
+      <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-20 lg:pb-6">
+        <div className="max-w-[900px] mx-auto space-y-6">
+          <div className="space-y-2">{[1,2,3,4,5].map(i => <div key={i} className="shimmer h-16 rounded-xl"/>)}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto p-4 lg:p-6 custom-scrollbar pb-20 lg:pb-6">
@@ -444,6 +497,26 @@ export default function PayrollPage() {
             )}
           </div>
         </div>
+
+        {/* Incomplete cycle warning */}
+        {isCycleIncomplete && (
+          <div className="flex items-start gap-3 p-4 rounded-xl" style={{ background: '#dc2626', border: '2px solid #991b1b' }}>
+            <div className="flex items-center justify-center shrink-0 w-10 h-10 rounded-full" style={{ background: 'rgba(255,255,255,0.2)' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold" style={{ color: 'white' }}>⚠ Incomplete Payroll Period — {currentCyclePublishedCount}/7 Days Published</p>
+              <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                This payroll cycle spans across two schedule weeks. Only <strong style={{ color: 'white' }}>{currentCyclePublishedCount} of 7 days</strong> have
+                published schedules. Publish both schedule weeks before exporting to avoid incorrect wage totals.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Daily breakdown */}
         {loading ? (
@@ -635,6 +708,13 @@ export default function PayrollPage() {
         <div className="flex justify-end">
           <button
             onClick={async () => {
+              if (isCycleIncomplete) {
+                const confirmed = window.confirm(
+                  `Warning: Only ${currentCyclePublishedCount} of 7 days are published for this payroll period. ` +
+                  `The exported totals may be incomplete. Continue anyway?`
+                );
+                if (!confirmed) return;
+              }
               const blob = await exportPayrollXlsx(
                 selectedStaff?.name || 'Staff',
                 selectedStaff?.role || 'staff',

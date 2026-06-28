@@ -765,7 +765,7 @@ function LogicBlockEditor({ field, allFields, onChange, onRemove, onMove, isFirs
 // ─── Main ChecklistBuilder ────────────────────────────────────────────────────
 interface ChecklistBuilderProps {
   sections: ChecklistSection[];
-  onChange: (sections: ChecklistSection[]) => void;
+  onChange: React.Dispatch<React.SetStateAction<ChecklistSection[]>>;
   initialName: string;
   initialIsDefault?: boolean;
   mode?: 'client-profile' | 'template';
@@ -784,36 +784,50 @@ export default function ChecklistBuilder({
   const [name, setName] = useState(initialName);
   const [isDefault, setIsDefault] = useState(initialIsDefault);
 
+  // Sync name from parent (e.g. sidebar rename)
+  useEffect(() => { setName(initialName); }, [initialName]);
+
   // Flat field list (single section for DB compat)
   const fields: ChecklistField[] = useMemo(() => sections[0]?.fields ?? [], [sections]);
   const sectionId = useMemo(() => sections[0]?.id ?? uid(), [sections]);
 
-  const setFields = useCallback((next: ChecklistField[]) => {
-    onChange([{ id: sectionId, title: '', fields: next }]);
+  // Functional-updater version of setFields to avoid stale closure bugs.
+  // All field mutations go through this so they always read the latest state.
+  const setFields = useCallback((updater: ChecklistField[] | ((prev: ChecklistField[]) => ChecklistField[])) => {
+    onChange(prev => {
+      const prevFields = prev[0]?.fields ?? [];
+      const prevId = prev[0]?.id ?? sectionId;
+      const nextFields = typeof updater === 'function' ? updater(prevFields) : updater;
+      return [{ id: prevId, title: '', fields: nextFields }];
+    });
   }, [onChange, sectionId]);
 
   const updateField = useCallback((id: string, patch: Partial<ChecklistField>) =>
-    setFields(fields.map(f => f.id === id ? { ...f, ...patch } : f)), [fields, setFields]);
+    setFields(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f)), [setFields]);
 
   const removeField = useCallback((id: string) =>
-    setFields(fields.filter(f => f.id !== id)), [fields, setFields]);
+    setFields(prev => prev.filter(f => f.id !== id)), [setFields]);
 
   const moveField = useCallback((idx: number, dir: -1 | 1) => {
-    const next = [...fields];
-    const target = idx + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[idx], next[target]] = [next[target], next[idx]];
-    setFields(next);
-  }, [fields, setFields]);
+    setFields(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }, [setFields]);
 
   // Add new block after a given index (or at end)
   const addBlock = useCallback((afterIdx: number, type: FieldType = 'paragraph') => {
     const newId = uid();
-    const next = [...fields];
-    next.splice(afterIdx + 1, 0, { id: newId, type, label: '' });
-    setFields(next);
+    setFields(prev => {
+      const next = [...prev];
+      next.splice(afterIdx + 1, 0, { id: newId, type, label: '' });
+      return next;
+    });
     return newId;
-  }, [fields, setFields]);
+  }, [setFields]);
 
   const yesNoFields = useMemo(() => fields.filter(f => f.type === 'yesno'), [fields]);
 
@@ -895,7 +909,7 @@ export default function ChecklistBuilder({
       const label = ghostValue.trim();
       if (!label) return;
       const newId = uid();
-      setFields([...fields, { id: newId, type: 'paragraph', label }]);
+      setFields(prev => [...prev, { id: newId, type: 'paragraph' as FieldType, label }]);
       setGhostValue('');
       focusBlock(newId);
     }
@@ -906,19 +920,23 @@ export default function ChecklistBuilder({
   }, [slashState, ghostValue, fields, setFields, focusBlock]);
 
   // Close slash menu on outside click
+  // Keep a ref to always access the latest updateField (avoids stale closure in effect)
+  const updateFieldRef = useRef(updateField);
+  updateFieldRef.current = updateField;
+
   useEffect(() => {
     if (!slashState) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (!target.closest('[data-slash-menu]') && !target.closest('[data-block-input]')) {
         // Restore the label to prefix (discard slash+query)
-        updateField(slashState.blockId, { label: slashState.prefix });
+        updateFieldRef.current(slashState.blockId, { label: slashState.prefix });
         setSlashState(null);
       }
     };
     setTimeout(() => window.addEventListener('mousedown', handler), 0);
     return () => window.removeEventListener('mousedown', handler);
-  }, [slashState, updateField]);
+  }, [slashState]);
 
   // ── Handle input change for a block ──────────────────────────────────────
   const handleInputChange = useCallback((field: ChecklistField, idx: number, value: string, inputEl: HTMLInputElement | null) => {
@@ -960,7 +978,7 @@ export default function ChecklistBuilder({
     if (blockId === GHOST_ID) {
       // Create a brand-new block from the ghost
       const newId = uid();
-      setFields([...fields, { id: newId, type, label: prefix }]);
+      setFields(prev => [...prev, { id: newId, type, label: prefix }]);
       setGhostValue('');
       setSlashState(null);
       focusBlock(newId);
@@ -970,7 +988,7 @@ export default function ChecklistBuilder({
       setSlashState(null);
       focusBlock(blockId);
     }
-  }, [slashState, fields, setFields, updateField, focusBlock]);
+  }, [slashState, setFields, updateField, focusBlock]);
 
   // ── Handle keydown for a block ────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, field: ChecklistField, idx: number) => {

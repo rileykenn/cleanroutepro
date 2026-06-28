@@ -13,6 +13,7 @@ export interface DayPayrollData {
   individualJobMinutes: number;
   travelMinutes: number;
   distanceKm: number;
+  kmAllowance: number;
   workMinutes: number;
 }
 
@@ -40,7 +41,6 @@ export async function exportPayrollXlsx(
   weekStart: Date,
   days: DayPayrollData[],
   weekTotals: WeekPayrollTotals,
-  totalKm: number,
 ): Promise<Blob> {
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet('Payroll');
@@ -101,7 +101,7 @@ export async function exportPayrollXlsx(
 
   // Weekly totals
   const computedTotalKm = days.reduce((s, d) => s + d.distanceKm, 0);
-  const effectiveTotalKm = computedTotalKm > 0 ? computedTotalKm : totalKm;
+  const computedKmAllowance = days.reduce((s, d) => s + d.kmAllowance, 0);
   const totalIndividualJobMins = days.reduce((s, d) => s + d.individualJobMinutes, 0);
 
   ws.addRow([]);
@@ -110,10 +110,16 @@ export async function exportPayrollXlsx(
   ws.addRow(['Total Job Hours (Individual)', minsToHHMM(totalIndividualJobMins), minsToDecimal(totalIndividualJobMins)]);
   ws.addRow(['Total Travel', minsToHHMM(weekTotals.totalTravelMins), minsToDecimal(weekTotals.totalTravelMins)]);
   ws.addRow(['Net Work Hours', minsToHHMM(weekTotals.workMins), minsToDecimal(weekTotals.workMins)]);
-  ws.addRow(['Total KM', effectiveTotalKm > 0 ? `${effectiveTotalKm.toFixed(1)} km` : '—']);
+  if (computedTotalKm > 0) {
+    ws.addRow(['Total KM', `${computedTotalKm.toFixed(1)} km`]);
+    ws.addRow(['KM Allowance', `$${computedKmAllowance.toFixed(2)}`]);
+  }
 
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;
   ws.addRow(['Gross Wage', `$${grossWage.toFixed(2)}`]);
+  if (computedKmAllowance > 0) {
+    ws.addRow(['Total Payable', `$${(grossWage + computedKmAllowance).toFixed(2)}`]);
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

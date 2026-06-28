@@ -29,7 +29,6 @@ export default function SettingsPage() {
 
   // Org-level defaults for new teams
   const [defaults, setDefaults] = useState({
-    default_hourly_rate: 38,
     default_fuel_efficiency: 10,
     default_fuel_price: 1.85,
     default_per_km_rate: 0,
@@ -52,13 +51,12 @@ export default function SettingsPage() {
     if (!profile?.org_id) return;
     supabase
       .from('organizations')
-      .select('default_hourly_rate, default_fuel_efficiency, default_fuel_price, default_per_km_rate, payroll_cycle_start_day')
+      .select('default_fuel_efficiency, default_fuel_price, default_per_km_rate, payroll_cycle_start_day')
       .eq('id', profile.org_id)
       .single()
       .then(({ data }: { data: any }) => {
         if (data) {
           setDefaults({
-            default_hourly_rate: Number(data.default_hourly_rate) || 38,
             default_fuel_efficiency: Number(data.default_fuel_efficiency) || 10,
             default_fuel_price: Number(data.default_fuel_price) || 1.85,
             default_per_km_rate: Number(data.default_per_km_rate) || 0,
@@ -90,7 +88,14 @@ export default function SettingsPage() {
   const handleSaveDefaults = async () => {
     if (!profile?.org_id) return;
     setDefaultsSaving(true);
+    // Save org defaults
     await supabase.from('organizations').update(defaults).eq('id', profile.org_id);
+    // Propagate fuel/km settings to all existing teams in this org
+    await supabase.from('teams').update({
+      fuel_efficiency: defaults.default_fuel_efficiency,
+      fuel_price: defaults.default_fuel_price,
+      per_km_rate: defaults.default_per_km_rate,
+    }).eq('org_id', profile.org_id);
     setDefaultsSaving(false); setDefaultsSaved(true);
     setTimeout(() => setDefaultsSaved(false), 2000);
   };
@@ -166,26 +171,11 @@ export default function SettingsPage() {
           <div>
             <h3 className="text-sm font-bold text-text-primary">Scheduling Defaults</h3>
             <p className="text-xs text-text-tertiary mt-0.5">
-              These values pre-fill new teams. Existing teams keep their own rates and can be updated individually in the schedule view.
+              Fuel and mileage settings. Saving will update all existing teams.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Hourly Rate */}
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1">Default Hourly Rate</label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm text-text-tertiary">$</span>
-                <input
-                  type="number" min={0} step={0.5}
-                  value={defaults.default_hourly_rate}
-                  onChange={e => setDefaults(d => ({ ...d, default_hourly_rate: parseFloat(e.target.value) || 0 }))}
-                  className="input-field text-sm"
-                />
-                <span className="text-xs text-text-tertiary whitespace-nowrap">/hr</span>
-              </div>
-            </div>
-
             {/* Fuel Efficiency */}
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">Fuel Efficiency</label>

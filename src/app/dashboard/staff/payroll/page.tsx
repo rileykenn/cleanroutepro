@@ -97,10 +97,8 @@ export default function PayrollPage() {
   const [publishedDatesInCycle, setPublishedDatesInCycle] = useState<Set<string>>(new Set());
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(false);
-  const [perKmRate, setPerKmRate] = useState(0.99);
-  const [totalKm, setTotalKm] = useState(0);
-  const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null }>>({});
-  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string }>>(new Map());
+  const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null, calculateFuel: boolean, perKmRate: number }>>({});
+  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number }>>(new Map());
 
   // Load staff list
   useEffect(() => {
@@ -124,10 +122,9 @@ export default function PayrollPage() {
       .eq('id', profile.org_id)
       .single()
       .then(({ data }: { data: any }) => {
-        if (data && data.payroll_cycle_start_day !== undefined) {
-          const day = data.payroll_cycle_start_day;
+        if (data) {
+          const day = data.payroll_cycle_start_day ?? 1;
           setPayrollStartDay(day);
-          // Set initial weekStart once we know the actual start day
           setWeekStart(prev => prev || getCycleStartOf(new Date(), day));
         } else {
           setPayrollStartDay(1);
@@ -192,14 +189,14 @@ export default function PayrollPage() {
     fetchPublishedWeeks();
   }, [supabase, profile?.org_id, payrollStartDay]);
 
-  // Load teams
+  // Load teams (including calculate_fuel and per_km_rate)
   useEffect(() => {
     if (!profile?.org_id) return;
-    supabase.from('teams').select('id, name, day_start_time').eq('org_id', profile.org_id)
+    supabase.from('teams').select('id, name, day_start_time, calculate_fuel, per_km_rate').eq('org_id', profile.org_id)
       .then(({ data }: { data: any }) => {
         if (data) {
-          const map: Record<string, { name: string, dayStartTime: string | null }> = {};
-          data.forEach((t: any) => map[t.id] = { name: t.name, dayStartTime: t.day_start_time });
+          const map: Record<string, { name: string, dayStartTime: string | null, calculateFuel: boolean, perKmRate: number }> = {};
+          data.forEach((t: any) => map[t.id] = { name: t.name, dayStartTime: t.day_start_time, calculateFuel: Boolean(t.calculate_fuel), perKmRate: Number(t.per_km_rate) || 0 });
           setTeams(map);
         }
       });
@@ -225,11 +222,12 @@ export default function PayrollPage() {
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
-    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string }>();
+    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number }>();
     schedules.forEach((s: any) => {
       const staffIds = s.staff_ids || [];
       const size = staffIds.length > 0 ? staffIds.length : 1;
-      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0, driverStaffId: s.driver_staff_id });
+      const teamData = teams[s.team_id];
+      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0, driverStaffId: s.driver_staff_id, calculateFuel: teamData?.calculateFuel ?? false, perKmRate: teamData?.perKmRate ?? 0 });
     });
     setScheduleDataMap(newScheduleDataMap);
 
@@ -258,7 +256,7 @@ export default function PayrollPage() {
       setJobs([]);
     }
     setLoading(false);
-  }, [supabase, profile?.org_id, selectedStaffId, weekStart]);
+  }, [supabase, profile?.org_id, selectedStaffId, weekStart, teams]);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
 
@@ -289,6 +287,7 @@ export default function PayrollPage() {
       // We will also track the saved travel minutes for this day's schedule
       let savedTravelMinutes = 0;
       let dayDistanceKm = 0;
+      let dayKmAllowance = 0;
 
       dayJobs.forEach(j => {
         const schedData = scheduleDataMap.get(j.schedule_id);
@@ -301,8 +300,11 @@ export default function PayrollPage() {
         if (schedData?.totalTravelMinutes) {
           savedTravelMinutes = Math.max(savedTravelMinutes, schedData.totalTravelMinutes);
         }
-        if (schedData?.totalDistanceKm && schedData.driverStaffId === selectedStaffId) {
-          dayDistanceKm = Math.max(dayDistanceKm, schedData.totalDistanceKm);
+        // Only include KM if this team has calculate_fuel ON and this staff is the driver
+        if (schedData?.calculateFuel && schedData.totalDistanceKm && schedData.driverStaffId === selectedStaffId) {
+          const km = schedData.totalDistanceKm;
+          dayDistanceKm = Math.max(dayDistanceKm, km);
+          dayKmAllowance = Math.max(dayKmAllowance, km * schedData.perKmRate);
         }
       });
 
@@ -350,6 +352,7 @@ export default function PayrollPage() {
         individualJobMinutes,
         travelMinutes,
         distanceKm: dayDistanceKm,
+        kmAllowance: dayKmAllowance,
         totalJobMinutes,
         totalBreakMinutes,
         workMinutes: Math.max(0, workMinutes),
@@ -370,16 +373,11 @@ export default function PayrollPage() {
     workMins: days.reduce((s, d) => s + d.workMinutes, 0),
   }), [days]);
 
-  // Auto-populate totalKm from schedule route data
-  useEffect(() => {
-    const computedKm = days.reduce((s, d) => s + d.distanceKm, 0);
-    if (computedKm > 0) setTotalKm(computedKm);
-  }, [days]);
-
   const selectedStaff = staff.find(s => s.id === selectedStaffId);
   const hourlyRate = selectedStaff?.hourly_rate || 0;
   const grossWage = (weekTotals.workMins / 60) * hourlyRate;
-  const kmAllowance = totalKm * perKmRate;
+  const totalKm = days.reduce((s, d) => s + d.distanceKm, 0);
+  const kmAllowance = days.reduce((s, d) => s + d.kmAllowance, 0);
   const totalPayable = grossWage + kmAllowance;
 
   const weekEndDisplay = weekStart ? addDays(weekStart, 6).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
@@ -428,21 +426,6 @@ export default function PayrollPage() {
                   <option key={s.id} value={s.id}>{s.name} — ${s.hourly_rate}/hr</option>
                 ))}
               </select>
-            </div>
-
-            {/* Per-km rate */}
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5">Per-km Rate (ATO allowance)</label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-text-tertiary shrink-0">$</span>
-                <input
-                  type="number" min={0} step={0.01}
-                  value={perKmRate}
-                  onChange={e => setPerKmRate(parseFloat(e.target.value) || 0)}
-                  className="input-field text-sm"
-                />
-                <span className="text-xs text-text-tertiary shrink-0">/km</span>
-              </div>
             </div>
           </div>
 
@@ -680,21 +663,15 @@ export default function PayrollPage() {
                 <span className="text-sm font-semibold text-text-primary">${grossWage.toFixed(2)}</span>
               </div>
 
-              {/* KM input */}
+              {/* KM Allowance — only shown if there's KM data from teams with calculate_fuel ON */}
+              {kmAllowance > 0 && (
               <div className="flex justify-between items-center px-4 py-3 gap-4">
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="text-sm text-text-secondary shrink-0">Total KM travelled</span>
-                  <input
-                    type="number" min={0} step={0.1}
-                    value={totalKm || ''}
-                    onChange={e => setTotalKm(parseFloat(e.target.value) || 0)}
-                    placeholder="0"
-                    className="w-20 px-2 py-1 border border-border rounded-lg text-sm text-right"
-                  />
-                  <span className="text-xs text-text-tertiary shrink-0">km @ ${perKmRate}/km</span>
-                </div>
-                <span className="text-sm font-semibold text-text-primary shrink-0">${kmAllowance.toFixed(2)}</span>
+                <span className="text-sm text-text-secondary">
+                  KM Allowance ({totalKm.toFixed(1)} km)
+                </span>
+                <span className="text-sm font-semibold text-text-primary">${kmAllowance.toFixed(2)}</span>
               </div>
+              )}
 
               <div className="flex justify-between items-center px-4 py-3.5 bg-surface-elevated">
                 <span className="text-sm font-bold text-text-primary">Total Payable</span>
@@ -722,7 +699,6 @@ export default function PayrollPage() {
                 weekStart,
                 days,
                 weekTotals,
-                totalKm
               );
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');

@@ -43,7 +43,7 @@ export default function StaffRosterPanel({ orgId, selectedDate, teams, activeTea
   const loadData = useCallback(async () => {
     if (!orgId) return;
     const [{ data: staffData }, { data: assignData }] = await Promise.all([
-      supabase.from('staff_members').select('id, name, role, available_days').eq('org_id', orgId).order('name'),
+      supabase.from('staff_members').select('id, name, role, available_days').eq('org_id', orgId).eq('archived', false).order('name'),
       supabase.from('staff_assignments').select('*').eq('org_id', orgId).eq('assignment_date', selectedDate),
     ]);
     if (staffData) setStaff(staffData);

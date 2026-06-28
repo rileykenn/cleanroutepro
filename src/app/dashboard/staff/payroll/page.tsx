@@ -104,7 +104,7 @@ export default function PayrollPage() {
   useEffect(() => {
     async function loadStaff() {
       if (!profile?.org_id) return;
-      const { data } = await supabase.from('staff_members').select('*').eq('org_id', profile.org_id).order('name');
+      const { data } = await supabase.from('staff_members').select('*').eq('org_id', profile.org_id).eq('archived', false).order('name');
       if (data) {
         setStaff(data);
         if (data.length > 0 && !selectedStaffId) setSelectedStaffId(data[0].id);

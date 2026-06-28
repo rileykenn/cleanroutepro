@@ -196,7 +196,7 @@ export default function ScheduleTemplateEditorPage({ params }: { params: Promise
   useEffect(() => {
     if (!orgId) return;
     supabase.from('staff_members').select('id, name, role, hourly_rate, available_days')
-      .eq('org_id', orgId).order('name')
+      .eq('org_id', orgId).eq('archived', false).order('name')
       .then(({ data }: { data: StaffMember[] | null }) => { if (data) setAllStaff(data); });
   }, [orgId, supabase]);
 

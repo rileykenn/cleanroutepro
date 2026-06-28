@@ -757,7 +757,7 @@ export default function SchedulePage({ overrideRole }: { overrideRole?: 'owner' 
 
   const loadStaffMembers = useCallback(async () => {
     if (!orgId) return;
-    const { data } = await supabase.from('staff_members').select('id, name, role, hourly_rate, available_days').eq('org_id', orgId).order('name');
+    const { data } = await supabase.from('staff_members').select('id, name, role, hourly_rate, available_days').eq('org_id', orgId).eq('archived', false).order('name');
     if (data) {
       setAllStaff(data as StaffMember[]);
       // (cache removed)

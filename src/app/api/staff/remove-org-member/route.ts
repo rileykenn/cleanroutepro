@@ -78,13 +78,30 @@ export async function POST(request: NextRequest) {
 
     const hasOtherOrgs = (remaining || []).length > 0;
 
-    // ── 4. Delete auth account + profile if no remaining orgs ────────────
+    // ── 4. Detach user from this org if no remaining memberships ────────
     if (!hasOtherOrgs) {
-      await adminSupabase.auth.admin.deleteUser(linkedUserId);
-      await adminSupabase.from('profiles').delete().eq('id', linkedUserId);
+      // Clear org_id + role so the user lands on the welcome screen on next login
+      await adminSupabase
+        .from('profiles')
+        .update({ org_id: null, role: null })
+        .eq('id', linkedUserId);
+    } else {
+      // Auto-switch to another org they still belong to
+      const nextOrg = remaining![0];
+      const { data: nextMembership } = await adminSupabase
+        .from('org_members')
+        .select('org_id, role')
+        .eq('id', nextOrg.id)
+        .single();
+      if (nextMembership) {
+        await adminSupabase
+          .from('profiles')
+          .update({ org_id: nextMembership.org_id, role: nextMembership.role })
+          .eq('id', linkedUserId);
+      }
     }
 
-    return NextResponse.json({ success: true, deletedAuthAccount: !hasOtherOrgs });
+    return NextResponse.json({ success: true, accountDetached: !hasOtherOrgs });
   } catch (err) {
     console.error('[Remove Org Member] Unexpected error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

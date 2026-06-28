@@ -45,7 +45,7 @@ function getNavForRole(role: Role): NavItem[] {
         { label: 'Templates',  href: '/dashboard/templates',      icon: NAV_ICONS.templates },
         { label: 'Staff',      href: '/dashboard/staff',          icon: NAV_ICONS.staff },
         { label: 'Staff View', href: '/dashboard/staff-preview',  icon: NAV_ICONS.staffView },
-        { label: 'Settings',   href: '/dashboard/settings',       icon: NAV_ICONS.settings },
+        { label: 'Org Settings', href: '/dashboard/settings',     icon: NAV_ICONS.settings },
       ];
     case 'admin':
       return [
@@ -55,7 +55,7 @@ function getNavForRole(role: Role): NavItem[] {
         { label: 'Templates',  href: '/dashboard/templates',      icon: NAV_ICONS.templates },
         { label: 'Staff',      href: '/dashboard/staff',          icon: NAV_ICONS.staff },
         { label: 'Staff View', href: '/dashboard/staff-preview',  icon: NAV_ICONS.staffView },
-        { label: 'Settings',   href: '/dashboard/settings',       icon: NAV_ICONS.settings },
+        { label: 'Org Settings', href: '/dashboard/settings',     icon: NAV_ICONS.settings },
       ];
     case 'supervisor':
       return [
@@ -361,13 +361,22 @@ function Inner({ children }: { children: React.ReactNode }) {
                       <p className="text-xs text-text-tertiary capitalize">{ROLE_LABELS[userRole] || userRole} · {profile?.org_name}</p>
                     </div>
 
+                    {/* My Account — visible to all roles */}
+                    <button
+                      onClick={() => { router.push('/dashboard/account'); setUserMenuOpen(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-surface-hover transition-colors flex items-center gap-2"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      My Account
+                    </button>
+
                     {(userRole === 'owner' || userRole === 'admin') && (
                       <button
                         onClick={() => { router.push('/dashboard/settings'); setUserMenuOpen(false); }}
                         className="w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-surface-hover transition-colors flex items-center gap-2"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                        Settings
+                        Organisation Settings
                       </button>
                     )}
 

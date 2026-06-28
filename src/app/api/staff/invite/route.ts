@@ -106,29 +106,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, existing: true, message: 'Invitation sent — they will receive an email notification' });
     }
 
-    // New user — send invite email
-    const { data, error } = await adminSupabase.auth.admin.inviteUserByEmail(email, {
-      data: {
-        full_name: name || '',
-        org_id: profile.org_id,
-        staff_member_id: staffMemberId,
-        role: 'staff',
-      },
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/confirm`,
-    });
-
-    if (error) {
-      console.error('[Staff Invite] Error:', error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // Mark invite as pending
-    await serverSupabase
-      .from('staff_members')
-      .update({ invite_status: 'pending', email })
-      .eq('id', staffMemberId);
-
-    return NextResponse.json({ success: true, userId: data.user?.id });
+    // New user — they need to create an account first
+    return NextResponse.json({
+      error: 'User not found. This person does not have an account yet. Ask them to create an account at CleanRoute Pro first, then try inviting them again.',
+    }, { status: 404 });
   } catch (err) {
     console.error('[Staff Invite] Unexpected error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

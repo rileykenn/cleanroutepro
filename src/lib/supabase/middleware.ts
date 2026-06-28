@@ -61,9 +61,11 @@ export async function updateSession(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    // No org — only allow the main dashboard page (shows no-org state)
+    // No org — allow the main dashboard page (shows no-org state) and account page
     if (!profile?.org_id) {
-      if (request.nextUrl.pathname !== '/dashboard') {
+      const allowedNoOrgPaths = ['/dashboard', '/dashboard/account'];
+      const isAllowed = allowedNoOrgPaths.some(p => request.nextUrl.pathname === p);
+      if (!isAllowed) {
         const url = request.nextUrl.clone();
         url.pathname = '/dashboard';
         return NextResponse.redirect(url);

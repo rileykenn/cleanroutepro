@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
  *   from the roster entirely.
  *
  * In both cases, if the user has no remaining org memberships after removal,
- * their Supabase auth account is also deleted.
+ * their profile is detached (org_id cleared) so they see the welcome screen.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -81,11 +81,27 @@ export async function POST(request: NextRequest) {
 
       const hasOtherOrgs = (remainingMemberships || []).length > 0;
 
-      // ── 4. Delete the auth account if no remaining orgs ───────────────────
+      // ── 4. Detach user from this org if no remaining memberships ────────
       if (!hasOtherOrgs) {
-        await adminSupabase.auth.admin.deleteUser(linkedUserId);
-        // Also clean up the profile
-        await adminSupabase.from('profiles').delete().eq('id', linkedUserId);
+        // Clear org_id + role so the user lands on the welcome screen on next login
+        await adminSupabase
+          .from('profiles')
+          .update({ org_id: null, role: null })
+          .eq('id', linkedUserId);
+      } else {
+        // Auto-switch to another org they still belong to
+        const nextOrg = remainingMemberships![0];
+        const { data: nextMembership } = await adminSupabase
+          .from('org_members')
+          .select('org_id, role')
+          .eq('id', nextOrg.id)
+          .single();
+        if (nextMembership) {
+          await adminSupabase
+            .from('profiles')
+            .update({ org_id: nextMembership.org_id, role: nextMembership.role })
+            .eq('id', linkedUserId);
+        }
       }
     }
 
@@ -106,7 +122,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       revokedAccountOnly: revokeAccountOnly,
-      deletedAuthAccount: !!linkedUserId,
+      accountDetached: !!linkedUserId,
     });
   } catch (err) {
     console.error('[Staff Remove] Unexpected error:', err);

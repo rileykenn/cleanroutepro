@@ -67,17 +67,21 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
     URL.revokeObjectURL(url);
   };
 
-  // Calculate end time (finish after return to base)
+  // Calculate end time (finish after return to base, or last client end if no return)
   const lastClient = team.clients[team.clients.length - 1];
   const returnSegKey = lastClient ? `${lastClient.id}->base-return` : null;
   const returnSeg = returnSegKey ? team.travelSegments.get(returnSegKey) : null;
   const endTimeParts = lastClient?.endTime ? lastClient.endTime.split(':').map(Number) : null;
   let finishTime = '';
   if (endTimeParts && returnSeg && !returnSeg.isCalculating) {
+    // Return destination exists — add return travel time
     const totalMin = endTimeParts[0] * 60 + endTimeParts[1] + returnSeg.durationMinutes;
     const h = Math.floor(totalMin / 60) % 24;
     const m = totalMin % 60;
     finishTime = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  } else if (endTimeParts && lastClient?.endTime) {
+    // No return destination — use last client's end time
+    finishTime = lastClient.endTime;
   }
 
   // Calculate wages from individual staff rates using exact computed labor minutes

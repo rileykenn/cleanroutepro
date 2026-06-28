@@ -141,6 +141,8 @@ export default function ChecklistsPage() {
 
 
   const selectChecklist = (clientId: string, checklistId: string) => {
+    // If already viewing this checklist, don't reload (would wipe unsaved edits)
+    if (selectedChecklistId === checklistId) return;
     setSelectedClientId(clientId);
     setSelectedChecklistId(checklistId);
     const cl = allChecklists.find(c => c.id === checklistId);

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDuration, formatDistance, formatTimeDisplay } from '@/lib/timeUtils';
 import { DaySummary, ScheduleAction, TeamSchedule } from '@/lib/types';
 import { exportScheduleXLSX } from '@/lib/xlsxExport';
 import { exportStaffScheduleXLSX } from '@/lib/staffXlsxExport';
+import { calculateScheduleTimes } from '@/lib/routeEngine';
 
 interface StaffWithRate {
   id: string;
@@ -83,6 +84,12 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
     // No return destination — use last client's end time
     finishTime = lastClient.endTime;
   }
+
+  // Compute actual start time (respects pinned/updated start and base departure)
+  const actualStartTime = useMemo(() => {
+    const result = calculateScheduleTimes(team);
+    return result.baseDepartureTime || team.dayStartTime;
+  }, [team]);
 
   // Calculate wages from individual staff rates using exact computed labor minutes
   const staffWages = (staffRates && staffRates.length > 0)
@@ -386,7 +393,7 @@ export default function DailySummaryCard({ team, summary, dispatch, staffNames, 
         <div className="mt-3 pt-3 border-t border-border-light flex items-center justify-between text-sm">
           <span className="text-text-secondary">Day Range</span>
           <span className="font-semibold text-text-primary">
-            {formatTimeDisplay(team.dayStartTime)} – {formatTimeDisplay(finishTime)}
+            {formatTimeDisplay(actualStartTime)} – {formatTimeDisplay(finishTime)}
           </span>
         </div>
       )}

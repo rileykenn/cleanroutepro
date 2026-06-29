@@ -112,9 +112,13 @@ function Inner({ children }: { children: React.ReactNode }) {
     setIsMobile(isMobileDevice);
   }, []);
 
-  // Auto-redirect to staff-view on mobile (except staff who are already there)
+  // Auto-redirect to staff-view on mobile (except allowed pages)
   useEffect(() => {
-    if (isMobile && hasOrg && !pathname.startsWith('/dashboard/staff-view') && pathname !== '/dashboard') {
+    if (isMobile && hasOrg
+      && !pathname.startsWith('/dashboard/staff-view')
+      && !pathname.startsWith('/dashboard/account')
+      && !pathname.startsWith('/dashboard/checklist')
+      && pathname !== '/dashboard') {
       router.replace('/dashboard/staff-view');
     }
   }, [isMobile, hasOrg, pathname, router]);

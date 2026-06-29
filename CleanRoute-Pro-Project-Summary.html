@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanRoute Pro - Project Summary and Status Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --primary: #2563eb;
+    --primary-light: #dbeafe;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --warning: #d97706;
+    --warning-bg: #fffbeb;
+    --text: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --border: #e2e8f0;
+    --bg: #ffffff;
+    --bg-subtle: #f8fafc;
+    --accent-gradient: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    font-size: 11px;
+    line-height: 1.6;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 0 0 12mm 0;
+    size: A4;
+  }
+  @page:first {
+    margin: 0;
+  }
+
+  .page-container {
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 0 18mm;
+  }
+
+  .cover-header {
+    background: var(--accent-gradient);
+    color: white;
+    padding: 40px 36px 32px;
+    border-radius: 0 0 16px 16px;
+    margin: 0 -18mm 28px;
+    padding-left: 18mm;
+    padding-right: 18mm;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover-header::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 300px;
+    height: 300px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+  }
+  .cover-header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+  }
+  .cover-header .subtitle {
+    font-size: 14px;
+    font-weight: 400;
+    opacity: 0.9;
+    margin-bottom: 20px;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 32px;
+    font-size: 11px;
+    opacity: 0.85;
+  }
+  .cover-meta span { font-weight: 500; }
+
+  .exec-summary {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+  .exec-summary h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 8px;
+  }
+  .exec-summary p {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  .section {
+    margin-bottom: 22px;
+    page-break-inside: avoid;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--primary);
+  }
+  .section-number {
+    background: var(--accent-gradient);
+    color: white;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .section-header h2 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .section-note {
+    background: var(--primary-light);
+    border-left: 3px solid var(--primary);
+    padding: 8px 14px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 10px;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+  }
+  .section-note.warning {
+    background: #fef3c7;
+    border-left-color: var(--warning);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+    margin-bottom: 0;
+  }
+  thead th {
+    background: var(--bg-subtle);
+    font-weight: 600;
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  tbody td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+
+  .fc { font-weight: 500; white-space: nowrap; min-width: 130px; }
+  .sc { white-space: nowrap; width: 110px; }
+  .dc { color: var(--text-secondary); }
+  .sd { color: var(--success); font-weight: 600; font-size: 10px; }
+  .sp { color: var(--warning); font-weight: 600; font-size: 10px; }
+  .datec { white-space: nowrap; width: 65px; color: var(--text-muted); font-weight: 500; }
+
+  .tech-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .tech-card {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .tech-card .ml { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 2px; }
+  .tech-card .mv { font-size: 13px; font-weight: 700; color: var(--text); }
+  .tech-card.hl { background: var(--accent-gradient); border: none; }
+  .tech-card.hl .ml { color: rgba(255,255,255,0.7); }
+  .tech-card.hl .mv { color: white; }
+
+  .final-summary {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-top: 24px;
+  }
+  .final-summary h2 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .final-summary p { font-size: 11px; color: var(--text-secondary); line-height: 1.7; margin-bottom: 8px; }
+  .final-summary p:last-child { margin-bottom: 0; }
+
+  @media print {
+    .cover-header {
+      margin: 0 -18mm 24px;
+      border-radius: 0;
+      padding: 28px 18mm 22px;
+    }
+    .page-container { max-width: none; padding: 0 18mm; }
+    .section { page-break-inside: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page-container">
+
+  <div class="cover-header">
+    <h1>CleanRoute Pro</h1>
+    <div class="subtitle">Project Summary &amp; Status Report</div>
+    <div class="cover-meta">
+      <div><span>Prepared for:</span> Sarah O'Connell, The Cleaning Co Shellharbour</div>
+      <div><span>Prepared by:</span> Riley Kennedy, Riley Tech Studio</div>
+      <div><span>Date:</span> 28 June 2026</div>
+    </div>
+  </div>
+
+  <div class="exec-summary">
+    <h2>Executive Summary</h2>
+    <p>CleanRoute Pro is a cloud-based scheduling, rostering, and operations platform built specifically for The Cleaning Co Shellharbour. The application is <strong>substantially complete</strong>; every major feature from both the original scope ($6,500) and the Phase 2 amendment ($500) has been built and is functional.</p>
+    <p style="margin-top:8px;">The platform is live and accessible on any device via web browser. Below is a detailed breakdown of every feature area, what has been delivered, recent improvements, and what remains.</p>
+  </div>
+
+  <!-- 1 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">1</div><h2>Route Scheduling &amp; Calculation</h2></div>
+    <div class="section-note">This is the core of the platform, the daily schedule builder where you plan each team's day.</div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Base address per team</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Each team can have a starting location (depot/home base)</td></tr>
+      <tr><td class="fc">Add clients to a day</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Search and add from your saved client list</td></tr>
+      <tr><td class="fc">Per-job staff count</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Set how many staff are on each job, splits time accordingly</td></tr>
+      <tr><td class="fc">Live travel calculation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Uses Google Maps to auto-calculate travel time and distance between every stop</td></tr>
+      <tr><td class="fc">Traffic-aware timing</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Travel estimates factor in real traffic conditions</td></tr>
+      <tr><td class="fc">Auto-timed schedule</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Start time flows through the day, each job and travel slot is auto-timed</td></tr>
+      <tr><td class="fc">Editable start time</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Change what time the day starts; the whole schedule shifts accordingly</td></tr>
+      <tr><td class="fc">Fixed start times (pinning)</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Lock a specific client to a specific start time, the schedule adjusts around it</td></tr>
+      <tr><td class="fc">Lock job position</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Prevent a job from being moved during reordering</td></tr>
+      <tr><td class="fc">Drag-and-drop reorder</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Drag clients to rearrange the route order</td></tr>
+      <tr><td class="fc">Swap / replace clients</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Swap a client out for a different one</td></tr>
+      <tr><td class="fc">Cancel a job (per day)</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Mark a job as cancelled for that day without removing the client</td></tr>
+      <tr><td class="fc">Lunch breaks</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Add breaks between any two clients, breaks are excluded from payroll hours</td></tr>
+      <tr><td class="fc">Interactive map</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Google Maps route display showing all stops</td></tr>
+      <tr><td class="fc">Navigate button</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Opens Google Maps navigation on mobile devices</td></tr>
+      <tr><td class="fc">Return-to-base</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Optional return destination with travel time calculated</td></tr>
+      <tr><td class="fc">Day Range display</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Shows the full working window (e.g. 8:00 AM – 3:45 PM)</td></tr>
+      <tr><td class="fc">Schedule publishing</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Publish a day to make it visible to staff</td></tr>
+      <tr><td class="fc">Revert to published</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Undo all unpublished changes and restore the last saved version</td></tr>
+      <tr><td class="fc">Schedule warnings</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Smart warnings for overlaps, availability conflicts, missing data</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 2 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">2</div><h2>Multi-Team Support</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Unlimited teams</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Create as many teams as needed per day</td></tr>
+      <tr><td class="fc">Colour-coded team tabs</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Each team gets a unique colour for easy identification</td></tr>
+      <tr><td class="fc">Per-team settings</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Each team has its own driver, staff, base address, fuel toggle</td></tr>
+      <tr><td class="fc">Team breakdown</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Daily summary shows time, wages, and financials per team</td></tr>
+      <tr><td class="fc">Calculate fuel toggle</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Turn fuel/km tracking on or off per team (e.g. off when using a contractor driver)</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 3 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">3</div><h2>Financials &amp; Reporting</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Daily summary panel</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Job total, per-staff split, travel time, payable hours, all auto-calculated</td></tr>
+      <tr><td class="fc">Wage calculation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Uses each staff member's individual hourly rate × their actual hours</td></tr>
+      <tr><td class="fc">Fuel cost calculation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Based on distance, fuel price, and vehicle efficiency from settings</td></tr>
+      <tr><td class="fc">Per-km mileage allowance</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">ATO per-km rate applied to driver's total distance</td></tr>
+      <tr><td class="fc">Revenue tracking</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Per-client revenue based on hourly client rates</td></tr>
+      <tr><td class="fc">Profit calculation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Revenue minus wages and fuel costs</td></tr>
+      <tr><td class="fc">Staff cost breakdown</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Individual wage amounts shown per staff member</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 4 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">4</div><h2>Client Database</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Saved client list</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full client directory with all details</td></tr>
+      <tr><td class="fc">Quick search &amp; add</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Search clients by name to add to a schedule</td></tr>
+      <tr><td class="fc">Create / edit / archive</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full CRUD with archive functionality</td></tr>
+      <tr><td class="fc">Address with autocomplete</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Google Places integration for accurate addresses</td></tr>
+      <tr><td class="fc">Hourly rate per client</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Set individual billing rates</td></tr>
+      <tr><td class="fc">Job duration per client</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Default job time for each client</td></tr>
+      <tr><td class="fc">Client colour tags</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Visual colour coding</td></tr>
+      <tr><td class="fc">Notes per client</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Internal notes on client records</td></tr>
+      <tr><td class="fc">Client profile panel</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full slide-out profile view with checklists and history</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 5 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">5</div><h2>Schedule Templates</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Save weekly template</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Save any week's schedule as a reusable template</td></tr>
+      <tr><td class="fc">Load template</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Load a saved template into any week</td></tr>
+      <tr><td class="fc">Edit templates inline</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full template editor (same interface as the schedule builder)</td></tr>
+      <tr><td class="fc">4-week rotation support</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Templates support multi-week cycles</td></tr>
+      <tr><td class="fc">Duplicate / rename / delete</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full template management</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 6 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">6</div><h2>Account, Access &amp; Multi-Tenant System</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">User registration &amp; login</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Email/password authentication via Supabase</td></tr>
+      <tr><td class="fc">Forgot password flow</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full OTP-based password reset</td></tr>
+      <tr><td class="fc">Multi-tenant (multi-org)</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Each business is a separate organisation with its own data</td></tr>
+      <tr><td class="fc">Organisation creation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Guided setup wizard</td></tr>
+      <tr><td class="fc">Organisation switching</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Switch between organisations if a user belongs to more than one</td></tr>
+      <tr><td class="fc">4-tier role system</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Owner → Admin → Supervisor → Staff (expanded beyond the original 2 roles)</td></tr>
+      <tr><td class="fc">Role-based permissions</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">28 granular permissions controlling what each role can see and do</td></tr>
+      <tr><td class="fc">Staff invitation system</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Invite staff by email, they must already have an account</td></tr>
+      <tr><td class="fc">Accept / decline invites</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Staff see pending invites and can accept or decline</td></tr>
+      <tr><td class="fc">Staff removal (safe)</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Removing staff revokes access without deleting their account</td></tr>
+      <tr><td class="fc">My Account page</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Staff can update their name and change their password</td></tr>
+      <tr><td class="fc">Cloud-hosted</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Accessible from any device via web browser</td></tr>
+      <tr><td class="fc">Platform admin panel</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">View all tenants across the platform</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 7 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">7</div><h2>Subscription Billing (Stripe)</h2></div>
+    <div class="section-note warning">Stripe billing has <strong>not yet been set up</strong>. No Stripe account has been created, no products or pricing have been configured, and the integration is not yet functional. This is a remaining setup task.</div>
+    <table><thead><tr><th class="fc">Item</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Stripe account</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">A Stripe account needs to be created for CleanRoute Pro</td></tr>
+      <tr><td class="fc">Products &amp; pricing</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Subscription tiers and pricing need to be defined and created in Stripe</td></tr>
+      <tr><td class="fc">Checkout flow</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">The end-to-end subscription purchase flow needs to be built and tested</td></tr>
+      <tr><td class="fc">Customer portal</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Billing management (update payment, cancel subscription) needs to be connected</td></tr>
+      <tr><td class="fc">Webhook handling</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Automatic subscription status sync between Stripe and the app</td></tr>
+      <tr><td class="fc">Live payment testing</td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Full payment flow needs to be tested with test/real cards</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 8 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">8</div><h2>Staff Rostering</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Staff directory</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full list with roles, hourly rates, contact info</td></tr>
+      <tr><td class="fc">Team assignment</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Assign staff to teams per day</td></tr>
+      <tr><td class="fc">Driver designation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Mark who's driving each team</td></tr>
+      <tr><td class="fc">Availability days</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Set which days each staff member is available</td></tr>
+      <tr><td class="fc">Archive staff</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Archive inactive staff, they're hidden from all pickers and payroll</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 9 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">9</div><h2>Onboarding</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">3-step welcome wizard</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Business name → First team &amp; base address → First client</td></tr>
+      <tr><td class="fc">Guided first-time setup</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">New users are walked through creating their first schedule</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 10 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">10</div><h2>Checklists &amp; Form Builder</h2></div>
+    <div class="section-note">This was the Phase 2 amendment feature ($500 add-on). It is fully built.</div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">13 field types</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Heading, paragraph, checkbox, text, yes/no, dropdown, multi-select, multi-dropdown, date, time, photo, video, logic</td></tr>
+      <tr><td class="fc">Drag-and-drop reorder</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Rearrange checklist items by dragging</td></tr>
+      <tr><td class="fc">Conditional logic</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Show/hide fields based on yes/no answers (AND/OR operators)</td></tr>
+      <tr><td class="fc">Required fields</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Mark fields as required for completion</td></tr>
+      <tr><td class="fc">N/A toggle</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Allow staff to mark items as not applicable</td></tr>
+      <tr><td class="fc">Master templates</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Create reusable checklist templates</td></tr>
+      <tr><td class="fc">Assign to clients</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Bulk-assign a template to multiple clients</td></tr>
+      <tr><td class="fc">Per-client customisation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Customise the checklist for each specific client</td></tr>
+      <tr><td class="fc">Pre-filled fields</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Auto-fill date, time, staff name, client name</td></tr>
+      <tr><td class="fc">Photo &amp; video uploads</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Staff can attach photos and videos to checklist items</td></tr>
+      <tr><td class="fc">Auto-save drafts</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Progress is saved automatically</td></tr>
+      <tr><td class="fc">Mobile-optimised</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Large touch targets, mobile-first layout</td></tr>
+      <tr><td class="fc">PDF export</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Generate a professional PDF of completed checklists</td></tr>
+      <tr><td class="fc">Default checklist</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Set one checklist as the default for a client</td></tr>
+      <tr><td class="fc">Multi-staff collaboration</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Colour-coded per-field attribution when multiple staff contribute</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 11 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">11</div><h2>Staff Payroll Export</h2></div>
+    <div class="section-note">This was the second Phase 2 amendment feature. Fully built.</div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Staff isolation view</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Select a staff member and see only their hours and jobs</td></tr>
+      <tr><td class="fc">Daily breakdown</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Per-day: start time, finish time, jobs worked, travel time, team context</td></tr>
+      <tr><td class="fc">Weekly totals</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Aggregated hours, travel, and wages for the payroll period</td></tr>
+      <tr><td class="fc">Configurable payroll cycle</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Set which day of the week the payroll period starts</td></tr>
+      <tr><td class="fc">Individual wage calculation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Each staff member's own hourly rate × actual hours worked</td></tr>
+      <tr><td class="fc">KM mileage allowance</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Auto-calculated from schedule data when the team has fuel tracking on</td></tr>
+      <tr><td class="fc">Partial week warnings</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Amber warning when not all days in the payroll period are published</td></tr>
+      <tr><td class="fc">CSV export</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Download payroll data as CSV</td></tr>
+      <tr><td class="fc">XLSX export</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Download payroll data as formatted Excel spreadsheet</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 12 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">12</div><h2>Staff Mobile Experience</h2></div>
+    <table><thead><tr><th class="fc">Feature</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Staff daily view</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Staff see their assigned jobs for the day with times and addresses</td></tr>
+      <tr><td class="fc">Job navigation</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Tap to open Google Maps directions</td></tr>
+      <tr><td class="fc">Checklist completion</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Full mobile checklist with photo/video uploads</td></tr>
+      <tr><td class="fc">Draft auto-save</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Progress saved if staff close the app</td></tr>
+      <tr><td class="fc">Mobile-responsive UI</td><td class="sc"><span class="sd">✅ Done</span></td><td class="dc">Touch-optimised, works on all phone sizes</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 13 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">13</div><h2>Recent Bug Fixes &amp; Improvements (June 2026)</h2></div>
+    <table><thead><tr><th class="fc">Fix</th><th class="datec">Date</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc">Payroll cycle alignment</td><td class="datec">27 Jun</td><td class="dc">Fixed 5 bugs around payroll periods spanning multiple schedule weeks</td></tr>
+      <tr><td class="fc">Partial period detection</td><td class="datec">27 Jun</td><td class="dc">Warning when not all days in a payroll period have published schedules</td></tr>
+      <tr><td class="fc">Account removal safety</td><td class="datec">27 Jun</td><td class="dc">Staff removal no longer deletes their account, just revokes access</td></tr>
+      <tr><td class="fc">Default hourly rate removed</td><td class="datec">28 Jun</td><td class="dc">Removed confusing org-level default rate, individual staff rates are used</td></tr>
+      <tr><td class="fc">Per-km rate automation</td><td class="datec">28 Jun</td><td class="dc">Removed manual per-km input, now auto-calculated from team schedule data</td></tr>
+      <tr><td class="fc">Fuel toggle per team</td><td class="datec">28 Jun</td><td class="dc">Each team's calculate_fuel setting controls whether KM appears in payroll</td></tr>
+      <tr><td class="fc">Day Range display fix</td><td class="datec">28 Jun</td><td class="dc">Day Range now shows even when no return destination is set</td></tr>
+      <tr><td class="fc">Day Range pinned time fix</td><td class="datec">28 Jun</td><td class="dc">Day Range now respects updated/pinned start times</td></tr>
+      <tr><td class="fc">Archived staff hidden</td><td class="datec">28 Jun</td><td class="dc">Archived staff no longer appear in payroll, schedule, or template pickers</td></tr>
+      <tr><td class="fc">Checklist editor fix</td><td class="datec">28 Jun</td><td class="dc">Fixed bug where editing checklist items would revert when clicking away</td></tr>
+      <tr><td class="fc">Checklist rename fix</td><td class="datec">28 Jun</td><td class="dc">Double-clicking to rename no longer wipes unsaved checklist edits</td></tr>
+      <tr><td class="fc">Staff invite validation</td><td class="datec">27 Jun</td><td class="dc">Inviting an email without an account now shows "user not found" instead of silently failing</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 14 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">14</div><h2>What's Next / Remaining Items</h2></div>
+    <table><thead><tr><th class="fc">Item</th><th class="sc">Status</th><th>Description</th></tr></thead><tbody>
+      <tr><td class="fc"><strong>Stripe Setup</strong></td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">A Stripe account needs to be created, subscription products and pricing tiers need to be configured, and the full payment flow needs to be built, connected, and tested end-to-end.</td></tr>
+      <tr><td class="fc"><strong>Custom Domain</strong></td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">The app is currently accessible via Vercel's default URL. A custom domain (e.g. app.cleanroutepro.com.au) needs to be purchased, configured, and pointed to the Vercel deployment.</td></tr>
+      <tr><td class="fc"><strong>Email Checklist to Client</strong></td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Server-side email delivery so completed checklists can be automatically emailed directly to clients as a PDF. Waiting on domain setup before this can be configured (email sending services require a verified domain).</td></tr>
+      <tr><td class="fc"><strong>Onboarding Documentation</strong></td><td class="sc"><span class="sp">⏳ Not Yet Done</span></td><td class="dc">Step-by-step instructions for Sarah and her staff on how to sign up, accept invites, and start using the platform.</td></tr>
+    </tbody></table>
+  </div>
+
+  <!-- 15 -->
+  <div class="section">
+    <div class="section-header"><div class="section-number">15</div><h2>Technical Summary</h2></div>
+    <div class="tech-grid">
+      <div class="tech-card hl"><div class="ml">Total Lines of Code</div><div class="mv">27,500+</div></div>
+      <div class="tech-card hl"><div class="ml">Source Files</div><div class="mv">94 Files</div></div>
+      <div class="tech-card"><div class="ml">Pages &amp; Routes</div><div class="mv">20 Pages</div></div>
+      <div class="tech-card"><div class="ml">UI Components</div><div class="mv">29 Components</div></div>
+      <div class="tech-card"><div class="ml">API Endpoints</div><div class="mv">13 Routes</div></div>
+      <div class="tech-card"><div class="ml">Export Formats</div><div class="mv">6 Formats</div></div>
+      <div class="tech-card"><div class="ml">Checklist Field Types</div><div class="mv">13 Types</div></div>
+      <div class="tech-card"><div class="ml">Permission Rules</div><div class="mv">28 Rules</div></div>
+    </div>
+    <table><thead><tr><th style="width:140px">Layer</th><th>Technology</th></tr></thead><tbody>
+      <tr><td class="fc">Framework</td><td class="dc">Next.js 16 (React 19), the latest version of the industry-leading React framework</td></tr>
+      <tr><td class="fc">Language</td><td class="dc">TypeScript, fully type-safe codebase for reliability and maintainability</td></tr>
+      <tr><td class="fc">Styling</td><td class="dc">Tailwind CSS v4, modern utility-first CSS framework</td></tr>
+      <tr><td class="fc">Database &amp; Auth</td><td class="dc">Supabase (PostgreSQL + Auth + Storage), enterprise-grade database with built-in authentication</td></tr>
+      <tr><td class="fc">Maps &amp; Routing</td><td class="dc">Google Maps Platform (Directions, Places, Geocoding), live traffic-aware travel calculations</td></tr>
+      <tr><td class="fc">Animations</td><td class="dc">Framer Motion, smooth, professional UI animations throughout</td></tr>
+      <tr><td class="fc">Data Export</td><td class="dc">ExcelJS (XLSX spreadsheets), @react-pdf/renderer (PDF generation)</td></tr>
+      <tr><td class="fc">Hosting</td><td class="dc">Vercel, high-performance cloud hosting with automatic deployments</td></tr>
+    </tbody></table>
+  </div>
+
+  <div class="final-summary">
+    <h2>Summary</h2>
+    <p>CleanRoute Pro is a <strong>27,500+ line, custom-built platform</strong> covering all features from both the original scope of work and the Phase 2 amendment. The platform handles daily schedule planning with live route calculation, multi-team management, staff rostering with role-based access, a full-featured checklist/form builder with 13 field types, automated payroll calculations, and comprehensive data export across 6 formats.</p>
+    <p>The system is live, cloud-hosted, and accessible from any device. Staff can view their daily schedules, complete checklists with photo/video evidence, and navigate to jobs via Google Maps, all from their phones.</p>
+    <p>The remaining items to complete are: Stripe subscription billing setup, custom domain configuration, server-side email delivery for checklists, and onboarding documentation.</p>
+  </div>
+
+  <div style="text-align:center; padding: 24px 0 8px; color: var(--text-muted); font-size: 9px;">
+    CleanRoute Pro &copy; 2026 Riley Tech Studio. All rights reserved.
+  </div>
+
+</div>
+</body>
+</html>

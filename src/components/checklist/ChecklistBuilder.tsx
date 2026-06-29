@@ -860,12 +860,10 @@ export default function ChecklistBuilder({
   }, []);
 
   const handleGhostChange = useCallback((value: string, inputEl: HTMLInputElement | null) => {
-    // Slash anywhere → open command palette
-    if (value.includes('/') && !slashState) {
-      const slashIdx = value.lastIndexOf('/');
-      const prefix = value.slice(0, slashIdx);
+    // Slash command — only trigger when '/' is the first character on a blank ghost line
+    if (value === '/' && !slashState) {
       const rect = inputEl?.getBoundingClientRect() ?? null;
-      setSlashState({ blockId: GHOST_ID, prefix, query: value.slice(slashIdx + 1), anchorRect: rect });
+      setSlashState({ blockId: GHOST_ID, prefix: '', query: '', anchorRect: rect });
       setGhostValue(value);
       return;
     }
@@ -957,12 +955,12 @@ export default function ChecklistBuilder({
       }
     }
 
-    // New slash detection — trigger on '/' at any position
-    if (value.endsWith('/') && !slashState) {
-      const prefix = value.slice(0, -1);
+    // New slash detection — ONLY trigger when '/' is the first character on a blank line.
+    // This prevents conflict with normal text like "End of lease / sale clean".
+    if (value === '/' && !slashState) {
+      const prefix = '';
       const rect = inputEl?.getBoundingClientRect() ?? null;
       setSlashState({ blockId: field.id, prefix, query: '', anchorRect: rect });
-      // Show the slash in the input temporarily (controlled by slashState)
       updateField(field.id, { label: value });
       return;
     }

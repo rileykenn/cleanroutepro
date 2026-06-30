@@ -18,7 +18,8 @@ import ChecklistRunner from './ChecklistRunner';
 // ─── Block type catalogue ────────────────────────────────────────────────────
 const BLOCK_TYPES: { type: FieldType; label: string; desc: string; icon: React.ReactNode }[] = [
   { type: 'paragraph',     label: 'Text',          desc: 'Body text for staff to read',        icon: <BlockIcon type="paragraph"/> },
-  { type: 'multiselect',   label: 'Checkbox',      desc: 'Tick one or more items',             icon: <BlockIcon type="multiselect"/> },
+  { type: 'checkbox',      label: 'Checkbox',      desc: 'Single tick to mark complete',       icon: <BlockIcon type="checkbox"/> },
+  { type: 'multiselect',   label: 'Checkbox List', desc: 'Tick one or more items',             icon: <BlockIcon type="multiselect"/> },
   { type: 'yesno',         label: 'Yes / No',      desc: 'Yes or no answer',                   icon: <BlockIcon type="yesno"/> },
   { type: 'text',          label: 'Response',      desc: 'Open-ended text response',           icon: <BlockIcon type="text"/> },
   { type: 'photo',         label: 'Photo / Image',  desc: 'Staff uploads a photo or image',     icon: <BlockIcon type="photo"/> },
@@ -36,7 +37,15 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 // ─── Type icon ───────────────────────────────────────────────────────────────
 function BlockIcon({ type }: { type: FieldType }) {
   const cls = 'w-4 h-4 flex items-center justify-center shrink-0';
-  if (type === 'multiselect' || type === 'checkbox') return (
+  if (type === 'checkbox') return (
+    <div className={cls}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="2" y="2" width="12" height="12" rx="2"/>
+        <polyline points="5 8 7 10.5 11 5.5"/>
+      </svg>
+    </div>
+  );
+  if (type === 'multiselect') return (
     <div className={cls}>
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="1" y="1" width="5" height="5" rx="1"/>

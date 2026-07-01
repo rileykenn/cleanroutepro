@@ -177,7 +177,8 @@ function ChecklistPanel({
     <motion.div
       initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className="fixed inset-y-0 right-0 w-full max-w-md bg-[#f5f6fa] shadow-2xl z-50 flex flex-col border-l border-border-light lg:inset-y-0 lg:right-0 lg:top-auto lg:bottom-auto"
+      className="fixed inset-y-0 right-0 w-full max-w-md bg-[#f5f6fa] shadow-2xl z-50 flex flex-col border-l border-border-light"
+      style={{ touchAction: 'pan-y' }}
     >
       {/* Header */}
       <div className="shrink-0 px-5 py-4 bg-white border-b border-border-light">
@@ -247,7 +248,7 @@ function ChecklistPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
           <div className="space-y-2">
             {[1,2,3,4,5].map(i => <div key={i} className="shimmer h-14 rounded-2xl" />)}
@@ -1126,6 +1127,7 @@ export default function CompletedPage() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/20 z-40"
               onClick={handleClosePanel}
+              style={{ touchAction: 'none' }}
             />
             <ChecklistPanel
               job={selectedJob}

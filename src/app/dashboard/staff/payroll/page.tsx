@@ -314,18 +314,14 @@ export default function PayrollPage() {
       let firstStart = firstJobStart;
       if (primaryTeamId && firstJobStart) {
         // Find the base departure time from the schedule record for this team/day
-        let schedDeparture: string | null = null;
         for (const j of dayJobs) {
           const sd = scheduleDataMap.get(j.schedule_id);
           if (sd?.teamId === primaryTeamId && sd.baseDepartureTime) {
-            schedDeparture = sd.baseDepartureTime;
+            if (sd.baseDepartureTime < firstJobStart) {
+              firstStart = sd.baseDepartureTime;
+            }
             break;
           }
-        }
-        // Fall back to team's global dayStartTime if no per-schedule departure stored
-        const departure = schedDeparture || teams[primaryTeamId]?.dayStartTime || null;
-        if (departure && departure < firstJobStart) {
-          firstStart = departure;
         }
       }
 

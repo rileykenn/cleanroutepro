@@ -616,13 +616,15 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             has_return_base: team.returnAddress !== null && team.returnAddress !== 'none',
             driver_staff_id: team.driverStaffId || null,
             staff_ids: team.staffIds || [],
-            base_departure_time: schedTimesResult.baseDepartureTime || team.dayStartTime || null,
           };
-          // Only write travel/distance when we have real data (> 0).
+          // Only write travel/distance/departure when we have real data (> 0).
           // This prevents overwriting previously saved values with 0 for
           // teams whose Google Maps routes haven't loaded this session.
           if (teamSummary.totalTravelMinutes > 0) {
             scheduleData.total_travel_minutes = teamSummary.totalTravelMinutes;
+            // Only save base departure time when travel is loaded — without
+            // travel data the route engine computes an incorrect departure.
+            scheduleData.base_departure_time = schedTimesResult.baseDepartureTime || team.dayStartTime || null;
           }
           if (teamSummary.totalDistanceKm > 0) {
             scheduleData.total_distance_km = teamSummary.totalDistanceKm;

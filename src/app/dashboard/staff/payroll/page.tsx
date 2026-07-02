@@ -98,7 +98,7 @@ export default function PayrollPage() {
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [teams, setTeams] = useState<Record<string, { name: string, dayStartTime: string | null, calculateFuel: boolean, perKmRate: number }>>({});
-  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number }>>(new Map());
+  const [scheduleDataMap, setScheduleDataMap] = useState<Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number, baseDepartureTime: string | null }>>(new Map());
 
   // Load staff list
   useEffect(() => {
@@ -222,12 +222,12 @@ export default function PayrollPage() {
 
     const scheduleIds = schedules.map((s: { id: string }) => s.id);
     const scheduleDateMap = new Map(schedules.map((s: { id: string; schedule_date: string }) => [s.id, s.schedule_date]));
-    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number }>();
+    const newScheduleDataMap = new Map<string, { teamId: string, teamSize: number, totalTravelMinutes: number, totalDistanceKm: number, driverStaffId: string, calculateFuel: boolean, perKmRate: number, baseDepartureTime: string | null }>();
     schedules.forEach((s: any) => {
       const staffIds = s.staff_ids || [];
       const size = staffIds.length > 0 ? staffIds.length : 1;
       const teamData = teams[s.team_id];
-      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0, driverStaffId: s.driver_staff_id, calculateFuel: teamData?.calculateFuel ?? false, perKmRate: teamData?.perKmRate ?? 0 });
+      newScheduleDataMap.set(s.id, { teamId: s.team_id, teamSize: size, totalTravelMinutes: s.total_travel_minutes || 0, totalDistanceKm: parseFloat(s.total_distance_km) || 0, driverStaffId: s.driver_staff_id, calculateFuel: teamData?.calculateFuel ?? false, perKmRate: teamData?.perKmRate ?? 0, baseDepartureTime: s.base_departure_time || null });
     });
     setScheduleDataMap(newScheduleDataMap);
 
@@ -271,7 +271,7 @@ export default function PayrollPage() {
       const startTimes = allForDay.map(j => j.start_time).filter(Boolean) as string[];
       const endTimes = allForDay.map(j => j.end_time).filter(Boolean) as string[];
 
-      const firstStart = startTimes.length > 0 ? startTimes.sort()[0] : null;
+      let firstJobStart = startTimes.length > 0 ? startTimes.sort()[0] : null;
       const lastEnd = endTimes.length > 0 ? endTimes.sort().reverse()[0] : null;
 
       const totalJobMinutes = dayJobs.reduce((sum, j) => sum + (j.duration_minutes || 0), 0);
@@ -307,6 +307,27 @@ export default function PayrollPage() {
           dayKmAllowance = Math.max(dayKmAllowance, km * schedData.perKmRate);
         }
       });
+
+      // Use the schedule's saved base departure time when it's earlier
+      // than the first job start. This accounts for travel from base to the
+      // first job, especially when a pinned start time is set.
+      let firstStart = firstJobStart;
+      if (primaryTeamId && firstJobStart) {
+        // Find the base departure time from the schedule record for this team/day
+        let schedDeparture: string | null = null;
+        for (const j of dayJobs) {
+          const sd = scheduleDataMap.get(j.schedule_id);
+          if (sd?.teamId === primaryTeamId && sd.baseDepartureTime) {
+            schedDeparture = sd.baseDepartureTime;
+            break;
+          }
+        }
+        // Fall back to team's global dayStartTime if no per-schedule departure stored
+        const departure = schedDeparture || teams[primaryTeamId]?.dayStartTime || null;
+        if (departure && departure < firstJobStart) {
+          firstStart = departure;
+        }
+      }
 
       // Calculate pure travel time from gaps as a fallback
       let travelMinutes = 0;

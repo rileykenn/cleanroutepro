@@ -608,6 +608,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
           if (!hasClients && !hasBaseAddress && !hasReturnAddress && !hasBreaks && !hasDriver && !hasStaff && !existingSched) continue;
 
           const teamSummary = calculateDaySummary(team);
+          const schedTimesResult = calculateScheduleTimes(team);
           const scheduleData: Record<string, unknown> = {
             org_id: orgId, team_id: team.id, schedule_date: today,
             has_start_base: team.baseAddress !== null,
@@ -615,6 +616,7 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
             has_return_base: team.returnAddress !== null && team.returnAddress !== 'none',
             driver_staff_id: team.driverStaffId || null,
             staff_ids: team.staffIds || [],
+            base_departure_time: schedTimesResult.baseDepartureTime || team.dayStartTime || null,
           };
           // Only write travel/distance when we have real data (> 0).
           // This prevents overwriting previously saved values with 0 for

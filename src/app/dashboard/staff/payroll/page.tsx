@@ -212,7 +212,7 @@ export default function PayrollPage() {
 
     // Get all schedules in the week range for this org
     const { data: schedules } = await supabase
-      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id, team_id, total_travel_minutes, total_distance_km')
+      .from('schedules').select('id, schedule_date, staff_ids, driver_staff_id, team_id, total_travel_minutes, total_distance_km, base_departure_time')
       .eq('org_id', profile.org_id)
       .gte('schedule_date', weekStartStr)
       .lte('schedule_date', weekEnd)

@@ -961,6 +961,18 @@ export default function DayEditor({ state, dispatch, orgId, dbLoaded, supabase, 
     }
   }, [scheduleResult, activeTeam, dispatch]);
 
+  // Sync baseDepartureTime → dayStartTime when a pinned job shifts the departure.
+  // This prevents the "Day starts at" field flashing from the stale team default
+  // to the correct computed departure, and ensures auto-save writes the right value.
+  useEffect(() => {
+    if (!activeTeam || !baseDepartureTime) return;
+    // Only sync when there IS a pinned job causing departure to differ
+    const hasPinnedJob = activeTeam.clients.some(c => c.fixedStartTime);
+    if (hasPinnedJob && baseDepartureTime !== activeTeam.dayStartTime) {
+      dispatch({ type: 'SET_START_TIME', teamId: activeTeam.id, time: baseDepartureTime });
+    }
+  }, [baseDepartureTime, activeTeam, dispatch]);
+
   const summary = useMemo(() => activeTeam ? calculateDaySummary(activeTeam) : null, [activeTeam]);
 
   const routeKey = useMemo(() => {
